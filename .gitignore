@@ -7,5 +7,19 @@ coverage/
 .env*
 !.env.example
 automation/
-Recovered_C/
 .background_output_*.txt
+
+# Local recovered/restored data dumps. Never commit these, whatever they end up
+# being named or wherever they are placed in the tree.
+Recovered_C/
+[Rr]ecovered/
+[Rr]ecovery/
+[Rr]ecovered[-_]*/
+[Rr]ecovery[-_]*/
+*[-_][Rr]ecovered/
+*[-_][Rr]ecovery/
+[Rr]ecovered*.zip
+[Rr]ecovered*.7z
+[Rr]ecovered*.rar
+[Rr]ecovered*.tar
+[Rr]ecovered*.tar.gz

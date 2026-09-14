@@ -3,17 +3,28 @@ import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
+import {
+  loadAndValidateEnv,
+  EnvValidationError,
+  type LoadedEnvConfig,
+} from "./server/config/env";
+import {
+  createShutdownManager,
+  formatListenError,
+  listenAsync,
+} from "./server/lifecycle/shutdown";
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
 
 app.use(express.json({ limit: "10mb" }));
 
-import { MultipassOcrOrchestrator } from "./server/services/multipassOcr";
+import { MultipassOcrOrchestrator, ServiceUnavailableError } from "./server/services/multipassOcr";
 import { globalQueue, Topics } from "./server/queue/eventBus";
 import { extractBankFieldsFromText } from "./src/utils/ocrMatcherEngine";
+import { gdriveRouter } from "./server/routes/gdriveRoutes";
+import { ServiceAvailabilityResponse } from "./src/types";
 
 const ocrEngine = new MultipassOcrOrchestrator();
 
@@ -37,9 +48,50 @@ function getAIClient(): GoogleGenAI {
   return aiClient;
 }
 
-// Health check endpoint
+// Health check and component diagnostic endpoint
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", service: "ngx-spark-banking-ocr-engine", timestamp: new Date().toISOString() });
+  const gdriveAuth = Boolean(process.env.GDRIVE_ACCESS_TOKEN || process.env.GDRIVE_CLIENT_ID);
+  const cloudOcrAuth = Boolean(process.env.GCP_DOC_AI_KEY || process.env.AZURE_DOC_KEY || process.env.AWS_TEXTRACT_KEY);
+  res.json({
+    status: "ok",
+    service: "ngx-spark-banking-ocr-engine",
+    timestamp: new Date().toISOString(),
+    services: {
+      gdrive: { available: gdriveAuth, mode: gdriveAuth ? "live" : "unconfigured" },
+      multipass: { available: cloudOcrAuth, mode: cloudOcrAuth ? "live" : "unconfigured" },
+      ocr_worker: { available: true, mode: "live" },
+    },
+  });
+});
+
+// Service availability matrix endpoint (Stage 4 Contract)
+app.get("/api/services/status", (_req, res) => {
+  const isDemo = process.env.ENABLE_DEMO_FIXTURES === "true" && process.env.NODE_ENV !== "production";
+  const gdriveAuth = Boolean(process.env.GDRIVE_ACCESS_TOKEN || process.env.GDRIVE_CLIENT_ID);
+  const cloudOcrAuth = Boolean(process.env.GCP_DOC_AI_KEY || process.env.AZURE_DOC_KEY || process.env.AWS_TEXTRACT_KEY);
+
+  const statuses: ServiceAvailabilityResponse[] = [
+    {
+      service: "gdrive",
+      mode: gdriveAuth ? "live" : (isDemo ? "mock_development" : "unconfigured"),
+      available: gdriveAuth,
+      reason: gdriveAuth ? undefined : "Google Drive OAuth credentials not configured.",
+    },
+    {
+      service: "ocr_worker",
+      mode: "live",
+      available: true,
+      reason: undefined,
+    },
+    {
+      service: "multipass",
+      mode: cloudOcrAuth ? "live" : (isDemo ? "mock_development" : "unconfigured"),
+      available: cloudOcrAuth,
+      reason: cloudOcrAuth ? undefined : "Cloud OCR API keys (GCP, Azure, AWS) not configured.",
+    },
+  ];
+
+  res.json(statuses);
 });
 
 // Serve the Production DGX Scripts for download or curl
@@ -107,55 +159,8 @@ app.get("/api/dgx/telemetry-report", (_req, res) => {
   });
 });
 
-// Google Drive Folder Status & Dataset Information
-app.get("/api/gdrive/status", async (_req, res) => {
-  try {
-    const { GDRIVE_FOLDER_METADATA, GDRIVE_DOWNLOADED_FILES } = await import("./src/data/gdriveDocuments");
-    res.json({
-      folderId: GDRIVE_FOLDER_METADATA.folderId,
-      folderUrl: GDRIVE_FOLDER_METADATA.folderUrl,
-      folderName: GDRIVE_FOLDER_METADATA.folderName,
-      clusterSyncPath: GDRIVE_FOLDER_METADATA.clusterSyncPath,
-      totalFiles: GDRIVE_DOWNLOADED_FILES.length,
-      totalSizeBytes: GDRIVE_FOLDER_METADATA.totalSizeBytes,
-      totalSizeFormatted: GDRIVE_FOLDER_METADATA.totalSizeFormatted,
-      lastSynced: new Date().toISOString(),
-      syncState: "synced",
-      files: GDRIVE_DOWNLOADED_FILES.map(f => ({
-        id: f.id,
-        name: f.name,
-        sizeBytes: f.sizeBytes,
-        mimeType: f.mimeType,
-        category: f.category,
-        downloadStatus: f.downloadStatus,
-        checksumSha256: f.checksumSha256,
-        extractedFieldsCount: f.extractedFieldsCount,
-        institution: f.institution,
-        docType: f.docType
-      }))
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Trigger Google Drive Ingestion & Synchronization
-app.post("/api/gdrive/sync", async (req, res) => {
-  const { folderId } = req.body;
-  const targetFolderId = folderId || "16q3PdioHVbLIBVqU--54nBvNhqLE7bNN";
-  
-  // Return simulated streaming progress or immediate response
-  const { GDRIVE_FOLDER_METADATA, GDRIVE_DOWNLOADED_FILES } = await import("./src/data/gdriveDocuments");
-  
-  res.json({
-    status: "SYNC_COMPLETE",
-    folderId: targetFolderId,
-    message: `Successfully synchronized ${GDRIVE_DOWNLOADED_FILES.length} documents into ${GDRIVE_FOLDER_METADATA.clusterSyncPath}`,
-    filesSynced: GDRIVE_DOWNLOADED_FILES.length,
-    totalBytes: GDRIVE_FOLDER_METADATA.totalSizeBytes,
-    timestamp: new Date().toISOString()
-  });
-});
+// Mount Google Drive router with unauthenticated guard
+app.use("/api/gdrive", gdriveRouter);
 
 // Multi-Pass Regression Execution Engine (Up to 10 Passes with Monotonic Verification & Early Stopping)
 app.post("/api/engine/multi-pass", async (req, res) => {
@@ -261,7 +266,7 @@ app.post("/api/engine/multi-pass", async (req, res) => {
       engineUsed: def.engine,
       enhancementFilter: def.filter,
       status: "COMPLETED",
-      durationMs: def.baseTime + Math.floor(Math.random() * 40),
+      durationMs: def.baseTime,
       totalDocuments: GDRIVE_DOWNLOADED_FILES.length,
       fieldsExtracted: Object.keys(progressiveFields).length,
       totalFieldsPossible: totalPossible,
@@ -410,28 +415,53 @@ app.post("/api/process-document", async (req, res) => {
       engineUsed: ocrResult.engine,
       data: matchedFields
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err);
-    sendEvent("ERROR", { message: "Internal Server Error" });
+    const statusCode = err instanceof ServiceUnavailableError ? err.status : (err?.status || 503);
+    const errorCode = err instanceof ServiceUnavailableError ? err.code : (err?.code || "SERVICE_UNAVAILABLE");
+    sendEvent("ERROR", {
+      jobId,
+      code: errorCode,
+      status: statusCode,
+      message: err?.message || "Internal Server Error",
+    });
   }
   
   res.end();
 });
 
-// Start Express server and mount Vite middleware
-async function startServer() {
-  const { createServer: createHttpServer } = await import("http");
-  
-  const httpServer = createHttpServer(app);
-  
-  // Initialize High-Throughput WebSocket Data Plane
+/**
+ * Start Express server with validated environment, port-collision diagnostics,
+ * and graceful SIGINT/SIGTERM shutdown (Stage 6 lifecycle contract).
+ */
+async function startServer(options?: {
+  envSource?: NodeJS.ProcessEnv;
+  exitFn?: (code: number) => void;
+}): Promise<{ config: LoadedEnvConfig; httpServer: import("http").Server }> {
+  const exitFn = options?.exitFn ?? ((code: number) => process.exit(code));
+  const envSource = options?.envSource ?? process.env;
 
-  if (process.env.NODE_ENV !== "production") {
+  let config: LoadedEnvConfig;
+  try {
+    config = loadAndValidateEnv(envSource);
+  } catch (err) {
+    if (err instanceof EnvValidationError) {
+      console.error(`[NGX-CORE] ${err.message}`);
+      exitFn(err.exitCode);
+      throw err;
+    }
+    throw err;
+  }
+
+  const { createServer: createHttpServer } = await import("http");
+  const httpServer = createHttpServer(app);
+
+  if (config.nodeEnv !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
-    app.use(vite.middlewares); 
+    app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
@@ -440,9 +470,60 @@ async function startServer() {
     });
   }
 
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`[NGX-CORE] High-Throughput Server running on port ${PORT}`);
-  });
+  const shutdownManager = createShutdownManager(
+    httpServer,
+    {
+      shutdownTimeoutMs: config.shutdownTimeoutMs,
+      drainSockets: true,
+      onShutdown: async () => {
+        // Placeholder for future durable queue / DB flush hooks (Stage 12+).
+      },
+    },
+    { exitFn },
+  );
+  shutdownManager.install();
+
+  try {
+    await listenAsync(httpServer, config.port, config.host);
+  } catch (err) {
+    const listenErr = err as NodeJS.ErrnoException;
+    const message = formatListenError(listenErr, config.port, config.host);
+    console.error(message);
+    shutdownManager.uninstall();
+    exitFn(1);
+    throw Object.assign(new Error(message), {
+      code: listenErr.code || "LISTEN_ERROR",
+      exitCode: 1,
+    });
+  }
+
+  console.log(
+    `[NGX-CORE] High-Throughput Server running on ${config.host}:${config.port} (env=${config.nodeEnv})`,
+  );
+
+  return { config, httpServer };
 }
 
-startServer();
+export {
+  app,
+  startServer,
+  loadAndValidateEnv,
+  EnvValidationError,
+  formatListenError,
+  listenAsync,
+  createShutdownManager,
+};
+
+if (process.env.NODE_ENV !== "test") {
+  startServer().catch((err) => {
+    const code =
+      err instanceof EnvValidationError
+        ? err.exitCode
+        : typeof err?.exitCode === "number"
+          ? err.exitCode
+          : 1;
+    if (!process.exitCode) {
+      process.exit(code);
+    }
+  });
+}

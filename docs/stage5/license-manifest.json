@@ -1,0 +1,339 @@
+{
+  "manifestVersion": "1.0.0",
+  "generatedAt": "2026-09-14T09:15:00Z",
+  "project": "ocrdocs",
+  "stage": 5,
+  "nodeRuntime": {
+    "minimumVersion": ">=20.0.0",
+    "targetVersion": "24.19.0",
+    "dependencies": [
+      {
+        "name": "@google/genai",
+        "version": "2.22.0",
+        "ecosystem": "npm",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Google GenAI SDK client."
+      },
+      {
+        "name": "@tailwindcss/vite",
+        "version": "4.3.3",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "TailwindCSS Vite integration plugin."
+      },
+      {
+        "name": "@vitejs/plugin-react",
+        "version": "5.2.0",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "React JSX transform plugin for Vite."
+      },
+      {
+        "name": "dotenv",
+        "version": "17.4.2",
+        "ecosystem": "npm",
+        "license": "BSD-2-Clause",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Environment configuration loader."
+      },
+      {
+        "name": "express",
+        "version": "5.2.1",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Core HTTP server and API gateway framework."
+      },
+      {
+        "name": "lucide-react",
+        "version": "0.546.0",
+        "ecosystem": "npm",
+        "license": "ISC",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Permissive icon set for user interface."
+      },
+      {
+        "name": "motion",
+        "version": "12.43.0",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "UI animation primitives."
+      },
+      {
+        "name": "react",
+        "version": "19.3.0",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Frontend component model."
+      },
+      {
+        "name": "react-dom",
+        "version": "19.3.0",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "DOM rendering engine for React."
+      },
+      {
+        "name": "vite",
+        "version": "6.4.3",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Frontend dev server and production bundler."
+      },
+      {
+        "name": "ws",
+        "version": "8.21.3",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "WebSocket server for real-time progress streaming."
+      }
+    ],
+    "devDependencies": [
+      {
+        "name": "@types/express",
+        "version": "5.0.6",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
+      {
+        "name": "@types/node",
+        "version": "22.20.2",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
+      {
+        "name": "@types/ws",
+        "version": "8.18.1",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
+      {
+        "name": "autoprefixer",
+        "version": "10.5.6",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
+      {
+        "name": "esbuild",
+        "version": "0.28.2",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
+      {
+        "name": "tailwindcss",
+        "version": "4.3.3",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
+      {
+        "name": "tsx",
+        "version": "4.23.13",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
+      {
+        "name": "typescript",
+        "version": "5.8.3",
+        "ecosystem": "npm",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      }
+    ]
+  },
+  "pythonRuntime": {
+    "minimumVersion": ">=3.10.0",
+    "targetVersion": "3.11.9",
+    "productionDependencies": [
+      {
+        "name": "opencv-python-headless",
+        "version": "4.10.0.84",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Computer vision and image preprocessing routines."
+      },
+      {
+        "name": "Pillow",
+        "version": "10.4.0",
+        "ecosystem": "pypi",
+        "license": "HPND",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Image filtering, conversion, and raster inspection."
+      },
+      {
+        "name": "pypdfium2",
+        "version": "4.30.0",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Permissive PDF page renderer based on PDFium."
+      },
+      {
+        "name": "numpy",
+        "version": "2.1.1",
+        "ecosystem": "pypi",
+        "license": "BSD-3-Clause",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Array operations and image matrix manipulations."
+      },
+      {
+        "name": "pandas",
+        "version": "2.2.3",
+        "ecosystem": "pypi",
+        "license": "BSD-3-Clause",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Structured tabular data handling for extracted entities."
+      },
+      {
+        "name": "duckdb",
+        "version": "1.1.1",
+        "ecosystem": "pypi",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Embedded analytical storage for offline reporting."
+      },
+      {
+        "name": "torch",
+        "version": "2.4.1",
+        "ecosystem": "pypi",
+        "license": "BSD-3-Clause",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Deep learning tensor operations for neural OCR."
+      },
+      {
+        "name": "pytesseract",
+        "version": "0.3.13",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Python wrapper for Tesseract OCR engine."
+      },
+      {
+        "name": "spacy",
+        "version": "3.7.5",
+        "ecosystem": "pypi",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Tokenization and entity disambiguation."
+      },
+      {
+        "name": "easyocr",
+        "version": "1.7.2",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Lightweight deep-learning OCR model."
+      },
+      {
+        "name": "gdown",
+        "version": "5.2.0",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Google Drive document ingestion utility."
+      }
+    ],
+    "screenedResearchDependencies": [
+      {
+        "name": "PyMuPDF",
+        "version": "1.24.10",
+        "ecosystem": "pypi",
+        "license": "AGPL-3.0",
+        "commercialUseAllowed": false,
+        "copyleft": true,
+        "notes": "Dual-licensed AGPL-3.0/Commercial Artifex; prohibited from default closed-source production builds without Artifex license. Replaced by pypdfium2 in production scope."
+      },
+      {
+        "name": "paddleocr",
+        "version": "2.8.1",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Permissive code license; neural weights subject to APRA commercial audit."
+      },
+      {
+        "name": "surya-ocr",
+        "version": "0.4.14",
+        "ecosystem": "pypi",
+        "license": "GPL-3.0",
+        "commercialUseAllowed": false,
+        "copyleft": true,
+        "notes": "GPL-3.0 copyleft restricted to local research/evaluation mode; excluded from production deployment."
+      }
+    ]
+  },
+  "nativeTools": {
+    "tools": [
+      {
+        "name": "tesseract-ocr",
+        "version": "5.4.1",
+        "ecosystem": "system",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Standard native OCR binary executable."
+      },
+      {
+        "name": "poppler-utils",
+        "version": "24.02.0",
+        "ecosystem": "system",
+        "license": "GPL-2.0",
+        "commercialUseAllowed": false,
+        "copyleft": true,
+        "notes": "Screened external utility; restricted to separate CLI process invocations; replaced by pypdfium2 in production runtime."
+      }
+    ]
+  },
+  "licenseSummary": {
+    "totalProductionDependencies": 22,
+    "commercialPermissiveCount": 22,
+    "copyleftCountInProduction": 0,
+    "screenedConditionalCount": 3
+  }
+}

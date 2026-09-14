@@ -4,6 +4,10 @@
  */
 
 import { BankFieldDefinition } from '../types';
+import {
+  EXTENDED_BANK_FIELD_DEFINITIONS,
+  EXTENDED_CORE_IDENTIFIER_DEFINITIONS,
+} from './fields';
 
 export const BANK_FIELD_DEFINITIONS: BankFieldDefinition[] = [
   {
@@ -366,6 +370,7 @@ export const BANK_FIELD_DEFINITIONS: BankFieldDefinition[] = [
     exampleLabels: ['Balance Transfer Amount', 'Biller Code', 'BT Facility', 'Transfer Balance'],
     sampleExtractedValue: '$6,500.00 (Biller: 84920)',
   },
+  ...EXTENDED_BANK_FIELD_DEFINITIONS,
 ];
 
 export const CORE_IDENTIFIER_DEFINITIONS: BankFieldDefinition[] = [
@@ -405,4 +410,5 @@ export const CORE_IDENTIFIER_DEFINITIONS: BankFieldDefinition[] = [
     exampleLabels: ['Postcode', 'Postal Code'],
     sampleExtractedValue: '3000',
   },
+  ...EXTENDED_CORE_IDENTIFIER_DEFINITIONS,
 ];

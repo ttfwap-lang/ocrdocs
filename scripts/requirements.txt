@@ -1,0 +1,32 @@
+# ==============================================================================
+# OCRDocs Python Worker Pinned Dependencies (Stage 5 Reproducible Dependencies)
+# Target Runtime: Python >= 3.10, < 3.13 (64-bit)
+# Operating Systems: Linux (Ubuntu 22.04 LTS / Debian 12), Windows Server 2022 / 11
+# License Policy: Permissive (Apache-2.0, MIT, BSD-3-Clause) required for production.
+#                 Screened engines with copyleft (GPL/AGPL) flagged in license-manifest.json.
+# ==============================================================================
+
+# --- Core Image Processing & PDF Extraction (Production Scope: Permissive) ---
+opencv-python-headless==4.10.0.84
+Pillow==10.4.0
+pypdfium2==4.30.0
+
+# --- Scientific Computing, Dataframes & Storage (Production Scope: Permissive) ---
+numpy==2.1.1
+pandas==2.2.3
+duckdb==1.1.1
+torch==2.4.1
+
+# --- OCR Engines & NLP (Production Scope: Permissive) ---
+pytesseract==0.3.13
+spacy==3.7.5
+easyocr==1.7.2
+gdown==5.2.0
+
+# --- Screened Evaluation Engines (Subject to Commercial / Licensing Screening) ---
+# PyMuPDF: Dual-licensed AGPL-3.0 / Commercial Artifex. Commercial distribution requires Artifex license.
+PyMuPDF==1.24.10
+# PaddleOCR: Apache-2.0 runtime
+paddleocr==2.8.1
+# Surya OCR: GPL-3.0 (Evaluation / Research mode only; excluded from default production builds)
+surya-ocr==0.4.14

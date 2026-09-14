@@ -1,0 +1,39 @@
+# Normalise line endings so Windows and CI checkouts produce identical diffs.
+# Text files are stored with LF in the repository; Git converts on checkout
+# according to core.autocrlf / eol settings below.
+* text=auto
+
+# Files that must keep LF even on Windows (shell scripts, lockfiles, configs
+# consumed by POSIX tooling).
+*.sh text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.py text eol=lf
+bun.lock text eol=lf
+
+# Files that must keep CRLF (Windows-only scripts).
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets: never diff, never convert.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.7z binary
+*.gz binary

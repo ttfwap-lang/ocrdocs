@@ -1,0 +1,28 @@
+# {{PROJECT_NAME}} acceptance register
+
+One row per promise the project makes. The register is where optimism goes to be checked: a
+row is `verified` **only** when its evidence exists as a file or command output that someone
+who did not do the work can inspect.
+
+Status values, and nothing else:
+
+| Status | Meaning |
+|---|---|
+| `verified` | Evidence exists, was produced by a real run, and is linked below |
+| `unverified` | Claimed or implemented, but the evidence does not exist yet |
+| `blocked-external` | Needs a named action no agent can take; the action is written in the row |
+| `not-started` | No work yet |
+
+Rules:
+
+- A stage passing its gate does **not** automatically verify its register rows; each row needs
+  its own evidence.
+- `unverified` never becomes `verified` by argument, age or confidence.
+- `blocked-external` rows name the exact artifact or authorization that would clear them, and
+  they do not block unrelated stages.
+- Never delete a row to improve the picture. Supersede it and say why.
+
+| # | Promise | Stage | Status | Evidence (relative path / command + exit code) | Blocker (if any) |
+|---|---|---|---|---|---|
+| 1 | <what the project claims to do> | 1 | not-started | — | — |
+| 2 | <...> | 2 | not-started | — | — |

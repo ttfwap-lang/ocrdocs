@@ -1,0 +1,77 @@
+# Autonomous operating rules — {{PROJECT_NAME}}
+
+This file is the highest authority in this project. It outranks `.junie/guidelines.md`, every
+skill, and any speed or convenience argument. Read `PROJECT_CHARTER.md`, `STATE.md` and the
+current checkpoint before changing anything. The owner authorizes implementation and
+documented engineering assumptions — not fabricated evidence, and not bypassing security,
+authentication, tool limits or external approvals.
+
+Full rationale and the portable long form: `.junie/skills/autonomy-core/reference/rules-charter.md`.
+
+## Continuous execution protocol
+
+1. **Execute:** implement the current stage's bounded plan and write tests with the change.
+   For a defect, demonstrate the reproduction failing before the fix. Preserve working code
+   and existing user changes.
+2. **Comprehensive review:** review implementation, security, failure paths and downstream
+   impact. Run the real build, type checks, new tests and all relevant downstream suites. A
+   separate review invocation must examine the evidence; a successful agent exit is not a
+   stage pass, and the author of a change never reviews it.
+3. **State update:** record changes, commands and outcomes, errors, fixes, unresolved risks
+   and the checkpoint identity in `STATE.md` and the run evidence. Never log secrets{{STATE_SECRETS_EXTRA}}.
+4. **Next-stage planning:** read the current state and the next charter stage. Produce
+   concrete ordered tasks, affected components, a test/reproduction strategy, the acceptance
+   evidence and the blockers before executing it.
+5. **Auto-proceed:** continue with the next ready stage without routine approval prompts while
+   authorization, authentication, budgets, deadlines and verification permit. Complete the
+   roadmap only when all gates actually pass; never manufacture completion to keep the loop
+   moving.
+
+## Limits, recovery and pivots
+
+- Bounded runtime: up to {{RUNTIME_HOURS}} hours per window, using real installed tooling and
+  supported CLI flags. No fake maximum-token flags, no unbounded spending claims, no bypassing
+  provider or session limits.
+- An ordinary verification failure is retried **with a recorded diagnosis**. After the fourth
+  consecutive failure of the same check, discard only the isolated unaccepted candidate,
+  preserve the evidence, and require a materially different plan before the next attempt.
+- Pivots must be proportional to the defect: a timeout or a missing credential is not evidence
+  that the application needs a rewrite. Never weaken, skip or delete a failing check to obtain
+  a pass.
+- Bound attempts, pivots, subprocess time, output and total runtime. Repeated failure after the
+  pivot budget is exhausted produces a durable blocked checkpoint, not a hot loop. Permanent
+  authentication or authorization failures are not retried indefinitely.
+- No blanket `git reset`/`clean`, no deletion of user files, no automatic commits. Verify that a
+  VCS rollback actually exists before relying on one.
+- Work in an isolated candidate directory and promote only reviewed, verified changes after
+  detecting conflicts with the accepted snapshot. A working directory is not an OS security
+  sandbox; the agent runs with host privileges unless separately isolated.
+- Protect the runner, its control and evidence files, the verification scripts and these rules
+  from self-modification during unattended work. No candidate may rewrite its own acceptance
+  gates or controller history to mark itself passed.
+- Preserve a recoverable promotion journal; an interruption must not turn a partially copied
+  candidate into a completed stage.
+- Make conservative engineering assumptions without asking routine questions, and document
+  them. Missing credentials, lawful data permission, independent security or legal review and
+  customer approval cannot be replaced with assumptions.
+- Pause safely for a stop request, exhausted budgets, integrity or conflict failures, missing
+  authentication, or external gates. A host shutdown or session end can interrupt automation;
+  report it honestly and resume from verified checkpoints rather than pretending continuous
+  operation.
+
+## Verification and scope discipline
+
+- All runtime claims require actual commands, outcomes and versioned evidence. Distinguish
+  source inspection, fixtures with fakes, real execution and production verification.
+- The repository gate is: {{GATE_COMMANDS_INLINE}}. A stage's own acceptance evidence is
+  additional, never a substitute.
+- For new code cover happy paths, invalid input, edge cases, interruption and negative
+  authorization. Keep randomness reproducible where supported.
+- No secrets in arguments, source control, `STATE.md`, logs or generated reports.
+  {{OFFLIMITS_CLAUSE}}
+- Do not install persistent services, schedule privileged tasks or deploy publicly merely to
+  sustain the loop. Any unattended host must have explicit retention and shutdown controls.
+- Only mark a stage complete when both the required verification and its semantic acceptance
+  evidence pass. An unresolved external gate keeps that stage blocked.
+- Keep persistent state accurate even when work is incomplete. The planning target is not the
+  current completion score.

@@ -1,0 +1,218 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.0.0",
+  "stage": 3,
+  "title": "Architecture Failure Model and State Machine",
+  "charterRef": "PROJECT_CHARTER.md:51-52",
+  "states": [
+    "pending",
+    "claimed",
+    "processing",
+    "completed",
+    "failed",
+    "cancelled"
+  ],
+  "failureTriggers": [
+    "upload_interrupted",
+    "worker_timeout",
+    "worker_crash",
+    "server_restart",
+    "db_busy",
+    "storage_failure",
+    "partial_commits"
+  ],
+  "cleanupActions": [
+    "unlink_partial",
+    "requeue_job",
+    "mark_poison",
+    "rollback_tx",
+    "reclaim_expired_lease"
+  ],
+  "invariants": {
+    "ephemeralMemoryForbidsQueue": true,
+    "authoritativeStore": "sqlite_wal",
+    "maxWorkerRetries": 3,
+    "defaultLeaseTimeoutSec": 300,
+    "busyTimeoutMs": 5000,
+    "poisonPillErrorCode": "ERR_POISON_PILL",
+    "quarantinePoisonPill": true,
+    "idempotentReconciliation": true
+  },
+  "transitions": [
+    {
+      "from": "pending",
+      "to": "claimed",
+      "trigger": "worker_lease_acquired",
+      "action": "assign_lease_token",
+      "actor": "scheduler"
+    },
+    {
+      "from": "claimed",
+      "to": "processing",
+      "trigger": "worker_started",
+      "action": "record_start_timestamp",
+      "actor": "worker"
+    },
+    {
+      "from": "processing",
+      "to": "completed",
+      "trigger": "extraction_succeeded",
+      "action": "commit_extracted_fields",
+      "actor": "orchestrator"
+    },
+    {
+      "from": "processing",
+      "to": "pending",
+      "trigger": "worker_timeout",
+      "condition": "attempts < maxWorkerRetries",
+      "action": "increment_attempt_requeue",
+      "actor": "lease_monitor"
+    },
+    {
+      "from": "processing",
+      "to": "failed",
+      "trigger": "worker_timeout",
+      "condition": "attempts >= maxWorkerRetries",
+      "action": "mark_poison_pill",
+      "actor": "lease_monitor"
+    },
+    {
+      "from": "processing",
+      "to": "pending",
+      "trigger": "worker_crash",
+      "condition": "attempts < maxWorkerRetries",
+      "action": "increment_attempt_requeue",
+      "actor": "process_supervisor"
+    },
+    {
+      "from": "processing",
+      "to": "failed",
+      "trigger": "worker_crash",
+      "condition": "attempts >= maxWorkerRetries",
+      "action": "mark_poison_pill",
+      "actor": "process_supervisor"
+    },
+    {
+      "from": "claimed",
+      "to": "pending",
+      "trigger": "server_restart",
+      "condition": "lease_expired == true",
+      "action": "reclaim_expired_lease",
+      "actor": "reconciler"
+    },
+    {
+      "from": "processing",
+      "to": "pending",
+      "trigger": "server_restart",
+      "condition": "lease_expired == true && attempts < maxWorkerRetries",
+      "action": "reclaim_expired_lease",
+      "actor": "reconciler"
+    },
+    {
+      "from": "processing",
+      "to": "failed",
+      "trigger": "server_restart",
+      "condition": "attempts >= maxWorkerRetries",
+      "action": "mark_poison_pill",
+      "actor": "reconciler"
+    },
+    {
+      "from": "pending",
+      "to": "cancelled",
+      "trigger": "upload_interrupted",
+      "action": "unlink_partial",
+      "actor": "intake_gateway"
+    }
+  ],
+  "walkthroughs": [
+    {
+      "id": "scenario_upload_interrupted",
+      "name": "Interrupted Document Upload",
+      "trigger": "upload_interrupted",
+      "currentState": "pending",
+      "nextState": "cancelled",
+      "retryAllowed": false,
+      "leaseReclaimSec": 0,
+      "cleanupAction": "unlink_partial",
+      "steps": [
+        "Client begins multipart stream to /api/process-document.",
+        "Network connection abruptly severs before stream completion.",
+        "Express intake handler catches socket close error.",
+        "Unfinished file at storage/private/temp/{jobId}.upload.tmp is unlinked immediately.",
+        "No database transaction is committed; zero orphaned records created."
+      ]
+    },
+    {
+      "id": "scenario_worker_timeout",
+      "name": "OCR Worker Execution Timeout",
+      "trigger": "worker_timeout",
+      "currentState": "processing",
+      "nextState": "pending",
+      "retryAllowed": true,
+      "leaseReclaimSec": 300,
+      "cleanupAction": "requeue_job",
+      "steps": [
+        "Worker claims job with a 300-second lease token.",
+        "Worker encounters pathological image and stalls beyond 300 seconds without heartbeat.",
+        "Orchestrator lease monitor detects lease_expires_at < now().",
+        "Orchestrator sends SIGKILL to runaway worker subprocess.",
+        "If job attempt < 3: increments attempt counter, resets lease token, reverts state to pending.",
+        "If job attempt == 3: transitions state to failed with ERR_POISON_PILL and quarantines."
+      ]
+    },
+    {
+      "id": "scenario_worker_crash",
+      "name": "OCR Worker Process Crash",
+      "trigger": "worker_crash",
+      "currentState": "processing",
+      "nextState": "pending",
+      "retryAllowed": true,
+      "leaseReclaimSec": 0,
+      "cleanupAction": "requeue_job",
+      "steps": [
+        "Worker subprocess terminates unexpectedly with non-zero exit code (e.g. OOM SIGKILL 137).",
+        "Orchestrator childProcess 'exit' handler catches abnormal termination.",
+        "Orchestrator inspects attempt count in SQLite.",
+        "If attempt < 3: resets worker_id to null, reverts status to pending for next available worker.",
+        "If attempt == 3: marks job failed with code ERR_WORKER_CRASH_EXHAUSTED."
+      ]
+    },
+    {
+      "id": "scenario_server_restart",
+      "name": "Orchestrator Server Crash & Restart",
+      "trigger": "server_restart",
+      "currentState": "processing",
+      "nextState": "pending",
+      "retryAllowed": true,
+      "leaseReclaimSec": 300,
+      "cleanupAction": "reclaim_expired_lease",
+      "steps": [
+        "Server host suffers abrupt power loss or SIGKILL while 5 jobs are in processing.",
+        "All in-memory process state is lost.",
+        "On server reboot, StartupReconciler runs before opening HTTP listener.",
+        "Reconciler executes atomic query: SELECT * FROM ocr_jobs WHERE status IN ('claimed', 'processing') AND lease_expires_at < strftime('%s','now').",
+        "Orphaned jobs with attempts < 3 are safely reverted to 'pending'.",
+        "Orphaned jobs with attempts >= 3 are transitioned to 'failed' (poison pill).",
+        "Zero dependence on ephemeral job queues or in-memory lists."
+      ]
+    },
+    {
+      "id": "scenario_database_busy_partial_commit",
+      "name": "Database Busy Contention & Partial Commit Rollback",
+      "trigger": "db_busy",
+      "currentState": "processing",
+      "nextState": "processing",
+      "retryAllowed": true,
+      "leaseReclaimSec": 0,
+      "cleanupAction": "rollback_tx",
+      "steps": [
+        "Multiple workers attempt concurrent field result writes, triggering transient SQLITE_BUSY.",
+        "SQLite busy_timeout (5000ms) permits queueing.",
+        "If timeout expires before lock acquisition, transaction throws SQLiteBusyException.",
+        "Orchestrator catches exception and invokes ROLLBACK TRANSACTION.",
+        "Partial extracted fields are rolled back completely from database.",
+        "Worker retains lease and retries write with exponential jittered backoff (100ms, 200ms, 400ms)."
+      ]
+    }
+  ]
+}

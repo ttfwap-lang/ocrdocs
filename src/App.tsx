@@ -14,7 +14,7 @@ import { RegexDictionaryView } from './components/RegexDictionaryView';
 import { GeminiChatbot } from './components/GeminiChatbot';
 import { SAMPLE_DOCUMENTS } from './data/sampleDocuments';
 import { extractBankFieldsFromText } from './utils/ocrMatcherEngine';
-import { BANK_FIELD_DEFINITIONS } from './data/bankFields';
+import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from './data/bankFields';
 import { Cpu, HardDrive, ShieldCheck, Activity, FolderDown, Layers } from 'lucide-react';
 
 export default function App() {
@@ -53,7 +53,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         matchCount={matchCount}
-        totalFields={BANK_FIELD_DEFINITIONS.length + 3}
+        totalFields={BANK_FIELD_DEFINITIONS.length + CORE_IDENTIFIER_DEFINITIONS.length}
       />
 
       {/* Cluster & Telemetry Bar */}

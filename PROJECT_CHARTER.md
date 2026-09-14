@@ -210,3 +210,7 @@ Review frozen scope and weighted evidence with independent findings and handover
 ## Execution and external boundaries
 
 RULES.md governs the execute/review/state/plan/proceed cycle. A 72-hour limit is a requested maximum runtime, not a promise of completion. The runner must obey its actual host/process lifetime, authentication, deadlines, resource limits and agent capabilities. Never invent unlimited budgets, supported flags, independent approvals or successful tests. Unavailable credentials/permissions or external reviews are recorded as blockers; continue only genuinely independent authorized work.
+
+## Stage dossiers and execution index
+
+Execution-ready stage dossiers with task breakdowns, owned paths, frozen contracts, fan-out plans, and acceptance evidence are maintained under `docs/stages/`. See `docs/stages/README.md` for the dynamic status index tracking progress across all 55 stages.

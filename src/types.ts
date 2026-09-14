@@ -173,3 +173,69 @@ export interface MultiPassRunSummary {
   gain: number;
   passes: PassExecutionMetric[];
 }
+
+export interface ServiceAvailabilityResponse {
+  service: 'gdrive' | 'ocr_worker' | 'multipass';
+  mode: 'live' | 'mock_development' | 'unconfigured';
+  available: boolean;
+  reason?: string;
+  configuredAt?: string;
+}
+
+export interface PinnedDependency {
+  name: string;
+  version: string;
+  ecosystem: 'npm' | 'pypi' | 'system';
+  license: string;
+  integrityHash?: string;
+  commercialUseAllowed: boolean;
+  copyleft?: boolean;
+  notes?: string;
+}
+
+export interface DependencyLicenseManifest {
+  manifestVersion: string;
+  generatedAt: string;
+  nodeRuntime: {
+    minimumVersion: string;
+    targetVersion: string;
+    dependencies: PinnedDependency[];
+    devDependencies: PinnedDependency[];
+  };
+  pythonRuntime: {
+    minimumVersion: string;
+    targetVersion: string;
+    productionDependencies: PinnedDependency[];
+    screenedResearchDependencies: PinnedDependency[];
+  };
+  nativeTools: {
+    tools: PinnedDependency[];
+  };
+  licenseSummary: {
+    totalDirectDependencies: number;
+    commercialPermissiveCount: number;
+    copyleftCountInProduction: number;
+    screenedConditionalCount: number;
+  };
+}
+
+/** Stage 6 — server bind/lifecycle configuration contract. */
+export interface ServerLifecycleConfig {
+  port: number;
+  host: string;
+  shutdownTimeoutMs: number;
+  drainSockets: boolean;
+  onShutdown: () => Promise<void>;
+}
+
+/** Stage 6 — validated runtime environment snapshot (secrets never logged). */
+export interface LoadedEnvConfig {
+  nodeEnv: 'development' | 'production' | 'test';
+  port: number;
+  host: string;
+  databasePath: string;
+  storageRoot: string;
+  jwtSecret?: string;
+  shutdownTimeoutMs: number;
+  enableDemoFixtures: boolean;
+}

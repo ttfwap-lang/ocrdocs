@@ -16,7 +16,7 @@ Status: engineering contract executed under autonomous assumptions; actual produ
 | Private local OCR and explicit external data-sharing boundary | Configuration/network/worker permissions and redaction tests; stages 14–18, 29, 34–35 | Policy selected; enforcement unverified |
 | Retention/deletion and offboarding match customer obligations | Storage inventory, interrupted deletion, restore/deletion reconciliation and qualified policy review; stages 34, 45, 51 | External obligations not assumed |
 | Dependencies and models permit intended use | License inventory/notices and qualified interpretation as necessary; stages 5, 18, 47 | Pending inventory/review |
-| Reproducible build and reliable verification | Clean installation and positive/negative test pipeline; stages 5–7, 38–39 | Existing local type-check/build pass; clean production evidence pending |
+| Reproducible build and reliable verification | Clean installation and positive/negative test pipeline; stages 5–7, 38–39 | Engineering evidence verified for stages 5–7; clean production evidence pending |
 | Operational support is transferable | Operator-run install/rotate/restore/incident exercises; stage 53 | External operator not yet assigned |
 | 99/100 readiness is justified | Weighted dossier plus mandatory security/integrity/recovery/license/workflow gates; stages 43, 54–55 | Not reached; no completion claim |
 | Unattended execution remains bounded and truthful | Controller tests and actual invocation evidence; rules/automation documentation | Controller tests pass; sustained real run pending |

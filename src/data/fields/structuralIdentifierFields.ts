@@ -1,0 +1,81 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { BankFieldDefinition } from '../../types';
+
+export const STRUCTURAL_IDENTIFIER_FIELDS: BankFieldDefinition[] = [
+  {
+    id: 'account_number',
+    number: 104,
+    name: 'Australian Bank Account Number',
+    label: 'account_number',
+    category: 'facility',
+    maxToleranceRegex: '(\\b\\d{3}[- ]?\\d{3}[- ]?\\d{3}\\b|\\b\\d{6,10}\\b)',
+    description: 'Standard 6 to 10 digit Australian bank account number.',
+    targetDataType: 'identifier',
+    exampleLabels: ['Account Number', 'Bank Account No', 'Acc Number'],
+    sampleExtractedValue: '492019482',
+  },
+  {
+    id: 'acn',
+    number: 105,
+    name: 'Australian Company Number (ACN)',
+    label: 'acn',
+    category: 'employment',
+    maxToleranceRegex: '(\\b\\d{3}[ ]?\\d{3}[ ]?\\d{3}\\b)',
+    description: 'Standard 9-digit Australian Company Number registered with ASIC.',
+    targetDataType: 'identifier',
+    exampleLabels: ['ACN', 'Australian Company Number'],
+    sampleExtractedValue: '102 443 916',
+  },
+  {
+    id: 'tfn',
+    number: 106,
+    name: 'Tax File Number (TFN)',
+    label: 'tfn',
+    category: 'identity',
+    maxToleranceRegex: '(\\b\\d{3}[ -]?\\d{3}[ -]?\\d{2,3}\\b)',
+    description: 'Standard 8 or 9-digit Australian Tax File Number issued by ATO.',
+    targetDataType: 'identifier',
+    exampleLabels: ['TFN', 'Tax File Number'],
+    sampleExtractedValue: '123 456 782',
+  },
+  {
+    id: 'medicare_number',
+    number: 107,
+    name: 'Medicare Number',
+    label: 'medicare_number',
+    category: 'identity',
+    maxToleranceRegex: '(\\b[2-6]\\d{3}[ ]?\\d{5}[ ]?\\d(?:[- /]?\\d)?\\b)',
+    description: 'Australian 10-digit Medicare card number with optional individual reference number (IRN).',
+    targetDataType: 'identifier',
+    exampleLabels: ['Medicare Number', 'Medicare Card No'],
+    sampleExtractedValue: '2123 45678 1',
+  },
+  {
+    id: 'bpay_biller_code',
+    number: 108,
+    name: 'BPAY Biller Code',
+    label: 'bpay_biller_code',
+    category: 'facility',
+    maxToleranceRegex: '(\\b\\d{4,6}\\b)',
+    description: 'Standard 4 to 6 digit Australian BPAY Biller Code.',
+    targetDataType: 'identifier',
+    exampleLabels: ['Biller Code', 'BPAY Biller Code', 'BPAY Code'],
+    sampleExtractedValue: '84920',
+  },
+  {
+    id: 'card_number_masked',
+    number: 109,
+    name: 'Card Number (Masked)',
+    label: 'card_number_masked',
+    category: 'facility',
+    maxToleranceRegex: '(\\b(?:\\d{4}[ -]?(?:[\\*X]{4}[ -]?){2}\\d{4}|[\\*X]{12}\\d{4}|\\d{16})\\b)',
+    description: 'PCI-DSS masked primary account number or tokenized 16-digit card number.',
+    targetDataType: 'identifier',
+    exampleLabels: ['Card Number (Masked)', 'Masked Card Number', 'Card PAN', 'Credit Card No'],
+    sampleExtractedValue: '4532 **** **** 1234',
+  },
+];

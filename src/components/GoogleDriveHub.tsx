@@ -50,7 +50,7 @@ export const GoogleDriveHub: React.FC<GoogleDriveHubProps> = ({
 
   const handleSyncFromDrive = async () => {
     setIsSyncing(true);
-    setSyncFeedback('Initiating automated cluster synchronization from Google Drive folder...');
+    setSyncFeedback('Initiating cluster synchronization from Google Drive folder...');
 
     try {
       const res = await fetch('/api/gdrive/sync', {
@@ -59,15 +59,15 @@ export const GoogleDriveHub: React.FC<GoogleDriveHubProps> = ({
         body: JSON.stringify({ folderId: GDRIVE_FOLDER_METADATA.folderId }),
       });
       const data = await res.json();
-      setTimeout(() => {
-        setIsSyncing(false);
-        setSyncFeedback(`Successfully synchronized ${data.filesSynced} files (${GDRIVE_FOLDER_METADATA.totalSizeFormatted}) directly into NVMe cluster storage.`);
-      }, 900);
-    } catch {
-      setTimeout(() => {
-        setIsSyncing(false);
-        setSyncFeedback('Cluster storage synchronized. 9 files cached and verified with SHA-256 integrity.');
-      }, 700);
+      setIsSyncing(false);
+      if (!res.ok) {
+        setSyncFeedback(`Sync unavailable (${res.status}): ${data.message || data.error || 'Google Drive credentials required.'}`);
+        return;
+      }
+      setSyncFeedback(`Successfully synchronized ${data.filesSynced} files (${GDRIVE_FOLDER_METADATA.totalSizeFormatted}) directly into NVMe cluster storage.`);
+    } catch (err: any) {
+      setIsSyncing(false);
+      setSyncFeedback(`Sync failed: ${err?.message || 'Network communication error'}`);
     }
   };
 

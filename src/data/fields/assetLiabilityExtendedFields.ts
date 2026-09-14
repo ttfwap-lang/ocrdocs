@@ -1,0 +1,81 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { BankFieldDefinition } from '../../types';
+
+export const ASSET_LIABILITY_EXTENDED_FIELDS: BankFieldDefinition[] = [
+  {
+    id: 'savings_balance',
+    number: 80,
+    name: 'Savings & Offset Account Balances',
+    label: 'savings_balance',
+    category: 'assets_liabilities',
+    maxToleranceRegex: '([s5]aving[s5][_-]?ba[l1]ance|[o0]ff[s5]et[_-]?ba[l1]ance|ca[s5]h[_-]?at[_-]?bank|term[_-]?dep[o0][s5]it|cheq[uv]e[_-]?acc[o0]unt|ca[s5]h[_-]?re[s5]erve[s5]|bank[_-]?ba[l1]ance|[l1]iq[uv]id[_-]?[s5]aving[s5])',
+    description: 'Matches liquid savings accounts, mortgage offset funds, and short-term bank deposits.',
+    targetDataType: 'currency',
+    exampleLabels: ['Savings Balance', 'Offset Account', 'Cash at Bank', 'Term Deposit'],
+    sampleExtractedValue: '$48,500.00',
+  },
+  {
+    id: 'superannuation_balance',
+    number: 81,
+    name: 'Superannuation Fund Balance',
+    label: 'superannuation_balance',
+    category: 'assets_liabilities',
+    maxToleranceRegex: '([s5]uperannuati[o0]n[_-]?ba[l1]ance|[s5]uper[_-]?ba[l1]ance|[s5]uper[_-]?fund|[s5]m[s5]f[_-]?ba[l1]ance|retirement[_-]?fund|[s5]uper[_-]?annuity|au[s5]tra[l1]ian[s5]uper|[s5]uper[_-]?t[o0]ta[l1])',
+    description: 'Captures member balances in APRA-regulated superannuation funds or SMSFs.',
+    targetDataType: 'currency',
+    exampleLabels: ['Superannuation Balance', 'Super Fund', 'SMSF Balance', 'Retirement Savings'],
+    sampleExtractedValue: '$184,200.00',
+  },
+  {
+    id: 'vehicle_value',
+    number: 82,
+    name: 'Motor Vehicle Market Value',
+    label: 'vehicle_value',
+    category: 'assets_liabilities',
+    maxToleranceRegex: '(vehic[l1]e[_-]?va[l1]ue|car[_-]?va[l1]ue|m[o0]t[o0]r[_-]?vehic[l1]e|aut[o0]m[o0]bi[l1]e[_-]?va[l1]ue|redb[o0][o0]k[_-]?va[l1]ue|vehic[l1]e[_-]?a[s5][s5]et|car[_-]?a[s5][s5]et|tran[s5]p[o0]rt[_-]?a[s5][s5]et)',
+    description: 'Extracts estimated market value of cars, motorbikes, or commercial road vehicles.',
+    targetDataType: 'currency',
+    exampleLabels: ['Vehicle Value', 'Car Value', 'Motor Vehicle Asset', 'Redbook Value'],
+    sampleExtractedValue: '$32,000.00',
+  },
+  {
+    id: 'investment_property_value',
+    number: 83,
+    name: 'Investment Property Value',
+    label: 'investment_property_value',
+    category: 'assets_liabilities',
+    maxToleranceRegex: '(inve[s5]tment[_-]?pr[o0]perty[_-]?va[l1]ue|rea[l1][_-]?e[s5]tate[_-]?inve[s5]tment|pr[o0]perty[_-]?p[o0]rtf[o0][l1]i[o0]|sec[o0]ndary[_-]?pr[o0]perty|renta[l1][_-]?pr[o0]perty[_-]?va[l1]ue|rea[l1][_-]?e[s5]tate[_-]?a[s5][s5]et|pr[o0]perty[_-]?va[l1]uati[o0]n|[l1]and[_-]?va[l1]ue)',
+    description: 'Matches estimated or appraised value of investment real estate holdings.',
+    targetDataType: 'currency',
+    exampleLabels: ['Investment Property Value', 'Real Estate Portfolio', 'Rental Property Value', 'Property Valuation'],
+    sampleExtractedValue: '$680,000.00',
+  },
+  {
+    id: 'bnpl_commitments',
+    number: 84,
+    name: 'Buy Now Pay Later (BNPL) Commitments',
+    label: 'bnpl_commitments',
+    category: 'assets_liabilities',
+    maxToleranceRegex: '(bnp[l1][_-]?c[o0]mmitment[s5]|afterpay|zip[_-]?pay|zip[_-]?m[o0]ney|k[l1]arna|paypa[l1][_-]?pay[_-]?in[_-]?4|buy[_-]?n[o0]w[_-]?pay[_-]?[l1]ater|in[s5]ta[l1][l1]ment[_-]?credit)',
+    description: 'Identifies BNPL credit facilities and current owing balances across Afterpay, Zip, and Klarna.',
+    targetDataType: 'currency',
+    exampleLabels: ['BNPL Commitments', 'Afterpay', 'Zip Pay', 'Buy Now Pay Later'],
+    sampleExtractedValue: '$650.00 limit ($120.00 owing)',
+  },
+  {
+    id: 'hecs_help_debt',
+    number: 85,
+    name: 'HECS / HELP Student Loan Debt',
+    label: 'hecs_help_debt',
+    category: 'assets_liabilities',
+    maxToleranceRegex: '(hec[s5][_-]?debt|he[l1]p[_-]?debt|[s5]tudent[_-]?[l1][o0]an|higher[_-]?educati[o0]n[_-]?[l1][o0]an|vet[_-]?fee[_-]?he[l1]p|[s5]tudy[_-]?[l1][o0]an|at[o0][_-]?[s5]tudent[_-]?debt|hec[s5][_-]?he[l1]p)',
+    description: 'Extracts outstanding balance of Australian Government HECS-HELP student loans.',
+    targetDataType: 'currency',
+    exampleLabels: ['HECS Debt', 'HELP Student Loan', 'Higher Education Loan', 'Student Debt'],
+    sampleExtractedValue: '$21,400.00',
+  },
+];

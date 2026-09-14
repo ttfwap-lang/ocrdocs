@@ -31,6 +31,7 @@ The start stage is used only for a new checkpoint. Existing checkpoints resume t
 - No scheduled task, system service, CI credential, new API credit allocation, infinite retry setting or unsupported token-budget flag is silently installed.
 - A future dedicated unattended host should run this same foreground command as its supervised workload with an explicit shutdown deadline, protected credentials and retained checkpoints. This is a deployment requirement, not an already configured service.
 - The runner does not measure or guarantee monetary spend. Time, attempts and pivots are bounded; provider billing and account limits remain provider-controlled.
+- Work longer than one deadline is performed as **chained windows**, not as one process. `.junie\skills\true-e2e\scripts\true-e2e-loop.ps1` supervises the chain: it honours `automation\STOP` without removing it, launches this runner per window with captured evidence under `automation\true-e2e`, and stops the chain after three windows without any checkpoint change instead of hot-looping. A window past the persisted deadline requires an owner-placed `automation\RENEW` token, which the supervisor consumes once, moves to `automation\true-e2e\renewals` as evidence and records in STATE.md; nothing extends a deadline silently. Its `-ExtendPivots` switch resets an exhausted pivot budget at most once per invocation, also recorded. This is a supervised foreground workload, not an installed service.
 
 ## State and artifacts
 
