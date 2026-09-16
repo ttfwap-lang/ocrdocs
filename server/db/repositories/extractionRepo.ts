@@ -154,6 +154,17 @@ export function createExtractionRepo(db: DatabaseType) {
         return undefined;
       }
       const fields = this.getFieldsAsContract(extractionId);
+      let engineUsed: string | undefined;
+      let passes: Array<Record<string, unknown>> | undefined;
+      if (extraction.extraction_json) {
+        try {
+          const parsed = JSON.parse(extraction.extraction_json);
+          engineUsed = typeof parsed.engineUsed === 'string' ? parsed.engineUsed : undefined;
+          passes = Array.isArray(parsed.passes) ? parsed.passes : undefined;
+        } catch {
+          // Malformed JSON must not break result retrieval.
+        }
+      }
       return {
         version: extraction.extraction_version,
         documentId: extraction.document_id,
@@ -162,6 +173,8 @@ export function createExtractionRepo(db: DatabaseType) {
         metadata: {
           extractionVersion: extraction.extraction_version,
           createdAt: extraction.created_at,
+          engineUsed,
+          passes,
         },
       };
     },

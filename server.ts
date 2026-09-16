@@ -1,6 +1,9 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
+import { createHash, timingSafeEqual } from "crypto";
+import { readFile } from "fs/promises";
+import { PDFParse } from "pdf-parse";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import {
@@ -20,12 +23,63 @@ const app = express();
 
 app.use(express.json({ limit: "10mb" }));
 
-import { MultipassOcrOrchestrator, ServiceUnavailableError } from "./server/services/multipassOcr";
 import { extractBankFieldsFromText } from "./src/utils/ocrMatcherEngine";
-import { gdriveRouter } from "./server/routes/gdriveRoutes";
-import { ServiceAvailabilityResponse } from "./src/types";
+import { ServiceAvailabilityResponse, ExtractionResult } from "./src/types";
+import { initDb, closeDb } from "./server/db/database";
+import { createDocumentRepo } from "./server/db/repositories/documentRepo";
+import { createJobRepo } from "./server/db/repositories/jobRepo";
+import { createExtractionRepo } from "./server/db/repositories/extractionRepo";
+import type { ExtractedField, ValidationStatus } from "./server/db/contracts";
+import { upload } from "./server/middleware/upload";
 
-const ocrEngine = new MultipassOcrOrchestrator();
+const db = initDb();
+const documentRepo = createDocumentRepo(db);
+const jobRepo = createJobRepo(db);
+const extractionRepo = createExtractionRepo(db);
+
+function constantTimeEquals(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
+
+// Fails closed: with no DGX_WORKER_TOKEN configured, every worker endpoint
+// is unreachable rather than silently open. Typed as express.RequestHandler
+// (not hand-written param types) so it stays generic-compatible with
+// whatever route params the handler chained after it declares.
+const requireWorkerAuth: express.RequestHandler = (req, res, next) => {
+  const token = process.env.DGX_WORKER_TOKEN;
+  if (!token) {
+    res.status(503).json({ error: "DGX worker endpoints are not configured (DGX_WORKER_TOKEN unset)." });
+    return;
+  }
+  const header = req.headers.authorization || "";
+  const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!provided || !constantTimeEquals(provided, token)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+};
+
+function toExtractedField(r: ExtractionResult): ExtractedField {
+  const validationStatus: ValidationStatus =
+    r.isValid === true ? "valid" : r.isValid === false ? "invalid" : "pending";
+  return {
+    name: r.fieldName,
+    value: r.canonicalValue ?? r.extractedValue,
+    confidence: r.confidence,
+    sourceSection: r.contextSnippet ?? null,
+    validated: typeof r.isValid === "boolean",
+    validationStatus,
+    correctedValue: null,
+    approved: false,
+    category: r.category,
+  };
+}
 
 // Lazy initialization for Google GenAI client
 let aiClient: GoogleGenAI | null = null;
@@ -49,33 +103,23 @@ function getAIClient(): GoogleGenAI {
 
 // Health check and component diagnostic endpoint
 app.get("/api/health", (_req, res) => {
-  const gdriveAuth = Boolean(process.env.GDRIVE_ACCESS_TOKEN || process.env.GDRIVE_CLIENT_ID);
-  const cloudOcrAuth = Boolean(process.env.GCP_DOC_AI_KEY || process.env.AZURE_DOC_KEY || process.env.AWS_TEXTRACT_KEY);
+  const dgxWorkerConfigured = Boolean(process.env.DGX_WORKER_TOKEN);
   res.json({
     status: "ok",
     service: "ngx-spark-banking-ocr-engine",
     timestamp: new Date().toISOString(),
     services: {
-      gdrive: { available: gdriveAuth, mode: gdriveAuth ? "live" : "unconfigured" },
-      multipass: { available: cloudOcrAuth, mode: cloudOcrAuth ? "live" : "unconfigured" },
       ocr_worker: { available: true, mode: "live" },
+      dgx_worker: { available: dgxWorkerConfigured, mode: dgxWorkerConfigured ? "live" : "unconfigured" },
     },
   });
 });
 
 // Service availability matrix endpoint (Stage 4 Contract)
 app.get("/api/services/status", (_req, res) => {
-  const isDemo = process.env.ENABLE_DEMO_FIXTURES === "true" && process.env.NODE_ENV !== "production";
-  const gdriveAuth = Boolean(process.env.GDRIVE_ACCESS_TOKEN || process.env.GDRIVE_CLIENT_ID);
-  const cloudOcrAuth = Boolean(process.env.GCP_DOC_AI_KEY || process.env.AZURE_DOC_KEY || process.env.AWS_TEXTRACT_KEY);
+  const dgxWorkerConfigured = Boolean(process.env.DGX_WORKER_TOKEN);
 
   const statuses: ServiceAvailabilityResponse[] = [
-    {
-      service: "gdrive",
-      mode: gdriveAuth ? "live" : (isDemo ? "mock_development" : "unconfigured"),
-      available: gdriveAuth,
-      reason: gdriveAuth ? undefined : "Google Drive OAuth credentials not configured.",
-    },
     {
       service: "ocr_worker",
       mode: "live",
@@ -83,10 +127,10 @@ app.get("/api/services/status", (_req, res) => {
       reason: undefined,
     },
     {
-      service: "multipass",
-      mode: cloudOcrAuth ? "live" : (isDemo ? "mock_development" : "unconfigured"),
-      available: cloudOcrAuth,
-      reason: cloudOcrAuth ? undefined : "Cloud OCR API keys (GCP, Azure, AWS) not configured.",
+      service: "dgx_worker",
+      mode: dgxWorkerConfigured ? "live" : "unconfigured",
+      available: dgxWorkerConfigured,
+      reason: dgxWorkerConfigured ? undefined : "DGX_WORKER_TOKEN not configured; no DGX worker can authenticate.",
     },
   ];
 
@@ -94,9 +138,9 @@ app.get("/api/services/status", (_req, res) => {
 });
 
 // Serve the Production DGX Scripts for download or curl
-app.get("/api/scripts/:scriptName", async (req, res) => {
+app.get("/api/scripts/:scriptName", requireWorkerAuth, async (req: express.Request<{ scriptName: string }>, res) => {
   const { scriptName } = req.params;
-  const allowed = ["dgx_setup.sh", "ocr_spark_engine.py", "deploy.sh", "check_dgx_codebase.sh", "quick_run.py"];
+  const allowed = ["dgx_setup.sh", "ocr_spark_engine.py", "deploy.sh", "check_dgx_codebase.sh"];
   if (!allowed.includes(scriptName)) {
     return res.status(404).json({ error: "Script not found. Valid: " + allowed.join(", ") });
   }
@@ -158,183 +202,6 @@ app.get("/api/dgx/telemetry-report", (_req, res) => {
   });
 });
 
-// Mount Google Drive router with unauthenticated guard
-app.use("/api/gdrive", gdriveRouter);
-
-// Multi-Pass Regression Execution Engine (Up to 10 Passes with Monotonic Verification & Early Stopping)
-app.post("/api/engine/multi-pass", async (req, res) => {
-  const { maxPasses = 10, docId, forceAllPasses = false } = req.body;
-  const { GDRIVE_DOWNLOADED_FILES } = await import("./src/data/gdriveDocuments");
-  
-  const targetDoc = docId 
-    ? GDRIVE_DOWNLOADED_FILES.find(d => d.id === docId || d.name === docId) || GDRIVE_DOWNLOADED_FILES[0]
-    : GDRIVE_DOWNLOADED_FILES[0];
-
-  const passDefinitions = [
-    { num: 1, name: "Native PDF Text Extraction", engine: "PyMuPDF Stream", filter: "Raw Glyph Decoder", baseTime: 120 },
-    { num: 2, name: "Base Tesseract OCR", engine: "Tesseract 5.3 (Otsu)", filter: "Otsu Adaptive Binarization", baseTime: 380 },
-    { num: 3, name: "PaddleOCR DBNet Text Detection", engine: "PaddleOCR v4", filter: "Angle Classifier (cls=True)", baseTime: 520 },
-    { num: 4, name: "EasyOCR Deep ConvRecognizer", engine: "EasyOCR (CRAFT + ResNet)", filter: "CLAHE Contrast Equalization", baseTime: 640 },
-    { num: 5, name: "Surya Layout & Order Detection", engine: "Surya Layout & Reading Order", filter: "Bicubic Resampling (250 DPI)", baseTime: 710 },
-    { num: 6, name: "High-DPI Edge Re-Sampling", engine: "Ensemble Tesseract + Unsharp Mask", filter: "Unsharp Mask (R=2, 150%)", baseTime: 490 },
-    { num: 7, name: "SpaCy NER & Typo-Tolerant Regex", engine: "SpaCy en_core_web_sm + Regex Dict", filter: "Levenshtein Fuzzy Threshold (85%)", baseTime: 310 },
-    { num: 8, name: "Spatial Proximity Key-Value Binding", engine: "Geometric Coordinate Extractor", filter: "Horizontal/Vertical Proximity Heuristic", baseTime: 280 },
-    { num: 9, name: "APRA Australian Regulatory Validation", engine: "Modulo 89 ABN & 6-Digit BSB Checker", filter: "APRA Clearing House Rules Engine", baseTime: 190 },
-    { num: 10, name: "Multi-Engine Consensus Consolidation", engine: "Weighted Voting & Parquet Export", filter: "Zero-Lock Monotonic Invariant Guard", baseTime: 220 }
-  ];
-
-  const totalPossible = 30;
-  const executedPasses = [];
-  let currentResolved = 8;
-  let consecutiveZeroDelta = 0;
-  let earlyStopTriggered = false;
-  let earlyStopPassNumber = 0;
-  let stopReason = "";
-  let totalRegressionsBlocked = 0;
-
-  // Track field state progressively across passes
-  const progressiveFields: Record<string, string> = {};
-  const allFieldKeys = Object.keys(targetDoc.extractedFields);
-
-  for (let i = 1; i <= Math.min(maxPasses, 10); i++) {
-    const def = passDefinitions[i - 1];
-    
-    // Calculate realistic incremental discoveries
-    let newFieldsThisPass = 0;
-    let regressionsBlockedThisPass = 0;
-
-    if (i === 1) {
-      newFieldsThisPass = 14;
-      allFieldKeys.slice(0, 14).forEach(k => {
-        progressiveFields[k] = targetDoc.extractedFields[k] || "EXTRACTED";
-      });
-    } else if (i === 2) {
-      newFieldsThisPass = 5;
-      allFieldKeys.slice(14, 19).forEach(k => {
-        progressiveFields[k] = targetDoc.extractedFields[k] || "EXTRACTED";
-      });
-      regressionsBlockedThisPass = 1;
-    } else if (i === 3) {
-      newFieldsThisPass = 4;
-      allFieldKeys.slice(19, 23).forEach(k => {
-        progressiveFields[k] = targetDoc.extractedFields[k] || "EXTRACTED";
-      });
-      regressionsBlockedThisPass = 2;
-    } else if (i === 4) {
-      newFieldsThisPass = 3;
-      allFieldKeys.slice(23, 26).forEach(k => {
-        progressiveFields[k] = targetDoc.extractedFields[k] || "EXTRACTED";
-      });
-      regressionsBlockedThisPass = 1;
-    } else if (i === 5) {
-      newFieldsThisPass = 2;
-      allFieldKeys.slice(26, 28).forEach(k => {
-        progressiveFields[k] = targetDoc.extractedFields[k] || "EXTRACTED";
-      });
-      regressionsBlockedThisPass = 1;
-    } else if (i === 6) {
-      newFieldsThisPass = 1;
-      if (allFieldKeys[28]) progressiveFields[allFieldKeys[28]] = targetDoc.extractedFields[allFieldKeys[28]];
-      regressionsBlockedThisPass = 2;
-    } else if (i === 7) {
-      newFieldsThisPass = 1;
-      if (allFieldKeys[29]) progressiveFields[allFieldKeys[29]] = targetDoc.extractedFields[allFieldKeys[29]];
-      regressionsBlockedThisPass = 1;
-    } else {
-      // Passes 8, 9, 10 confirm and validate existing fields with 0 regressions
-      newFieldsThisPass = 0;
-      regressionsBlockedThisPass = 1;
-    }
-
-    currentResolved += newFieldsThisPass;
-    totalRegressionsBlocked += regressionsBlockedThisPass;
-
-    if (newFieldsThisPass === 0) {
-      consecutiveZeroDelta++;
-    } else {
-      consecutiveZeroDelta = 0;
-    }
-
-    const recall = Math.min(100, Math.round((Object.keys(progressiveFields).length / totalPossible) * 100 * 10) / 10);
-
-    const isEarlyStopCandidate = !forceAllPasses && ((consecutiveZeroDelta >= 2 && i >= 4) || (recall >= 95 && i >= 6));
-
-    executedPasses.push({
-      passNumber: i,
-      name: def.name,
-      engineUsed: def.engine,
-      enhancementFilter: def.filter,
-      status: "COMPLETED",
-      durationMs: def.baseTime,
-      totalDocuments: GDRIVE_DOWNLOADED_FILES.length,
-      fieldsExtracted: Object.keys(progressiveFields).length,
-      totalFieldsPossible: totalPossible,
-      recallPercent: recall,
-      validAbnCount: progressiveFields["abn"] ? 1 : 0,
-      validBsbCount: progressiveFields["bsb"] ? 1 : 0,
-      validDobCount: progressiveFields["date_of_birth"] ? 1 : 0,
-      regressionsPrevented: regressionsBlockedThisPass,
-      deltaNewFields: newFieldsThisPass,
-      earlyStopFeasible: isEarlyStopCandidate,
-      logSummary: `Pass ${i} (${def.engine}): +${newFieldsThisPass} new fields, ${regressionsBlockedThisPass} regressions prevented. Total recall: ${recall}%.`
-    });
-
-    if (isEarlyStopCandidate && !earlyStopTriggered) {
-      earlyStopTriggered = true;
-      earlyStopPassNumber = i;
-      stopReason = recall >= 95 
-        ? `Early stop triggered at Pass ${i}: High convergence threshold (${recall}%) reached with zero regressions.`
-        : `Early stop triggered at Pass ${i}: Pipeline stabilized across consecutive passes with 0 delta.`;
-      
-      if (!forceAllPasses) {
-        // Stop execution loop early
-        break;
-      }
-    }
-  }
-
-  // If there are remaining passes that were skipped
-  for (let j = executedPasses.length + 1; j <= 10; j++) {
-    const def = passDefinitions[j - 1];
-    executedPasses.push({
-      passNumber: j,
-      name: def.name,
-      engineUsed: def.engine,
-      enhancementFilter: def.filter,
-      status: "SKIPPED",
-      durationMs: 0,
-      totalDocuments: GDRIVE_DOWNLOADED_FILES.length,
-      fieldsExtracted: Object.keys(progressiveFields).length,
-      totalFieldsPossible: totalPossible,
-      recallPercent: executedPasses[executedPasses.length - 1]?.recallPercent || 0,
-      validAbnCount: progressiveFields["abn"] ? 1 : 0,
-      validBsbCount: progressiveFields["bsb"] ? 1 : 0,
-      validDobCount: progressiveFields["date_of_birth"] ? 1 : 0,
-      regressionsPrevented: 0,
-      deltaNewFields: 0,
-      earlyStopFeasible: true,
-      logSummary: `Pass ${j} skipped due to early convergence.`
-    });
-  }
-
-  res.json({
-    runId: `RUN-${Date.now()}`,
-    targetDocument: targetDoc.name,
-    totalPassesRun: executedPasses.filter(p => p.status === "COMPLETED").length,
-    maxPassesAllowed: maxPasses,
-    earlyStopTriggered,
-    earlyStopPassNumber,
-    stopReason,
-    monotonicPreservationActive: true,
-    totalRegressionsPrevented: totalRegressionsBlocked,
-    initialRecall: executedPasses[0].recallPercent,
-    finalRecall: executedPasses.find(p => p.status === "COMPLETED")?.recallPercent || 98.4,
-    gain: Math.round(((executedPasses.find(p => p.status === "COMPLETED")?.recallPercent || 98.4) - executedPasses[0].recallPercent) * 10) / 10,
-    extractedFields: progressiveFields,
-    passes: executedPasses
-  });
-});
-
 // Gemini Multi-turn Chatbot Endpoint
 app.post("/api/chat", async (req, res) => {
   try {
@@ -378,58 +245,197 @@ app.post("/api/chat", async (req, res) => {
 });
 
 
-// NGX-Spark High-Throughput Data Plane HTTP Stream
-app.post("/api/process-document", async (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  
-  const jobId = Date.now().toString();
-  
-  const sendEvent = (type, data) => {
-    if (!res.writable) return;
-    res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
-  };
-
-  sendEvent("ACK", { status: "QUEUED", jobId });
-  
-  const body = req.body ?? {};
-  const text = body.text || "";
-  const buffer = Buffer.from(text);
-  
-  sendEvent("STATUS", { jobId, message: "Initiating Multi-Pass OCR (GCP, Azure, AWS)..." });
-  
+// Real document intake: stores the upload, enqueues a job, and for native
+// (digital-text) PDFs extracts and persists fields immediately. Scanned PDFs
+// and images have no local OCR path yet — they stay queued pending the DGX
+// worker (Phase 2) and are reported honestly as such, not faked.
+app.post("/api/documents", upload.single("file"), async (req, res) => {
   try {
-    const ocrResult = await ocrEngine.processDocument(buffer, (msg) => {
-      sendEvent("STATUS", { jobId, message: msg });
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded. Use multipart form field 'file'." });
+    }
+
+    const fileBuffer = await readFile(req.file.path);
+    const contentHash = createHash("sha256").update(fileBuffer).digest("hex");
+
+    const document = documentRepo.insert({
+      filename: req.file.originalname,
+      originalPath: req.file.path,
+      contentHash,
+      mimeType: req.file.mimetype,
     });
 
-    sendEvent("STATUS", { jobId, message: "Spawning Worker Thread for SIMD Pattern Matching..." });
-    
-    await new Promise(resolve => setImmediate(resolve));
-    
-    const matchedFields = extractBankFieldsFromText(text);
-    
-    sendEvent("FINAL_RESULT", {
-      jobId,
-      status: "SUCCESS",
-      engineUsed: ocrResult.engine,
-      data: matchedFields
+    const job = jobRepo.enqueue({ documentId: document.id });
+
+    if (req.file.mimetype !== "application/pdf") {
+      return res.status(202).json({
+        document,
+        job,
+        status: "needs_ocr",
+        message: "Image OCR requires the DGX worker, which is not connected yet. The document is queued.",
+      });
+    }
+
+    jobRepo.markProcessing(job.id);
+
+    let text = "";
+    const parser = new PDFParse({ data: fileBuffer });
+    try {
+      const result = await parser.getText();
+      text = result.text ?? "";
+    } finally {
+      await parser.destroy();
+    }
+
+    if (!text.trim()) {
+      jobRepo.markFailed(job.id, "No extractable text layer; likely a scanned PDF requiring OCR.");
+      documentRepo.updateStatus(document.id, "failed");
+      return res.status(202).json({
+        document: documentRepo.getById(document.id),
+        job: jobRepo.getById(job.id),
+        status: "needs_ocr",
+        message: "No native text layer found. This looks like a scanned PDF and needs the DGX OCR worker, which is not connected yet.",
+      });
+    }
+
+    const fields = extractBankFieldsFromText(text).map(toExtractedField);
+    const extraction = extractionRepo.createExtraction({
+      documentId: document.id,
+      rawText: text,
+      extractionVersion: 1,
+      extractionJson: JSON.stringify({ engineUsed: "native-pdf-text" }),
+    });
+    extractionRepo.insertFields(extraction.id, fields);
+
+    jobRepo.markCompleted(job.id);
+    documentRepo.updateStatus(document.id, "extracted");
+
+    return res.status(201).json({
+      document: documentRepo.getById(document.id),
+      job: jobRepo.getById(job.id),
+      extraction: extractionRepo.getFullResult(extraction.id),
     });
   } catch (err: any) {
-    console.error(err);
-    const statusCode = err instanceof ServiceUnavailableError ? err.status : (err?.status || 503);
-    const errorCode = err instanceof ServiceUnavailableError ? err.code : (err?.code || "SERVICE_UNAVAILABLE");
-    sendEvent("ERROR", {
-      jobId,
-      code: errorCode,
-      status: statusCode,
-      message: err?.message || "Internal Server Error",
-    });
+    console.error("Document upload/extraction error:", err);
+    return res.status(500).json({ error: err?.message || "Failed to process document upload" });
   }
-  
-  res.end();
 });
+
+app.get("/api/documents", (_req, res) => {
+  res.json(documentRepo.getAll());
+});
+
+app.get("/api/documents/:id", (req, res) => {
+  const document = documentRepo.getById(req.params.id);
+  if (!document) {
+    return res.status(404).json({ error: "Document not found" });
+  }
+  const extractions = extractionRepo.getExtractionsByDocument(document.id);
+  const jobs = jobRepo.getByDocument(document.id);
+  return res.json({
+    document,
+    jobs,
+    extractions: extractions.map((e) => extractionRepo.getFullResult(e.id)),
+  });
+});
+
+// DGX worker endpoints (pull model): the worker polls for claimed jobs rather
+// than the server pushing to it, so the DGX box needs no inbound network
+// exposure. All three require a shared-secret bearer token.
+app.get("/api/jobs/claim", requireWorkerAuth, (_req, res) => {
+  const job = jobRepo.dequeue();
+  if (!job) {
+    return res.status(204).end();
+  }
+  const document = documentRepo.getById(job.document_id);
+  if (!document) {
+    jobRepo.markFailed(job.id, "Associated document record missing");
+    return res.status(500).json({ error: "Document record missing for claimed job" });
+  }
+  return res.json({
+    job,
+    document: { id: document.id, filename: document.filename, mimeType: document.mime_type },
+  });
+});
+
+app.get("/api/jobs/:id/file", requireWorkerAuth, (req: express.Request<{ id: string }>, res) => {
+  const job = jobRepo.getById(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: "Job not found" });
+  }
+  const document = documentRepo.getById(job.document_id);
+  if (!document) {
+    return res.status(404).json({ error: "Document not found" });
+  }
+  // Pass root + relative filename rather than a bare absolute path: express's
+  // sendFile (via the `send` package) is unreliable with raw Windows absolute
+  // paths when no root is given.
+  const absolutePath = path.resolve(document.original_path);
+  return res.sendFile(path.basename(absolutePath), { root: path.dirname(absolutePath) });
+});
+
+app.post("/api/jobs/:id/result", requireWorkerAuth, (req: express.Request<{ id: string }>, res) => {
+  try {
+    const job = jobRepo.getById(req.params.id);
+    if (!job) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    const body = req.body ?? {};
+
+    if (body.status === "FAILED") {
+      jobRepo.markFailed(job.id, typeof body.error === "string" ? body.error : "DGX worker reported failure");
+      documentRepo.updateStatus(job.document_id, "failed");
+      return res.json({ ok: true, status: "failed" });
+    }
+
+    const rawText = typeof body.rawText === "string" ? body.rawText : "";
+    if (!rawText.trim()) {
+      jobRepo.markFailed(job.id, "DGX worker returned empty text");
+      documentRepo.updateStatus(job.document_id, "failed");
+      return res.status(400).json({ error: "rawText is required and must be non-empty" });
+    }
+
+    // Node's regex/validation engine is the single source of truth for field
+    // matching — the Python side's own field guesses (used only to drive its
+    // pass loop's early-stop heuristic) are never persisted directly, so the
+    // TS and Python field dictionaries can never silently drift apart.
+    const fields = extractBankFieldsFromText(rawText).map(toExtractedField);
+    const extraction = extractionRepo.createExtraction({
+      documentId: job.document_id,
+      rawText,
+      extractionVersion: 1,
+      extractionJson: JSON.stringify({
+        engineUsed: typeof body.engineUsed === "string" ? body.engineUsed : "dgx-multipass",
+        passes: Array.isArray(body.passes) ? body.passes : [],
+      }),
+    });
+    extractionRepo.insertFields(extraction.id, fields);
+
+    jobRepo.markCompleted(job.id);
+    documentRepo.updateStatus(job.document_id, "extracted");
+
+    return res.status(201).json({
+      document: documentRepo.getById(job.document_id),
+      job: jobRepo.getById(job.id),
+      extraction: extractionRepo.getFullResult(extraction.id),
+    });
+  } catch (err: any) {
+    console.error("Job result ingestion error:", err);
+    return res.status(500).json({ error: err?.message || "Failed to ingest job result" });
+  }
+});
+
+// Multer/upload errors (bad mime type, oversized file) land here rather than
+// crashing the process or falling through to the SPA catch-all.
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!err) {
+    return next();
+  }
+  console.error("Upload middleware error:", err);
+  return res.status(400).json({ error: err?.message || "Upload failed" });
+});
+
 
 /**
  * Start Express server with validated environment, port-collision diagnostics,
@@ -477,7 +483,7 @@ async function startServer(options?: {
       shutdownTimeoutMs: config.shutdownTimeoutMs,
       drainSockets: true,
       onShutdown: async () => {
-        // Placeholder for future durable queue / DB flush hooks (Stage 12+).
+        closeDb();
       },
     },
     { exitFn },
@@ -513,6 +519,7 @@ export {
   formatListenError,
   listenAsync,
   createShutdownManager,
+  closeDb,
 };
 
 if (process.env.NODE_ENV !== "test") {

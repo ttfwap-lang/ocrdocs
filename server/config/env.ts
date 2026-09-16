@@ -17,7 +17,6 @@ export interface LoadedEnvConfig {
   /** Present only when configured; never logged by validators. */
   jwtSecret: string | undefined;
   shutdownTimeoutMs: number;
-  enableDemoFixtures: boolean;
 }
 
 export class EnvValidationError extends Error {
@@ -36,12 +35,7 @@ export class EnvValidationError extends Error {
 const SECRET_ENV_NAMES = new Set([
   'JWT_SECRET',
   'GEMINI_API_KEY',
-  'GDRIVE_ACCESS_TOKEN',
-  'GDRIVE_CLIENT_SECRET',
-  'GCP_DOC_AI_KEY',
-  'AZURE_DOC_KEY',
-  'AWS_SECRET_ACCESS_KEY',
-  'AWS_TEXTRACT_KEY',
+  'DGX_WORKER_TOKEN',
 ]);
 
 const DEFAULT_PORT = 3000;
@@ -164,7 +158,6 @@ export function loadAndValidateEnv(
   let storageRoot = DEFAULT_STORAGE_ROOT;
   let jwtSecret: string | undefined;
   let shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS;
-  let enableDemoFixtures = false;
 
   try {
     nodeEnv = parseNodeEnv(source.NODE_ENV);
@@ -245,9 +238,6 @@ export function loadAndValidateEnv(
     }
   }
 
-  enableDemoFixtures =
-    source.ENABLE_DEMO_FIXTURES === 'true' && nodeEnv !== 'production';
-
   if (issues.length > 0) {
     throw new EnvValidationError(issues);
   }
@@ -260,7 +250,6 @@ export function loadAndValidateEnv(
     storageRoot,
     jwtSecret,
     shutdownTimeoutMs,
-    enableDemoFixtures,
   };
 }
 

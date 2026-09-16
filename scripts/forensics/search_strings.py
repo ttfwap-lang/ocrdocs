@@ -131,17 +131,17 @@ def ocr_image(path: Path) -> str:
 
 
 def handle_pdf(path: Path, needles: list[str], origin: str, scratch: Path):
-    import pymupdf
+    import pypdfium2 as pdfium
 
     found, stats = [], {"pages": 0, "ocr_pages": 0}
     try:
-        doc = pymupdf.open(path)
+        doc = pdfium.PdfDocument(str(path))
     except Exception as exc:  # noqa: BLE001
         return [{"error": f"pdf open failed: {exc}", "origin": origin, "pass": "text"}], stats
     for i, page in enumerate(doc, start=1):
         stats["pages"] += 1
         try:
-            text = page.get_text("text") or ""
+            text = page.get_textpage().get_text_bounded() or ""
         except Exception:  # noqa: BLE001
             text = ""
         found += scan_text(text, needles, origin, "pdf-text", page=i)
@@ -149,7 +149,7 @@ def handle_pdf(path: Path, needles: list[str], origin: str, scratch: Path):
             stats["ocr_pages"] += 1
             tmp = scratch / f"{abs(hash(origin))}_{i}.png"
             try:
-                page.get_pixmap(dpi=300).save(tmp)
+                page.render(scale=300 / 72).to_pil().save(tmp)
                 found += scan_text(ocr_image(tmp), needles, origin, "pdf-ocr", page=i)
             except Exception as exc:  # noqa: BLE001
                 found.append({"error": f"pdf render failed p{i}: {exc}",

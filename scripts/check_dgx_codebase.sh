@@ -4,18 +4,24 @@
 # Execution Context: Run directly on DGX host (flak3dd@gx10-d0e7) or from any remote
 # Purpose:
 #   1. Scans existing files, git repo, and scripts in /mnt/nvme/ocr_pipeline and $HOME
-#   2. Checks Python virtualenv, CUDA / PyTorch, GPU architecture, DuckDB, gdown
+#   2. Checks Python virtualenv, CUDA / PyTorch, GPU architecture, and DuckDB
 #   3. Packages directory tree, code snippets, file hashes, and error logs into a JSON report
 #   4. Sends the payload back to the central AI Studio application server
 # ==============================================================================
 
 set -euo pipefail
 
-readonly REPORT_SERVER_URL="${REPORT_SERVER_URL:-https://ais-dev-gok2fike6r2w4m6fkqpo2d-731890839086.asia-southeast1.run.app/api/dgx/telemetry-report}"
+readonly OCRDOCS_SERVER_URL="${OCRDOCS_SERVER_URL:-}"
+readonly REPORT_SERVER_URL="${REPORT_SERVER_URL:-${OCRDOCS_SERVER_URL:+${OCRDOCS_SERVER_URL%/}/api/dgx/telemetry-report}}"
 readonly NVME_ROOT="${NVME_ROOT:-/mnt/nvme/ocr_pipeline}"
 readonly TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 readonly HOSTNAME="$(hostname 2>/dev/null || echo 'unknown-host')"
 readonly CURRENT_USER="$(id -un 2>/dev/null || echo 'unknown-user')"
+
+if [[ -z "${REPORT_SERVER_URL}" ]]; then
+    echo "[-] REPORT_SERVER_URL or OCRDOCS_SERVER_URL is required to send telemetry to the app server." >&2
+    exit 1
+fi
 
 echo "=============================================================================="
 echo " [DGX-INSPECTOR] End-to-End Existing Codebase & Environment Audit"
@@ -100,7 +106,8 @@ diag = {
     "spacy_available": False,
     "spacy_en_model": False,
     "duckdb_version": None,
-    "gdown_version": None,
+    "docx_available": False,
+    "striprtf_available": False,
 }
 
 try:
@@ -156,8 +163,14 @@ except Exception:
     pass
 
 try:
-    import gdown
-    diag["gdown_version"] = gdown.__version__
+    import docx
+    diag["docx_available"] = True
+except Exception:
+    pass
+
+try:
+    from striprtf.striprtf import rtf_to_text
+    diag["striprtf_available"] = True
 except Exception:
     pass
 
@@ -173,7 +186,7 @@ if [[ -f "${NVME_ROOT}/logs/pipeline_errors.log" ]]; then
     RECENT_ERRORS="$(tail -n 35 "${NVME_ROOT}/logs/pipeline_errors.log" 2>/dev/null || echo '')"
 fi
 
-echo "[*] Step 7: Checking Existing Input Files from Google Drive or Local Ingestion..."
+echo "[*] Step 7: Checking Existing Input Files from Local or Worker Ingestion..."
 SAMPLE_INPUT_FILES="$(find "${NVME_ROOT}/input" -type f 2>/dev/null | head -n 15 || echo '')"
 
 # Assemble Payload via Python for valid JSON formatting

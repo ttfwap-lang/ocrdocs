@@ -4,9 +4,9 @@
  */
 
 import React from 'react';
-import { Cpu, CheckCircle2, ShieldAlert, Sparkles, Terminal, FileCode2, Search, Fingerprint, Layers, FolderDown, PlayCircle } from 'lucide-react';
+import { Sparkles, Terminal, FileCode2, Search, Fingerprint, FolderOpen } from 'lucide-react';
 
-export type NavTab = 'studio' | 'gdrive' | 'multipass' | 'audit' | 'superstack' | 'regex' | 'copilot';
+export type NavTab = 'studio' | 'documents' | 'audit' | 'regex' | 'copilot';
 
 interface NavbarProps {
   activeTab: NavTab;
@@ -36,7 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   NGX_SPARK // OCR
                 </span>
                 <span className="bg-emerald-950/60 text-emerald-400 border border-emerald-800 text-[10px] font-mono tracking-wider px-2 py-0.5 uppercase hidden sm:inline">
-                  Drive & Cluster
+                  DGX Cluster
                 </span>
               </div>
             </div>
@@ -56,27 +56,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => setActiveTab('gdrive')}
+              onClick={() => setActiveTab('documents')}
               className={`flex items-center gap-1.5 h-full px-3.5 sm:px-4 text-[11px] font-mono uppercase tracking-wider transition-all border-l border-slate-800 shrink-0 ${
-                activeTab === 'gdrive'
+                activeTab === 'documents'
                   ? 'bg-[#111111] text-emerald-400 border-b-2 border-b-emerald-500'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-[#111111]'
               }`}
             >
-              <FolderDown className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Google Drive Hub</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('multipass')}
-              className={`flex items-center gap-1.5 h-full px-3.5 sm:px-4 text-[11px] font-mono uppercase tracking-wider transition-all border-l border-slate-800 shrink-0 ${
-                activeTab === 'multipass'
-                  ? 'bg-[#111111] text-blue-400 border-b-2 border-b-blue-500'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#111111]'
-              }`}
-            >
-              <PlayCircle className="w-3.5 h-3.5 text-blue-400" />
-              <span>10-Pass Loop</span>
+              <FolderOpen className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Documents</span>
             </button>
 
             <button
@@ -91,17 +79,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Scripts & Audit</span>
             </button>
 
-            <button
-              onClick={() => setActiveTab('superstack')}
-              className={`flex items-center gap-1.5 h-full px-3.5 sm:px-4 text-[11px] font-mono uppercase tracking-wider transition-all border-l border-slate-800 shrink-0 relative ${
-                activeTab === 'superstack'
-                  ? 'bg-[#111111] text-cyan-400 border-b-2 border-b-cyan-500'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#111111]'
-              }`}
-            >
-              <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-              <span>C++ & NGX</span>
-            </button>
 
             <button
               onClick={() => setActiveTab('regex')}

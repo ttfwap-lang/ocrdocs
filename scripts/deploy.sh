@@ -3,10 +3,10 @@
 # Script 3: Local-to-DGX Regression Orchestrator (Hardened Production)
 # Execution Context: Run locally via Windows Git Bash or Linux Shell
 # Features:
-#   - Automated Google Drive Folder Ingestion (16q3PdioHVbLIBVqU--54nBvNhqLE7bNN)
-#   - 10-Pass Progressive Optimization Loop with Regression Verification
-#   - Early Termination Detection (Stops early when converged with zero regression)
-#   - Monotonic Quality Invariant & DuckDB WAL Integrity
+#   - Deploys the local OCR engine to DGX NVMe storage
+#   - 10-pass progressive optimization loop with regression verification
+#   - Early termination detection when extraction converges
+#   - Monotonic quality invariant and DuckDB WAL integrity
 # ==============================================================================
 
 set -euo pipefail
@@ -14,8 +14,8 @@ set -euo pipefail
 readonly SPARK_USER="${SPARK_USER:-flak3dd}"
 readonly SPARK_IP="${SPARK_IP:-gx10-d0e7.local}"
 readonly REMOTE_BASE="/mnt/nvme/ocr_pipeline"
-readonly GDRIVE_FOLDER_ID="16q3PdioHVbLIBVqU--54nBvNhqLE7bNN"
-readonly GDRIVE_URL="https://drive.google.com/drive/folders/${GDRIVE_FOLDER_ID}?usp=sharing"
+readonly OCRDOCS_SERVER_URL="${OCRDOCS_SERVER_URL:-}"
+readonly DGX_WORKER_TOKEN="${DGX_WORKER_TOKEN:-}"
 
 # Optional local directory fallback if offline
 readonly LOCAL_FALLBACK_DIR="${LOCAL_DIR:-/d/Recovered_C/_Raw_Data_and_Databases}"
@@ -30,7 +30,7 @@ readonly SSH_OPTS=(
 echo "=============================================================================="
 echo " [NGX-ORCHESTRATOR] Australian Banking Multi-Pass OCR Deployment Pipeline"
 echo " Target DGX Host: ${SPARK_USER}@${SPARK_IP}:${REMOTE_BASE}"
-echo " Google Drive Ingestion Source: ${GDRIVE_URL}"
+echo " App Server URL: ${OCRDOCS_SERVER_URL:-not required when local engine exists}"
 echo " Optimization Passes: Max 10 with Monotonic Regression Verification"
 echo "=============================================================================="
 
@@ -50,20 +50,32 @@ if [[ -f "$ENGINE_SRC" ]]; then
 else
     echo "[!] Local engine source not found at ${ENGINE_SRC}."
     echo "[*] Ensuring remote host has ocr_spark_engine.py installed..."
-    ssh "${SSH_OPTS[@]}" "${SPARK_USER}@${SPARK_IP}" bash << 'EOF_ENGINE_FETCH'
+    if [[ -z "${OCRDOCS_SERVER_URL}" || -z "${DGX_WORKER_TOKEN}" ]]; then
+        echo "FATAL: OCRDOCS_SERVER_URL and DGX_WORKER_TOKEN are required to fetch ocr_spark_engine.py from the app server." >&2
+        exit 1
+    fi
+    printf -v REMOTE_TOKEN_Q '%q' "${DGX_WORKER_TOKEN}"
+    printf -v REMOTE_SERVER_Q '%q' "${OCRDOCS_SERVER_URL}"
+    ssh "${SSH_OPTS[@]}" "${SPARK_USER}@${SPARK_IP}" \
+        "DGX_WORKER_TOKEN=${REMOTE_TOKEN_Q} OCRDOCS_SERVER_URL=${REMOTE_SERVER_Q} bash" << 'EOF_ENGINE_FETCH'
         if [ ! -s "/mnt/nvme/ocr_pipeline/ocr_spark_engine.py" ]; then
             echo "[*] Remote engine missing. Downloading latest engine from app server..."
-            curl -fsSL https://ais-dev-gok2fike6r2w4m6fkqpo2d-731890839086.asia-southeast1.run.app/api/scripts/ocr_spark_engine.py \
-                 -o /mnt/nvme/ocr_pipeline/ocr_spark_engine.py || true
+            curl -fsSL -H "Authorization: Bearer ${DGX_WORKER_TOKEN}" \
+                 "${OCRDOCS_SERVER_URL%/}/api/scripts/ocr_spark_engine.py" \
+                 -o /mnt/nvme/ocr_pipeline/ocr_spark_engine.py
+        fi
+        if [ ! -s "/mnt/nvme/ocr_pipeline/ocr_spark_engine.py" ]; then
+            echo "FATAL: could not fetch ocr_spark_engine.py — check DGX_WORKER_TOKEN and network connectivity to the app server" >&2
+            exit 1
         fi
 EOF_ENGINE_FETCH
 fi
 
 # ------------------------------------------------------------------------------
-# Phase 2: Ingest Google Drive Folder directly on DGX Host
+# Phase 2: Verify local or worker-fed input files on DGX Host
 # ------------------------------------------------------------------------------
-echo "[*] Phase 2: Ingesting dataset from Google Drive folder [${GDRIVE_FOLDER_ID}]..."
-ssh "${SSH_OPTS[@]}" "${SPARK_USER}@${SPARK_IP}" bash << EOF_SYNC
+echo "[*] Phase 2: Checking existing DGX input files..."
+ssh "${SSH_OPTS[@]}" "${SPARK_USER}@${SPARK_IP}" bash << 'EOF_SYNC'
     set -euo pipefail
     
     # Ensure venv exists and is activated
@@ -73,26 +85,17 @@ ssh "${SSH_OPTS[@]}" "${SPARK_USER}@${SPARK_IP}" bash << EOF_SYNC
     fi
     source /mnt/nvme/ocr_pipeline/venv/bin/activate
 
-    # Ensure gdown is present
-    if ! python3 -c "import gdown" 2>/dev/null; then
-        echo "[*] Installing gdown in remote venv..."
-        pip install "gdown>=5.1.0" --quiet --retries 5 || true
-    fi
-
     echo "[*] Checking existing files in /mnt/nvme/ocr_pipeline/input..."
     mkdir -p /mnt/nvme/ocr_pipeline/{input,output,logs,db,noocr,checkpoints}
     touch /mnt/nvme/ocr_pipeline/logs/pipeline_errors.log
-    EXISTING=\$(find /mnt/nvme/ocr_pipeline/input -type f | wc -l)
+    EXISTING=$(find /mnt/nvme/ocr_pipeline/input -type f | wc -l)
 
-    if [ "\$EXISTING" -eq 0 ]; then
-        echo "[*] Remote input empty. Downloading Google Drive folder via gdown..."
-        python3 -m gdown.cli --folder "${GDRIVE_URL}" -O /mnt/nvme/ocr_pipeline/input --remaining-ok || {
-            echo "[!] Direct gdown folder download failed. Running python engine drive fallback..."
-            python3 /mnt/nvme/ocr_pipeline/ocr_spark_engine.py --sync-gdrive --gdrive-folder-id "${GDRIVE_FOLDER_ID}" || true
-        }
-    else
-        echo "[+] Found \$EXISTING target files already cached in NVMe storage."
+    if [ "$EXISTING" -eq 0 ]; then
+        echo "FATAL: no input files found in /mnt/nvme/ocr_pipeline/input. Use scripts/ingest_local_folder.mjs or copy files there before running deploy.sh." >&2
+        exit 1
     fi
+
+    echo "[+] Found $EXISTING target files in NVMe storage."
 EOF_SYNC
 
 # ------------------------------------------------------------------------------

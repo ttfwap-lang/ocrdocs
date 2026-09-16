@@ -9,6 +9,17 @@ coverage/
 automation/
 .background_output_*.txt
 
+# Uploaded originals and the local SQLite database. These hold real
+# customer documents/PII in dev and must never reach source control.
+data/
+storage/
+
+# Python bytecode cache (note: some pre-existing .pyc files are already
+# tracked under scripts/__pycache__ from before this rule was added; this
+# only stops new ones from being added).
+__pycache__/
+*.pyc
+
 # Local recovered/restored data dumps. Never commit these, whatever they end up
 # being named or wherever they are placed in the tree.
 Recovered_C/

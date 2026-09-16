@@ -165,11 +165,19 @@ describe('Stage 5 — Reproducible Dependencies & License Screening', () => {
       'pytesseract',
       'spacy',
       'easyocr',
+      'python-docx',
+      'striprtf',
+      'requests',
+      'paddlepaddle',
     ];
 
     for (const r of required) {
       assert.ok(pkgMap.has(r), `Core package "${r}" must be pinned in requirements.txt`);
       assert.match(pkgMap.get(r), /^\d+\.\d+/, `Package "${r}" must have valid semver pin`);
+    }
+
+    for (const removed of ['gdown', 'pymupdf']) {
+      assert.equal(pkgMap.has(removed), false, `Removed dependency "${removed}" must not be installed by default`);
     }
 
     // Verify scripts/pyproject.toml also exists
@@ -188,7 +196,7 @@ describe('Stage 5 — Reproducible Dependencies & License Screening', () => {
 
     const pkg = JSON.parse(content);
     // Ensure critical production packages exist and have zero loose symbols
-    const criticalDeps = ['express', 'react', 'react-dom', 'ws', 'dotenv'];
+    const criticalDeps = ['express', 'react', 'react-dom', 'dotenv', 'better-sqlite3', 'jsonwebtoken', 'multer', 'pdf-parse'];
     for (const dep of criticalDeps) {
       const version = pkg.dependencies[dep];
       assert.ok(version, `Critical dependency "${dep}" must be present`);

@@ -3,7 +3,7 @@
 # Script 2: Enterprise VRAM-Throttled Multi-Pass OCR & Regression Engine
 # Execution Context: Deployed and executed on DGX NVMe (/mnt/nvme/ocr_pipeline)
 # Features:
-#   - Google Drive Folder Ingestion (16q3PdioHVbLIBVqU--54nBvNhqLE7bNN) via gdown
+#   - Local file and DGX worker document processing
 #   - 30 Typo-Tolerant Australian Banking Field Matchers + APRA Validations
 #   - 10-Pass Progressive Optimization Loop with Regression Verification
 #   - Monotonic Quality Invariant (No high-confidence field degradation)
@@ -16,6 +16,7 @@ import re
 import sys
 import gc
 import json
+import time
 import argparse
 import logging
 from pathlib import Path
@@ -23,7 +24,11 @@ from typing import Dict, Any, List, Tuple, Optional
 
 # Third-party imports with graceful fallbacks
 import cv2
-import fitz  # PyMuPDF
+import pypdfium2 as pdfium  # Permissive (Apache-2.0) PDF parser/rasterizer.
+# NOTE: PyMuPDF (fitz) is intentionally NOT used here. It is dual-licensed
+# AGPL-3.0/Commercial and is documented in docs/stage5/license-manifest.json
+# as "Replaced by pypdfium2 in production scope" — using it unconditionally
+# in the shipped pipeline would violate that policy.
 import torch
 import numpy as np
 import pandas as pd
@@ -58,11 +63,6 @@ try:
 except ImportError:
     run_ocr = None
 
-try:
-    import gdown
-except ImportError:
-    gdown = None
-
 # ==============================================================================
 # CONFIGURATION & NVME PATHING
 # ==============================================================================
@@ -75,7 +75,11 @@ OUTPUT_PARQUET = OUTPUT_DIR / "ocr_consolidated_identities.parquet"
 NOOCR_DIR = NVME_DIR / "noocr"
 LOGS_DIR = NVME_DIR / "logs"
 ERROR_LOG = LOGS_DIR / "pipeline_errors.log"
-DEFAULT_GDRIVE_FOLDER = "16q3PdioHVbLIBVqU--54nBvNhqLE7bNN"
+
+# Surya OCR is GPL-3.0. docs/stage5/license-manifest.json documents it as
+# "restricted to local research/evaluation mode; excluded from production
+# deployment." It must never load by default in the commercial pipeline.
+RESEARCH_ENGINES_ENABLED = os.environ.get("OCRDOCS_ENABLE_RESEARCH_ENGINES", "false").strip().lower() == "true"
 
 # Ensure directories exist
 for d in [INPUT_DIR, OUTPUT_DIR, DB_PATH.parent, NOOCR_DIR, LOGS_DIR]:
@@ -232,36 +236,6 @@ def validate_australian_postcode(postcode_str: str) -> bool:
     return (200 <= num <= 299) or (800 <= num <= 999) or (1000 <= num <= 9999)
 
 # ==============================================================================
-# GOOGLE DRIVE DOWNLOAD UTILITY
-# ==============================================================================
-def download_google_drive_folder(folder_id: str = DEFAULT_GDRIVE_FOLDER, destination: Path = INPUT_DIR) -> int:
-    """Downloads an entire public Google Drive folder using gdown."""
-    logging.info(f"[*] Checking Google Drive folder {folder_id}...")
-    destination.mkdir(parents=True, exist_ok=True)
-    
-    # Check if folder already contains files
-    existing = list(destination.glob("**/*"))
-    valid_files = [f for f in existing if f.is_file() and f.stat().st_size > 0]
-    if valid_files:
-        logging.info(f"[+] Found {len(valid_files)} pre-existing files in {destination}. Sync verified.")
-        return len(valid_files)
-
-    if gdown is None:
-        logging.warning("[!] 'gdown' package not found. Skipping Google Drive download.")
-        return 0
-
-    try:
-        url = f"https://drive.google.com/drive/folders/{folder_id}?usp=sharing"
-        logging.info(f"[*] Downloading Google Drive folder from {url}...")
-        gdown.download_folder(url=url, output=str(destination), quiet=False, remaining_ok=True)
-        downloaded = [f for f in destination.glob("**/*") if f.is_file()]
-        logging.info(f"[+] Download complete: {len(downloaded)} files saved to {destination}")
-        return len(downloaded)
-    except Exception as e:
-        logging.error(f"[-] Google Drive download encountered error: {e}")
-        return 0
-
-# ==============================================================================
 # MULTI-ENGINE WORKER INITIALIZATION (Lazy & VRAM-Pinned)
 # ==============================================================================
 _paddle = None
@@ -280,9 +254,20 @@ def init_worker():
             _paddle = PaddleOCR(use_angle_cls=True, lang="en", show_log=False, use_gpu=gpu_available)
         if easyocr is not None:
             _easy = easyocr.Reader(["en"], gpu=gpu_available)
-        if run_ocr is not None:
+        if run_ocr is not None and RESEARCH_ENGINES_ENABLED:
+            logging.warning(
+                "[!] OCRDOCS_ENABLE_RESEARCH_ENGINES=true: loading Surya (GPL-3.0). "
+                "Research/evaluation mode only per docs/stage5/license-manifest.json — "
+                "do not enable this in a commercial production deployment."
+            )
             _surya_det, _surya_det_proc = load_det_model(), load_det_processor()
             _surya_rec, _surya_rec_proc = load_rec_model(), load_rec_processor()
+        elif run_ocr is not None:
+            logging.info(
+                "[*] Surya OCR package present but disabled by default (GPL-3.0, "
+                "research-only). Set OCRDOCS_ENABLE_RESEARCH_ENGINES=true to enable "
+                "for local evaluation."
+            )
         if spacy is not None:
             _nlp = spacy.load("en_core_web_sm")
     except Exception as e:
@@ -320,10 +305,16 @@ def enhance_image_for_pass(image: Image.Image, pass_num: int) -> Image.Image:
         return scaled.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
     return image
 
-def run_pass_ocr(image: Image.Image, pass_num: int) -> str:
-    """Executes specific OCR algorithms tailored to the current pass."""
+def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str]]:
+    """Executes specific OCR algorithms tailored to the current pass.
+
+    Returns (text, engines_actually_invoked) — the engine list is derived
+    from what ran, not a hardcoded label, so telemetry can never claim an
+    engine that didn't execute.
+    """
     enhanced_img = enhance_image_for_pass(image, pass_num)
     collected = set()
+    engines_used: List[str] = []
     cv_img = cv2.cvtColor(np.array(enhanced_img), cv2.COLOR_RGB2BGR)
 
     # Pass 1-2: Fast Tesseract
@@ -333,6 +324,7 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> str:
             for line in tess_txt.splitlines():
                 if len(line.strip()) > 1:
                     collected.add(line.strip())
+            engines_used.append("Tesseract")
         except Exception:
             pass
 
@@ -345,6 +337,7 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> str:
                     if block:
                         for line in block:
                             collected.add(line[1][0].strip())
+            engines_used.append("PaddleOCR")
         except Exception:
             pass
 
@@ -353,16 +346,19 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> str:
         try:
             for txt in _easy.readtext(cv_img, detail=0):
                 collected.add(txt.strip())
+            engines_used.append("EasyOCR")
         except Exception:
             pass
 
-    # Pass 5, 9, 10: Surya Layout & Recognition
+    # Pass 5, 9, 10: Surya Layout & Recognition (research mode only — see
+    # RESEARCH_ENGINES_ENABLED; _surya_rec stays None unless explicitly opted in)
     if _surya_rec is not None and pass_num in [5, 9, 10]:
         try:
             preds = run_ocr([enhanced_img], [_surya_det], [_surya_det_proc], [_surya_rec], [_surya_rec_proc])
             for page in preds:
                 for line in page.text_lines:
                     collected.add(line.text.strip())
+            engines_used.append("Surya")
         except Exception:
             pass
 
@@ -370,7 +366,7 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> str:
         torch.cuda.empty_cache()
     gc.collect()
 
-    return "\n".join(collected)
+    return "\n".join(collected), engines_used
 
 def extract_australian_banking_fields(text: str) -> Dict[str, Any]:
     """Extracts and validates all 30 Australian banking application fields."""
@@ -382,7 +378,7 @@ def extract_australian_banking_fields(text: str) -> Dict[str, Any]:
     # Generic Regex Patterns
     emails = re.findall(r"\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\b", text)
     phones = re.findall(r"(?:\+?61\s?|0)[2-478](?:[ -]?[0-9]){8}\b", text)
-    dobs = re.findall(r"\b(0[1-9]|[12][0-9]|3[01])[-/.](0[1-9]|1[012])[-/.](?:19|20)\d\d\b", text)
+    dobs = re.findall(r"\b(0[1-9]|[12][0-9]|3[01])[-/.](0[1-9]|1[012])[-/.]((?:19|20)\d\d)\b", text)
     abns = re.findall(r"\b(\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3})\b", text)
     bsbs = re.findall(r"\b(\d{3}[- ]?\d{3})\b", text)
     postcodes = re.findall(r"\b(0[2-9]\d{2}|[1-9]\d{3})\b", text)
@@ -485,21 +481,21 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     ext = path.suffix.lower()
     raw_texts = []
     images = []
+    used_native_text = False
 
     try:
         if ext == ".pdf":
-            doc = fitz.open(path)
+            doc = pdfium.PdfDocument(str(path))
             for page in doc:
-                txt = page.get_text()
+                txt = page.get_textpage().get_text_bounded()
                 if txt.strip():
                     raw_texts.append(txt)
+                    used_native_text = True
                 if pass_num > 1 or not txt.strip():
                     # Rasterize page for visual OCR passes
                     dpi = 200 if pass_num < 6 else 300
-                    pix = page.get_pixmap(dpi=dpi)
-                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                    images.append(img)
-                    pix = None
+                    bitmap = page.render(scale=dpi / 72)
+                    images.append(bitmap.to_pil().convert("RGB"))
             doc.close()
         elif ext in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"]:
             images.append(Image.open(path).convert("RGB"))
@@ -519,15 +515,136 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
 
     # Run OCR on images for current pass
     ocr_texts = []
+    engines_used: List[str] = []
+    if used_native_text:
+        engines_used.append("Native PDF Text Layer")
     for img in images:
-        ocr_texts.append(run_pass_ocr(img, pass_num))
+        txt, engines = run_pass_ocr(img, pass_num)
+        ocr_texts.append(txt)
+        for e in engines:
+            if e not in engines_used:
+                engines_used.append(e)
 
     combined_text = "\n".join(raw_texts + ocr_texts)
     if not combined_text.strip():
         return "NOOCR", fpath, {}
 
     result = extract_australian_banking_fields(combined_text)
+    result["raw_text"] = combined_text
+    result["engines_used"] = engines_used
     return "SUCCESS", fpath, result
+
+# ==============================================================================
+# SINGLE-DOCUMENT MULTI-PASS ENTRYPOINT (for the DGX job-queue worker)
+# ==============================================================================
+def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str, Any]:
+    """
+    Runs the real progressive multi-pass pipeline against one claimed job.
+
+    Unlike execute_pass_and_verify() (the corpus-wide batch/CLI mode, which
+    reads/writes shared DuckDB state across a whole directory of documents),
+    this scopes the monotonic-quality guard and early-stop convergence check
+    to a single document with in-memory state only — no shared corpus table.
+    Every field in the returned "passes" telemetry is measured from the
+    actual pass that ran; nothing here is scripted or pre-baked.
+    """
+    init_worker()
+
+    prev_fields: Dict[str, str] = {}
+    prev_confs: Dict[str, float] = {}
+    latest_raw_text = ""
+    passes: List[Dict[str, Any]] = []
+    consecutive_zero_delta = 0
+    field_keys = list(BANK_FIELD_PATTERNS.keys())
+    total_fields = len(field_keys)
+
+    for pass_num in range(1, max_passes + 1):
+        started = time.perf_counter()
+        status, _, result = process_single_file_for_pass((file_path, pass_num))
+        duration_ms = round((time.perf_counter() - started) * 1000, 1)
+
+        if status in ("EMPTY", "PARSE_ERROR"):
+            return {
+                "status": "FAILED",
+                "error": result.get("error", f"File {status.lower()}"),
+                "passes": passes,
+            }
+        if status == "NOOCR":
+            if pass_num == 1:
+                return {
+                    "status": "FAILED",
+                    "error": "No extractable text or usable image content on pass 1.",
+                    "passes": passes,
+                }
+            # Later pass found nothing further to add; stop with what we have.
+            break
+
+        new_fields = result.get("fields", {})
+        new_confs = result.get("confidences", {})
+        if result.get("raw_text"):
+            latest_raw_text = result["raw_text"]
+
+        delta_new_fields = 0
+        regressions_prevented = 0
+        merged_fields: Dict[str, str] = {}
+        merged_confs: Dict[str, float] = {}
+
+        for k in field_keys:
+            prev_val = prev_fields.get(k, "")
+            new_val = new_fields.get(k, "") or ""
+            new_conf = new_confs.get(k, 0.0)
+
+            # MONOTONIC QUALITY INVARIANT (same rule as execute_pass_and_verify):
+            # never let a later pass silently erase or downgrade an already
+            # accepted field.
+            if prev_val and not new_val:
+                merged_fields[k] = prev_val
+                merged_confs[k] = prev_confs.get(k, 0.0)
+                regressions_prevented += 1
+            elif prev_val and new_val and new_conf < 0.60:
+                merged_fields[k] = prev_val
+                merged_confs[k] = prev_confs.get(k, 0.0)
+            elif new_val:
+                if not prev_val:
+                    delta_new_fields += 1
+                merged_fields[k] = new_val
+                merged_confs[k] = new_conf
+            else:
+                merged_fields[k] = ""
+                merged_confs[k] = 0.0
+
+        prev_fields, prev_confs = merged_fields, merged_confs
+        filled = sum(1 for v in merged_fields.values() if v)
+        recall_percent = round((filled / total_fields) * 100, 1) if total_fields else 0.0
+
+        passes.append({
+            "passNumber": pass_num,
+            "enginesUsed": result.get("engines_used", []),
+            "status": "COMPLETED",
+            "durationMs": duration_ms,
+            "fieldsExtracted": filled,
+            "deltaNewFields": delta_new_fields,
+            "regressionsPrevented": regressions_prevented,
+            "recallPercent": recall_percent,
+        })
+
+        consecutive_zero_delta = consecutive_zero_delta + 1 if delta_new_fields == 0 else 0
+        early_stop = (consecutive_zero_delta >= 2 and pass_num >= 3) or (recall_percent >= 95 and pass_num >= 4)
+        if early_stop:
+            break
+
+    return {
+        "status": "SUCCESS",
+        "rawText": latest_raw_text,
+        "fields": prev_fields,
+        "confidences": prev_confs,
+        "validAbn": validate_australian_abn(prev_fields.get("abn", "")),
+        "validBsb": validate_australian_bsb(prev_fields.get("bsb", "")),
+        "validDob": validate_australian_dob(prev_fields.get("date_of_birth", "")),
+        "passes": passes,
+        "engineUsed": "multipass-ensemble",
+    }
+
 
 # ==============================================================================
 # REGRESSION VERIFICATION & DUCKDB PERSISTENCE (Zero-Lock WAL)
@@ -695,8 +812,6 @@ def main():
     parser = argparse.ArgumentParser(description="NGX Spark Multi-Pass OCR & Regression Engine")
     parser.add_argument("--pass-num", type=int, default=None, help="Execute specific pass number (1-10)")
     parser.add_argument("--max-passes", type=int, default=10, help="Maximum number of passes in loop (default: 10)")
-    parser.add_argument("--gdrive-folder-id", type=str, default=DEFAULT_GDRIVE_FOLDER, help="Google Drive folder ID")
-    parser.add_argument("--sync-gdrive", action="store_true", help="Force Google Drive folder sync before execution")
     args = parser.parse_args()
 
     try:
@@ -706,15 +821,11 @@ def main():
 
     init_duckdb()
 
-    # Phase 1: Ingest files from Google Drive if required or if input directory is empty
+    # Phase 1: Load files already staged by local ingestion, direct copy, or the DGX pull worker.
     input_files = [str(p) for p in INPUT_DIR.glob("**/*") if p.is_file() and not p.name.startswith(".")]
-    if args.sync_gdrive or not input_files:
-        logging.info("[*] Syncing documents from Google Drive...")
-        download_google_drive_folder(args.gdrive_folder_id, INPUT_DIR)
-        input_files = [str(p) for p in INPUT_DIR.glob("**/*") if p.is_file() and not p.name.startswith(".")]
 
     if not input_files:
-        logging.warning(f"[!] No documents found in {INPUT_DIR}. Add documents or ensure Google Drive folder is accessible.")
+        logging.warning(f"[!] No documents found in {INPUT_DIR}. Add documents with scripts/ingest_local_folder.mjs or copy files into the DGX input directory.")
         return
 
     logging.info(f"[+] Loaded {len(input_files)} target documents for processing.")
@@ -747,7 +858,6 @@ def main():
             break
 
         logging.info("[*] VRAM cooling for 3s before next optimization pass...")
-        import time
         time.sleep(3)
 
     logging.info(f"[+] Pipeline execution complete. Consolidated output exported to {OUTPUT_CSV}")

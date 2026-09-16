@@ -27,7 +27,6 @@ import {
   Sparkles
 } from 'lucide-react';
 import { SAMPLE_DOCUMENTS } from '../data/sampleDocuments';
-import { GDRIVE_DOWNLOADED_FILES } from '../data/gdriveDocuments';
 import { extractBankFieldsFromText } from '../utils/ocrMatcherEngine';
 import {
   validateAustralianDob,
@@ -46,23 +45,27 @@ interface MatcherStudioProps {
     docType: string;
     rawText: string;
   } | null;
-  onNavigateToMultiPass?: () => void;
+  onNavigateToDocuments?: () => void;
 }
 
 export const MatcherStudio: React.FC<MatcherStudioProps> = ({
   initialDocument,
-  onNavigateToMultiPass,
+  onNavigateToDocuments,
 }) => {
   const allAvailableDocs = useMemo(() => {
     return [
-      ...GDRIVE_DOWNLOADED_FILES.map((f) => ({
-        id: f.id,
-        title: f.name,
-        institution: f.institution,
-        docType: f.docType,
-        rawText: f.rawText,
-        source: 'Google Drive Cluster' as const,
-      })),
+      ...(initialDocument
+        ? [
+            {
+              id: initialDocument.id,
+              title: initialDocument.title,
+              institution: initialDocument.institution,
+              docType: initialDocument.docType,
+              rawText: initialDocument.rawText,
+              source: 'Local Upload' as const,
+            },
+          ]
+        : []),
       ...SAMPLE_DOCUMENTS.map((d) => ({
         id: d.id,
         title: d.title,
@@ -72,7 +75,7 @@ export const MatcherStudio: React.FC<MatcherStudioProps> = ({
         source: 'Sample Benchmark' as const,
       })),
     ];
-  }, []);
+  }, [initialDocument]);
 
   const [selectedDocId, setSelectedDocId] = useState<string>(
     initialDocument ? initialDocument.id : allAvailableDocs[0].id
@@ -112,78 +115,22 @@ export const MatcherStudio: React.FC<MatcherStudioProps> = ({
     if (doc) setCustomText(doc.rawText);
   };
 
-  // WEBSOCKET THIN-CLIENT STATE
+  // Field matching runs entirely client-side (see src/utils/ocrMatcherEngine.ts) —
+  // there is no server-side OCR to invoke for pasted/typed text. Real OCR of
+  // uploaded files happens via the DGX job pipeline (Documents tab); the
+  // extracted text lands here once already, via initialDocument.
   const [extractionResults, setExtractionResults] = React.useState<any[]>([]);
   const [isProcessing, setIsProcessing] = React.useState<boolean>(false);
-  const [serverStatus, setServerStatus] = React.useState<string>('Disconnected');
-  const [engineUsed, setEngineUsed] = React.useState<string>('LOCAL_CACHE');
-  
+  const engineUsed = 'LOCAL_REGEX_ENGINE';
 
-  const abortControllerRef = React.useRef<AbortController | null>(null);
-
-  // Trigger backend processing when text changes, debounced
   React.useEffect(() => {
-    const timeoutId = setTimeout(async () => {
-      setIsProcessing(true);
-      setServerStatus('Uploading payload...');
-      
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
-      
-      try {
-        const response = await fetch('/api/process-document', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: customText }),
-          signal: abortControllerRef.current.signal
-        });
-        
-        if (!response.body) throw new Error('No readable stream');
-        
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buffer = '';
-        
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || ''; // Keep incomplete line in buffer
-          
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const payload = JSON.parse(line.substring(6));
-                if (payload.type === 'ACK') {
-                  setServerStatus('Job Queued...');
-                } else if (payload.type === 'STATUS') {
-                  setServerStatus(payload.message);
-                } else if (payload.type === 'FINAL_RESULT') {
-                  setExtractionResults(payload.data || []);
-                  setEngineUsed(payload.engineUsed || 'UNKNOWN_ENGINE');
-                  setIsProcessing(false);
-                  setServerStatus('Idle (Ready)');
-                }
-              } catch (e) {
-                console.error('Failed to parse SSE payload:', e);
-              }
-            }
-          }
-        }
-      } catch (err: any) {
-        if (err.name === 'AbortError') return; // Ignore debounced aborts
-        console.error('Data plane error:', err);
-        setServerStatus('HTTP Stream Error (Fallback to Local)');
-        const rawResults = extractBankFieldsFromText(customText);
-        setExtractionResults(enforceAustralianFormattingRules(rawResults));
-        setIsProcessing(false);
-      }
-    }, 800);
-    
+    setIsProcessing(true);
+    const timeoutId = setTimeout(() => {
+      const rawResults = extractBankFieldsFromText(customText);
+      setExtractionResults(enforceAustralianFormattingRules(rawResults));
+      setIsProcessing(false);
+    }, 300);
+
     return () => clearTimeout(timeoutId);
   }, [customText]);
 
@@ -343,13 +290,15 @@ export const MatcherStudio: React.FC<MatcherStudioProps> = ({
             onChange={(e) => handleDocChange(e.target.value)}
             className="text-[11px] font-mono bg-black text-cyan-400 border border-slate-700 px-3 py-1.5 rounded focus:outline-none focus:border-cyan-500"
           >
-            <optgroup label="Google Drive Ingested Documents (Cluster)">
-              {allAvailableDocs.filter(d => d.source === 'Google Drive Cluster').map((doc) => (
-                <option key={doc.id} value={doc.id}>
-                  {doc.title} ({doc.institution})
-                </option>
-              ))}
-            </optgroup>
+            {allAvailableDocs.some((d) => d.source === 'Local Upload') && (
+              <optgroup label="Local Upload">
+                {allAvailableDocs.filter(d => d.source === 'Local Upload').map((doc) => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.title} ({doc.institution})
+                  </option>
+                ))}
+              </optgroup>
+            )}
             <optgroup label="Synthetic Benchmark Documents">
               {allAvailableDocs.filter(d => d.source === 'Sample Benchmark').map((doc) => (
                 <option key={doc.id} value={doc.id}>
@@ -359,13 +308,13 @@ export const MatcherStudio: React.FC<MatcherStudioProps> = ({
             </optgroup>
           </select>
 
-          {onNavigateToMultiPass && (
+          {onNavigateToDocuments && (
             <button
-              onClick={onNavigateToMultiPass}
+              onClick={onNavigateToDocuments}
               className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest bg-blue-950/40 text-blue-400 border border-blue-800 hover:bg-blue-900/50 transition-colors flex items-center gap-1.5 rounded"
             >
               <Zap className="w-3 h-3" />
-              <span>10-Pass Loop</span>
+              <span>Documents</span>
             </button>
           )}
         </div>
@@ -737,33 +686,29 @@ export const MatcherStudio: React.FC<MatcherStudioProps> = ({
         </div>
       )}
 
-      {/* BACKEND MULTI-PASS STATUS OVERLAY */}
+      {/* FIELD MATCHING STATUS OVERLAY */}
       {isProcessing && (
         <div className="bg-[#080808] border-2 border-cyan-800/80 p-5 mb-4 shadow-2xl flex items-center justify-between animate-pulse">
           <div className="flex items-center gap-3">
             <RefreshCw className="w-5 h-5 text-cyan-400 animate-spin" />
             <div>
               <h3 className="text-sm font-bold text-white uppercase tracking-widest">
-                Data Plane Processing Active
+                Field Matching In Progress
               </h3>
               <p className="text-[11px] text-cyan-400/80 font-mono mt-1">
-                {serverStatus}
+                Running regex/validation engine against buffer...
               </p>
             </div>
           </div>
-          <div className="text-xs font-mono text-cyan-600 bg-cyan-950/30 px-3 py-1 border border-cyan-900/50">
-            HTTP://NGX-SPARK-STREAM
-          </div>
         </div>
       )}
-      
+
       {!isProcessing && extractionResults.length > 0 && (
          <div className="bg-[#050505] border border-emerald-900/50 p-3 mb-4 flex items-center justify-between text-emerald-500 font-mono text-xs">
            <div className="flex items-center gap-2">
              <Check className="w-4 h-4" />
              <span>Payload Extracted via: <strong className="text-emerald-400">{engineUsed}</strong></span>
            </div>
-           <div>Latency: &lt;5ms (HTTP Chunked Stream)</div>
          </div>
       )}
 

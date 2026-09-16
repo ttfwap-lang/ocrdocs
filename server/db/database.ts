@@ -9,10 +9,8 @@
 import Database from 'better-sqlite3';
 import { existsSync, mkdirSync } from 'fs';
 import { dirname, resolve } from 'path';
-import { createRequire } from 'module';
 import type { Database as DatabaseType } from 'better-sqlite3';
-
-const require = createRequire(import.meta.url);
+import { runMigrations } from './migrations/001_initial_schema';
 
 const DB_PATH = resolve(
   process.env.DATABASE_PATH || 'data/app.db',
@@ -47,11 +45,6 @@ export function getDb(): DatabaseType {
  */
 export function initDb(): DatabaseType {
   const db = getDb();
-  // Migration import is deferred to avoid a circular dependency at module load.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { runMigrations } = require('./migrations/001_initial_schema') as {
-    runMigrations: (db: DatabaseType) => void;
-  };
   runMigrations(db);
   console.log('[DB] Migrations complete');
   return db;

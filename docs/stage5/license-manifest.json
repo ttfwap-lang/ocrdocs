@@ -1,6 +1,6 @@
 {
   "manifestVersion": "1.0.0",
-  "generatedAt": "2026-09-14T09:15:00Z",
+  "generatedAt": "2026-09-17T00:00:00Z",
   "project": "ocrdocs",
   "stage": 5,
   "nodeRuntime": {
@@ -35,6 +35,15 @@
         "notes": "React JSX transform plugin for Vite."
       },
       {
+        "name": "better-sqlite3",
+        "version": "13.0.3",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "SQLite database binding used by the local document and job repositories."
+      },
+      {
         "name": "dotenv",
         "version": "17.4.2",
         "ecosystem": "npm",
@@ -53,6 +62,15 @@
         "notes": "Core HTTP server and API gateway framework."
       },
       {
+        "name": "jsonwebtoken",
+        "version": "9.0.3",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "JWT signing and verification library for prepared route guards."
+      },
+      {
         "name": "lucide-react",
         "version": "0.546.0",
         "ecosystem": "npm",
@@ -69,6 +87,24 @@
         "commercialUseAllowed": true,
         "copyleft": false,
         "notes": "UI animation primitives."
+      },
+      {
+        "name": "multer",
+        "version": "2.4.0",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Multipart upload middleware for local document intake."
+      },
+      {
+        "name": "pdf-parse",
+        "version": "2.4.5",
+        "ecosystem": "npm",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Server-side native-text PDF extraction for digital PDFs."
       },
       {
         "name": "react",
@@ -96,18 +132,17 @@
         "commercialUseAllowed": true,
         "copyleft": false,
         "notes": "Frontend dev server and production bundler."
-      },
-      {
-        "name": "ws",
-        "version": "8.21.3",
-        "ecosystem": "npm",
-        "license": "MIT",
-        "commercialUseAllowed": true,
-        "copyleft": false,
-        "notes": "WebSocket server for real-time progress streaming."
       }
     ],
     "devDependencies": [
+      {
+        "name": "@types/better-sqlite3",
+        "version": "9.6.0",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
       {
         "name": "@types/express",
         "version": "5.0.6",
@@ -117,16 +152,24 @@
         "copyleft": false
       },
       {
-        "name": "@types/node",
-        "version": "22.20.2",
+        "name": "@types/jsonwebtoken",
+        "version": "9.0.10",
         "ecosystem": "npm",
         "license": "MIT",
         "commercialUseAllowed": true,
         "copyleft": false
       },
       {
-        "name": "@types/ws",
-        "version": "8.18.1",
+        "name": "@types/multer",
+        "version": "2.2.0",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
+      {
+        "name": "@types/node",
+        "version": "22.20.2",
         "ecosystem": "npm",
         "license": "MIT",
         "commercialUseAllowed": true,
@@ -269,25 +312,34 @@
         "notes": "Lightweight deep-learning OCR model."
       },
       {
-        "name": "gdown",
-        "version": "5.2.0",
+        "name": "python-docx",
+        "version": "1.1.2",
+        "ecosystem": "pypi",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "DOCX text extraction used by ocr_spark_engine.py."
+      },
+      {
+        "name": "striprtf",
+        "version": "0.0.26",
+        "ecosystem": "pypi",
+        "license": "BSD-3-Clause",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "RTF text extraction used by ocr_spark_engine.py."
+      },
+      {
+        "name": "requests",
+        "version": "2.32.3",
         "ecosystem": "pypi",
         "license": "Apache-2.0",
         "commercialUseAllowed": true,
         "copyleft": false,
-        "notes": "Google Drive document ingestion utility."
+        "notes": "HTTP client used by the DGX worker to claim jobs, fetch originals, and post results."
       }
     ],
     "screenedResearchDependencies": [
-      {
-        "name": "PyMuPDF",
-        "version": "1.24.10",
-        "ecosystem": "pypi",
-        "license": "AGPL-3.0",
-        "commercialUseAllowed": false,
-        "copyleft": true,
-        "notes": "Dual-licensed AGPL-3.0/Commercial Artifex; prohibited from default closed-source production builds without Artifex license. Replaced by pypdfium2 in production scope."
-      },
       {
         "name": "paddleocr",
         "version": "2.8.1",
@@ -296,6 +348,15 @@
         "commercialUseAllowed": true,
         "copyleft": false,
         "notes": "Permissive code license; neural weights subject to APRA commercial audit."
+      },
+      {
+        "name": "paddlepaddle",
+        "version": "2.6.2",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Runtime backend required by PaddleOCR."
       },
       {
         "name": "surya-ocr",
@@ -318,21 +379,12 @@
         "commercialUseAllowed": true,
         "copyleft": false,
         "notes": "Standard native OCR binary executable."
-      },
-      {
-        "name": "poppler-utils",
-        "version": "24.02.0",
-        "ecosystem": "system",
-        "license": "GPL-2.0",
-        "commercialUseAllowed": false,
-        "copyleft": true,
-        "notes": "Screened external utility; restricted to separate CLI process invocations; replaced by pypdfium2 in production runtime."
       }
     ]
   },
   "licenseSummary": {
-    "totalProductionDependencies": 22,
-    "commercialPermissiveCount": 22,
+    "totalProductionDependencies": 27,
+    "commercialPermissiveCount": 27,
     "copyleftCountInProduction": 0,
     "screenedConditionalCount": 3
   }

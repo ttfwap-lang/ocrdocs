@@ -3,22 +3,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Navbar, NavTab } from './components/Navbar';
 import { MatcherStudio } from './components/MatcherStudio';
-import { GoogleDriveHub } from './components/GoogleDriveHub';
-import { MultiPassRegressionView } from './components/MultiPassRegressionView';
+import { DocumentsView } from './components/DocumentsView';
 import { AuditAndEngineView } from './components/AuditAndEngineView';
-import { SuperStackResearchView } from './components/SuperStackResearchView';
 import { RegexDictionaryView } from './components/RegexDictionaryView';
 import { GeminiChatbot } from './components/GeminiChatbot';
 import { SAMPLE_DOCUMENTS } from './data/sampleDocuments';
 import { extractBankFieldsFromText } from './utils/ocrMatcherEngine';
 import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from './data/bankFields';
-import { Cpu, HardDrive, ShieldCheck, Activity, FolderDown, Layers } from 'lucide-react';
+import type { ServiceAvailabilityResponse } from './types';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<NavTab>('multipass');
+  const [activeTab, setActiveTab] = useState<NavTab>('documents');
   const [selectedExternalDoc, setSelectedExternalDoc] = useState<{
     id: string;
     title: string;
@@ -36,7 +34,47 @@ export default function App() {
     return initialResults.filter((r) => r.status === 'matched').length;
   }, [initialResults]);
 
-  const handleSelectDocFromDrive = (doc: {
+  const [statusBar, setStatusBar] = useState({
+    dgxWorkerAvailable: false,
+    documentCount: 0,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchStatusBarData = async () => {
+      const [servicesResponse, documentsResponse] = await Promise.all([
+        fetch('/api/services/status'),
+        fetch('/api/documents'),
+      ]);
+      const services = (await servicesResponse.json()) as ServiceAvailabilityResponse[];
+      const documents = (await documentsResponse.json()) as unknown[];
+      const dgxWorker = services.find((service) => service.service === 'dgx_worker');
+
+      if (!cancelled) {
+        setStatusBar({
+          dgxWorkerAvailable: Boolean(dgxWorker?.available),
+          documentCount: Array.isArray(documents) ? documents.length : 0,
+        });
+      }
+    };
+
+    fetchStatusBarData().catch((error) => {
+      console.error('Failed to fetch application status:', error);
+    });
+    const interval = window.setInterval(() => {
+      fetchStatusBarData().catch((error) => {
+        console.error('Failed to refresh application status:', error);
+      });
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const handleSelectDocument = (doc: {
     id: string;
     title: string;
     institution: string;
@@ -56,48 +94,31 @@ export default function App() {
         totalFields={BANK_FIELD_DEFINITIONS.length + CORE_IDENTIFIER_DEFINITIONS.length}
       />
 
-      {/* Cluster & Telemetry Bar */}
+      {/* Live Status Bar */}
       <div className="bg-[#0a0a0a] border-b border-slate-800 py-1.5 px-4 text-[10px] font-mono tracking-widest text-slate-500 uppercase">
         <div className="max-w-screen-2xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4 flex-wrap">
-            <span className="flex items-center gap-1.5 text-emerald-500 font-bold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              CLUSTER.ONLINE
-            </span>
-            <span className="text-slate-800 hidden sm:inline">|</span>
-            <span className="flex items-center gap-1 text-slate-400">
-              <HardDrive className="w-3 h-3 text-cyan-500" />
-              <span>GDRIVE: 16q3PdioHVbLIBVqU--54nBvNhqLE7bNN</span>
-            </span>
-            <span className="text-slate-800 hidden sm:inline">|</span>
-            <span className="flex items-center gap-1 text-slate-400">
-              <ShieldCheck className="w-3 h-3 text-emerald-500" />
-              <span>REGRESSION LOOP: 10-PASS EARLY-STOP ACTIVE</span>
+            <span className={`flex items-center gap-1.5 font-bold ${statusBar.dgxWorkerAvailable ? 'text-emerald-500' : 'text-amber-500'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${statusBar.dgxWorkerAvailable ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              DGX WORKER: {statusBar.dgxWorkerAvailable ? 'LIVE' : 'UNCONFIGURED'}
             </span>
           </div>
 
           <div className="flex items-center gap-2 text-cyan-700 font-bold">
-            <span>NVME PATH: /mnt/nvme/ocr_pipeline</span>
+            <span>{statusBar.documentCount} DOCUMENTS</span>
           </div>
         </div>
       </div>
 
       <main className="flex-1 max-w-screen-2xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'multipass' && <MultiPassRegressionView />}
-        {activeTab === 'gdrive' && (
-          <GoogleDriveHub
-            onSelectDocumentForOcr={handleSelectDocFromDrive}
-            onNavigateToMultiPass={() => setActiveTab('multipass')}
-          />
-        )}
+        {activeTab === 'documents' && <DocumentsView onSelectDocumentForOcr={handleSelectDocument} />}
         {activeTab === 'studio' && (
           <MatcherStudio
             initialDocument={selectedExternalDoc}
-            onNavigateToMultiPass={() => setActiveTab('multipass')}
+            onNavigateToDocuments={() => setActiveTab('documents')}
           />
         )}
         {activeTab === 'audit' && <AuditAndEngineView />}
-        {activeTab === 'superstack' && <SuperStackResearchView />}
         {activeTab === 'regex' && <RegexDictionaryView />}
         {activeTab === 'copilot' && <GeminiChatbot />}
       </main>

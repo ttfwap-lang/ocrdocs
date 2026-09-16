@@ -110,7 +110,6 @@ test('Stage 6 — Build and startup corrections test suite', async (t) => {
     assert.equal(cfg.storageRoot, envMod.ENV_DEFAULTS.storageRoot);
     assert.equal(cfg.shutdownTimeoutMs, envMod.ENV_DEFAULTS.shutdownTimeoutMs);
     assert.equal(cfg.jwtSecret, undefined);
-    assert.equal(cfg.enableDemoFixtures, false);
   });
 
   await t.test('Fact 1: production accepts full valid config', () => {
@@ -129,7 +128,6 @@ test('Stage 6 — Build and startup corrections test suite', async (t) => {
     assert.equal(cfg.databasePath, 'data/prod.db');
     assert.equal(cfg.jwtSecret, 'unit-test-secret-ok');
     assert.equal(cfg.shutdownTimeoutMs, 5000);
-    assert.equal(cfg.enableDemoFixtures, false);
   });
 
   await t.test('Security: validation errors never echo secret values', () => {

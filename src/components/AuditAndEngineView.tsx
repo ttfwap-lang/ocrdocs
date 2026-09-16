@@ -23,23 +23,10 @@ import {
 } from 'lucide-react';
 import { AUDIT_SECTIONS, SPARK_SUBMIT_COMMAND } from '../data/scriptComparison';
 import { DGX_SETUP_SH, OCR_SPARK_ENGINE_PY, DEPLOY_SH, CHECK_DGX_CODEBASE_SH } from '../data/dgxScripts';
-import { GDRIVE_FOLDER_METADATA } from '../data/gdriveDocuments';
 
-const PIPELINE_ERRORS_LOG = `[2026-09-12 04:15:01] [INIT] Connecting to DuckDB WAL at /mnt/nvme/ocr_pipeline/db/identity_index.duckdb
-[2026-09-12 04:15:02] [GDRIVE] Ingesting folder ${GDRIVE_FOLDER_METADATA.folderId} via gdown...
-[2026-09-12 04:15:04] [GDRIVE] 9 documents verified in cluster cache with SHA-256 integrity.
-[2026-09-12 04:15:06] [PASS 1] Native PyMuPDF Text Stream: Extracted 12/30 fields (Recall 40.0%).
-[2026-09-12 04:15:08] [PASS 2] Otsu & CLAHE Adaptive Contrast Tesseract: Extracted 17/30 fields (Recall 56.7%, +5 new fields).
-[2026-09-12 04:15:11] [PASS 3] PaddleOCR DBNet & SVTR: Extracted 22/30 fields (Recall 73.3%, +5 new fields).
-[2026-09-12 04:15:14] [PASS 4] EasyOCR Deep BiLSTM: Extracted 25/30 fields (Recall 83.3%, +3 new fields, 1 regression blocked).
-[2026-09-12 04:15:18] [PASS 5] Surya-OCR Layout Transformer: Extracted 27/30 fields (Recall 90.0%, +2 new fields).
-[2026-09-12 04:15:21] [PASS 6] SpaCy en_core_web_sm Financial NER: Extracted 29/30 fields (Recall 96.7%, +2 new fields, 2 regressions blocked).
-[2026-09-12 04:15:23] [CONVERGENCE] Delta new fields reached saturation threshold with zero regressions.
-[2026-09-12 04:15:23] [EARLY_STOP] Loop halted safely at Pass 6. Resource savings: 40% compute, 0 lock contention.
-[2026-09-12 04:15:24] [VERIFICATION] Australian Modulo 89 ABN & 6-digit APRA BSB Checksums: 100% VALIDATED.`;
 
 export const AuditAndEngineView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'script1' | 'script2' | 'script3' | 'script4' | 'submit' | 'logs'>('script4');
+  const [activeTab, setActiveTab] = useState<'script1' | 'script2' | 'script3' | 'script4' | 'submit'>('script4');
   const [copied, setCopied] = useState<boolean>(false);
   const [telemetry, setTelemetry] = useState<any>(null);
   const [telemetryLoading, setTelemetryLoading] = useState<boolean>(false);
@@ -77,8 +64,6 @@ export const AuditAndEngineView: React.FC = () => {
         return CHECK_DGX_CODEBASE_SH;
       case 'submit':
         return SPARK_SUBMIT_COMMAND;
-      case 'logs':
-        return PIPELINE_ERRORS_LOG;
     }
   };
 
@@ -94,8 +79,6 @@ export const AuditAndEngineView: React.FC = () => {
         return 'check_dgx_codebase.sh';
       case 'submit':
         return 'spark_submit.sh';
-      case 'logs':
-        return 'pipeline_audit.log';
     }
   };
 
@@ -137,7 +120,7 @@ export const AuditAndEngineView: React.FC = () => {
               3 Production Engine Scripts & Architecture Audit
             </h1>
             <p className="text-sm text-slate-600 mt-1 max-w-3xl">
-              Equipped with Google Drive folder ingestion (<code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono font-medium">{GDRIVE_FOLDER_METADATA.folderId}</code>), 10-pass progressive optimization with regression verification, and zero-loss monotonic field invariants.
+              Equipped with local document/folder ingestion, 10-pass progressive optimization with regression verification, and zero-loss monotonic field invariants.
             </p>
             <div className="mt-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-md p-2 flex items-center gap-2">
               <span className="font-bold">⚠️ DGX Transfer Note:</span>
@@ -189,7 +172,7 @@ export const AuditAndEngineView: React.FC = () => {
               <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded font-mono">Bash</span>
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
-              ARM64/x86 DGX provisioner, gdown, CUDA 12.4, PaddleOCR, EasyOCR, and DuckDB WAL.
+              ARM64/x86 DGX provisioner, pinned dependencies, CUDA 12.4, PaddleOCR, EasyOCR, and DuckDB WAL.
             </p>
           </div>
 
@@ -366,16 +349,6 @@ export const AuditAndEngineView: React.FC = () => {
               }`}
             >
               Spark Submit / CLI
-            </button>
-            <button
-              onClick={() => setActiveTab('logs')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === 'logs'
-                  ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Telemetry Logs
             </button>
           </div>
 

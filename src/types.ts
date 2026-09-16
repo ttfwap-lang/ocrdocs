@@ -76,21 +76,6 @@ export interface ExtractionResult {
   disambiguation?: ContextualDisambiguationMeta;
 }
 
-export interface ResearchPassReport {
-  passNumber: number;
-  passName: string;
-  targetDomain: string;
-  researchFocus: string;
-  baselineMetric: string;
-  optimizedMetric: string;
-  improvementGain: string;
-  status: 'VERIFIED_ZERO_REGRESSION' | 'OPTIMIZED' | 'DEPLOYED';
-  keyDiscoveries: string[];
-  architecturalDecisions: string[];
-  cppOrNgxBlueprint: string;
-  regressionProofLogs: string;
-}
-
 export interface SampleDocument {
   id: string;
   title: string;
@@ -116,70 +101,32 @@ export interface ScriptAuditSection {
   impact: string;
 }
 
-export interface GDriveFileItem {
-  id: string;
-  name: string;
-  sizeBytes: number;
-  mimeType: string;
-  category: string;
-  downloadStatus: 'synced' | 'downloading' | 'ready' | 'pending';
-  checksumSha256?: string;
-  extractedFieldsCount?: number;
-  sampleContent?: string;
-}
-
-export interface GDriveFolderStatus {
-  folderId: string;
-  folderUrl: string;
-  folderName: string;
-  totalFiles: number;
-  totalSizeFormatted: string;
-  lastSynced: string;
-  syncState: 'idle' | 'syncing' | 'synced' | 'error';
-  files: GDriveFileItem[];
-}
-
-export interface PassExecutionMetric {
-  passNumber: number;
-  name: string;
-  engineUsed: string;
-  enhancementFilter: string;
-  status: 'PENDING' | 'RUNNING' | 'CONVERGED' | 'COMPLETED' | 'SKIPPED';
-  durationMs: number;
-  totalDocuments: number;
-  fieldsExtracted: number;
-  totalFieldsPossible: number;
-  recallPercent: number;
-  validAbnCount: number;
-  validBsbCount: number;
-  validDobCount: number;
-  regressionsPrevented: number;
-  deltaNewFields: number;
-  earlyStopFeasible: boolean;
-  logSummary: string;
-}
-
-export interface MultiPassRunSummary {
-  runId: string;
-  totalPassesRun: number;
-  maxPassesAllowed: number;
-  earlyStopTriggered: boolean;
-  earlyStopPassNumber?: number;
-  stopReason?: string;
-  monotonicPreservationActive: boolean;
-  totalRegressionsPrevented: number;
-  initialRecall: number;
-  finalRecall: number;
-  gain: number;
-  passes: PassExecutionMetric[];
-}
-
 export interface ServiceAvailabilityResponse {
-  service: 'gdrive' | 'ocr_worker' | 'multipass';
-  mode: 'live' | 'mock_development' | 'unconfigured';
+  service: 'ocr_worker' | 'dgx_worker';
+  mode: 'live' | 'unconfigured';
   available: boolean;
   reason?: string;
   configuredAt?: string;
+}
+
+/** A document registered via POST /api/documents, as returned by the DB-backed document/job pipeline. */
+export interface LocalDocument {
+  id: string;
+  filename: string;
+  original_path: string;
+  content_hash: string | null;
+  mime_type: string | null;
+  status: string;
+  uploaded_at: string;
+}
+
+export interface LocalJob {
+  id: string;
+  document_id: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  started_at: string | null;
+  completed_at: string | null;
+  error: string | null;
 }
 
 export interface PinnedDependency {
@@ -237,5 +184,4 @@ export interface LoadedEnvConfig {
   storageRoot: string;
   jwtSecret?: string;
   shutdownTimeoutMs: number;
-  enableDemoFixtures: boolean;
 }

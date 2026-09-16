@@ -47,6 +47,7 @@ export interface PersistedExtractionResult {
     extractionVersion: number;
     createdAt: string;
     engineUsed?: string;
+    passes?: Array<Record<string, unknown>>;
   };
 }
 
