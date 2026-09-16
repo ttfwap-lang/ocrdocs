@@ -1,0 +1,213 @@
+{
+  "sourceOfTruth": "PROJECT_CHARTER.md §Autonomous decisions and boundaries (lines 13-14)",
+  "limits": {
+    "maxSizeBytes": 26214400,
+    "maxPages": 50,
+    "languages": [
+      "en"
+    ],
+    "rotationSupported": true
+  },
+  "supportedFormats": [
+    "pdf_digital",
+    "pdf_scanned",
+    "pdf_mixed",
+    "image_png",
+    "image_jpeg"
+  ],
+  "applicantsSupported": [
+    "single",
+    "joint",
+    "guarantor"
+  ],
+  "entries": [
+    {
+      "format": "pdf_digital",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "single",
+      "expectedOutcome": "extract",
+      "rejectionCode": null,
+      "testStrategy": "fixture pdf_digital/single: assert outcome 'extract', verify page order/rotation for pdf_digital, map single applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "pdf_digital",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "joint",
+      "expectedOutcome": "extract",
+      "rejectionCode": null,
+      "testStrategy": "fixture pdf_digital/joint: assert outcome 'extract', verify page order/rotation for pdf_digital, map joint applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "pdf_digital",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "guarantor",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture pdf_digital/guarantor: assert outcome 'review_required', verify page order/rotation for pdf_digital, map guarantor applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "pdf_scanned",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "single",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture pdf_scanned/single: assert outcome 'review_required', verify page order/rotation for pdf_scanned, map single applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "pdf_scanned",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "joint",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture pdf_scanned/joint: assert outcome 'review_required', verify page order/rotation for pdf_scanned, map joint applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "pdf_scanned",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "guarantor",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture pdf_scanned/guarantor: assert outcome 'review_required', verify page order/rotation for pdf_scanned, map guarantor applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "pdf_mixed",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "single",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture pdf_mixed/single: assert outcome 'review_required', verify page order/rotation for pdf_mixed, map single applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "pdf_mixed",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "joint",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture pdf_mixed/joint: assert outcome 'review_required', verify page order/rotation for pdf_mixed, map joint applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "pdf_mixed",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "guarantor",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture pdf_mixed/guarantor: assert outcome 'review_required', verify page order/rotation for pdf_mixed, map guarantor applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "image_png",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "single",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture image_png/single: assert outcome 'review_required', verify page order/rotation for image_png, map single applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "image_png",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "joint",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture image_png/joint: assert outcome 'review_required', verify page order/rotation for image_png, map joint applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "image_png",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "guarantor",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture image_png/guarantor: assert outcome 'review_required', verify page order/rotation for image_png, map guarantor applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "image_jpeg",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "single",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture image_jpeg/single: assert outcome 'review_required', verify page order/rotation for image_jpeg, map single applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "image_jpeg",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "joint",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture image_jpeg/joint: assert outcome 'review_required', verify page order/rotation for image_jpeg, map joint applicant, enforce 26214400 B / 50 pages."
+    },
+    {
+      "format": "image_jpeg",
+      "maxSizeBytes": 26214400,
+      "maxPages": 50,
+      "rotationSupported": true,
+      "applicantSupport": "guarantor",
+      "expectedOutcome": "review_required",
+      "rejectionCode": null,
+      "testStrategy": "fixture image_jpeg/guarantor: assert outcome 'review_required', verify page order/rotation for image_jpeg, map guarantor applicant, enforce 26214400 B / 50 pages."
+    }
+  ],
+  "unsupportedInputs": [
+    {
+      "condition": "encrypted_pdf",
+      "rejectionCode": "ENCRYPTED_PDF",
+      "handling": "reject_unsupported",
+      "testStrategy": "fixture unsupported input (encrypted_pdf): assert reject_unsupported with code ENCRYPTED_PDF and no parser execution."
+    },
+    {
+      "condition": "corrupt_file",
+      "rejectionCode": "CORRUPT_FILE",
+      "handling": "reject_unsupported",
+      "testStrategy": "fixture unsupported input (corrupt_file): assert reject_unsupported with code CORRUPT_FILE and no parser execution."
+    },
+    {
+      "condition": "unsupported_format",
+      "rejectionCode": "UNSUPPORTED_FORMAT",
+      "handling": "reject_unsupported",
+      "testStrategy": "fixture unsupported input (unsupported_format): assert reject_unsupported with code UNSUPPORTED_FORMAT and no parser execution."
+    },
+    {
+      "condition": "file_too_large",
+      "rejectionCode": "FILE_TOO_LARGE",
+      "handling": "reject_unsupported",
+      "testStrategy": "fixture unsupported input (file_too_large): assert reject_unsupported with code FILE_TOO_LARGE and no parser execution."
+    },
+    {
+      "condition": "too_many_pages",
+      "rejectionCode": "TOO_MANY_PAGES",
+      "handling": "reject_unsupported",
+      "testStrategy": "fixture unsupported input (too_many_pages): assert reject_unsupported with code TOO_MANY_PAGES and no parser execution."
+    },
+    {
+      "condition": "invalid_signature",
+      "rejectionCode": "INVALID_SIGNATURE",
+      "handling": "reject_unsupported",
+      "testStrategy": "fixture unsupported input (invalid_signature): assert reject_unsupported with code INVALID_SIGNATURE and no parser execution."
+    }
+  ]
+}

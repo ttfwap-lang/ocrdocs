@@ -1,0 +1,48 @@
+{
+  "sourceOfTruth": "PROJECT_CHARTER.md §Autonomous decisions and boundaries (line 18) and §Complete roadmap Stage 2",
+  "outcomes": {
+    "extract": {
+      "description": "High-confidence values extracted from a digital text layer; no human review required before export.",
+      "requiresHumanReview": false
+    },
+    "review_required": {
+      "description": "OCR-backed, rotated/blank page, multi-applicant, or guarantor input; human review and approval required before any downstream use.",
+      "requiresHumanReview": true
+    },
+    "reject_unsupported": {
+      "description": "Input cannot be processed by a supported pipeline and is rejected with a visible code; no partial extraction is returned.",
+      "requiresHumanReview": true
+    }
+  },
+  "rejectionCodes": [
+    "ENCRYPTED_PDF",
+    "CORRUPT_FILE",
+    "UNSUPPORTED_FORMAT",
+    "FILE_TOO_LARGE",
+    "TOO_MANY_PAGES",
+    "INVALID_SIGNATURE"
+  ],
+  "applicantAssociation": {
+    "single": {
+      "supported": true,
+      "outcome": "extract"
+    },
+    "joint": {
+      "supported": true,
+      "outcome": "extract"
+    },
+    "guarantor": {
+      "supported": true,
+      "outcome": "review_required"
+    }
+  },
+  "reviewTriggerReasons": [
+    "ocr_confidence_below_threshold",
+    "joint_applicant",
+    "guarantor_present",
+    "rotated_or_blank_page",
+    "misleading_text_layer",
+    "layout_unsupported",
+    "multi_pass_disagreement"
+  ]
+}

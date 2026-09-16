@@ -1,0 +1,31 @@
+tools:
+    shell:
+        allow:
+            - curl *
+            - bash
+            - curl.exe *
+            - bash *
+            - git *
+            - echo *
+            - rm *
+            - which pool
+            - head *
+            - winget search pool *
+            - scoop search *
+            - powershell *
+            - ls *
+            - tar *
+            - sha256sum *
+            - tr *
+            - which *
+            - mkdir *
+            - cp *
+            - cmd.exe *
+            - powershell.exe *
+            - /mnt/c/Users/lnxzf/AppData/Local/Programs/pool/bin/pool.exe *
+            - grep *
+            - reg query "HKCU\Environment" *
+            - findstr *
+            - cd *
+            - cat *
+            - find *
