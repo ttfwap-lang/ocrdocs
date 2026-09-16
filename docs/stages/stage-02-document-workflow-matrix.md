@@ -2,7 +2,7 @@
 stage: 2
 slug: document-workflow-matrix
 title: Document/workflow matrix
-status: complete
+status: deferred
 depends_on: [1]
 blocks: [3, 9, 11, 20]
 weight_area: extraction-validation

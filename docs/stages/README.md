@@ -11,9 +11,9 @@ This index is generated automatically by `scripts/stages/build-index.mjs` and en
 
 | Status | Count | Percentage | Description |
 |---|---|---|---|
-| Complete | 7 | 12.7% | Verified with inspectable evidence artifacts and passing gate |
+| Complete | 6 | 10.9% | Verified with inspectable evidence artifacts and passing gate |
 | In Progress | 0 | 0.0% | Currently undergoing active implementation / verification |
-| Deferred | 0 | 0.0% | Prior attempt paused or failed; preserved diagnostic for next sweep |
+| Deferred | 1 | 1.8% | Prior attempt paused or failed; preserved diagnostic for next sweep |
 | Blocked External | 0 | 0.0% | Engineering complete; awaiting owner or third-party sign-off |
 | Not Started | 48 | 87.3% | Greenfield implementation governed by stage dossier |
 | **Total** | **55** | **100.0%** | **Full Project Charter Scope** |
@@ -25,7 +25,7 @@ This index is generated automatically by `scripts/stages/build-index.mjs` and en
 | # | Slug | Title | Status | Weight Area | Depends On | Blocks | External Gates | Dossier |
 |---|---|---|---|---|---|---|---|---|
 | 01 | `commercial-release-contract` | Commercial release contract | `complete` | `tests-deployment-operations` | none | 2, 3 | none | [stage-01-commercial-release-contract.md](stage-01-commercial-release-contract.md) |
-| 02 | `document-workflow-matrix` | Document/workflow matrix | `complete` | `extraction-validation` | 1 | 3, 9, 11, 20 | none | [stage-02-document-workflow-matrix.md](stage-02-document-workflow-matrix.md) |
+| 02 | `document-workflow-matrix` | Document/workflow matrix | `deferred` | `extraction-validation` | 1 | 3, 9, 11, 20 | none | [stage-02-document-workflow-matrix.md](stage-02-document-workflow-matrix.md) |
 | 03 | `architecture-and-failure-model` | Architecture and failure model | `complete` | `persistence-recovery` | 1, 2 | 4, 5, 8, 11, 12, 19 | none | [stage-03-architecture-and-failure-model.md](stage-03-architecture-and-failure-model.md) |
 | 04 | `truthful-demonstration-live-separation` | Truthful demonstration/live separation | `complete` | `interface-workflow` | 3 | 6, 7, 20 | none | [stage-04-truthful-demonstration-live-separation.md](stage-04-truthful-demonstration-live-separation.md) |
 | 05 | `reproducible-dependencies` | Reproducible dependencies | `complete` | `tests-deployment-operations` | 3 | 6, 18, 47 | none | [stage-05-reproducible-dependencies.md](stage-05-reproducible-dependencies.md) |

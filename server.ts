@@ -21,7 +21,6 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 
 import { MultipassOcrOrchestrator, ServiceUnavailableError } from "./server/services/multipassOcr";
-import { globalQueue, Topics } from "./server/queue/eventBus";
 import { extractBankFieldsFromText } from "./src/utils/ocrMatcherEngine";
 import { gdriveRouter } from "./server/routes/gdriveRoutes";
 import { ServiceAvailabilityResponse } from "./src/types";
@@ -388,12 +387,14 @@ app.post("/api/process-document", async (req, res) => {
   const jobId = Date.now().toString();
   
   const sendEvent = (type, data) => {
+    if (!res.writable) return;
     res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
   };
 
   sendEvent("ACK", { status: "QUEUED", jobId });
   
-  const text = req.body.text || "";
+  const body = req.body ?? {};
+  const text = body.text || "";
   const buffer = Buffer.from(text);
   
   sendEvent("STATUS", { jobId, message: "Initiating Multi-Pass OCR (GCP, Azure, AWS)..." });

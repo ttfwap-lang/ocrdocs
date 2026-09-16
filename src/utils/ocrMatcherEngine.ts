@@ -3,9 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BankFieldDefinition, ExtractionResult, AustralianAddressStructure, ContextualDisambiguationMeta } from '../types';
-import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../data/bankFields';
-export {
+import {
   enforceAustralianFormattingRules,
   validateAustralianField,
   validateAustralianDob,
@@ -13,10 +11,8 @@ export {
   validateAustralianAbn,
   validateAustralianBsb,
 } from './australianValidationUtility';
-import {
-  enforceAustralianFormattingRules,
-  validateAustralianField,
-} from './australianValidationUtility';
+import { BankFieldDefinition, ExtractionResult, AustralianAddressStructure, ContextualDisambiguationMeta } from '../types';
+import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../data/bankFields';
 
 /**
  * High-performance Contextual & Structural OCR Matcher Engine.
