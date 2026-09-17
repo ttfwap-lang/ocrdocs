@@ -13,12 +13,18 @@ import {
   RefreshCw,
   Server
 } from 'lucide-react';
-import { AUDIT_SECTIONS, SPARK_SUBMIT_COMMAND } from '../data/scriptComparison';
-import { DGX_SETUP_SH, OCR_SPARK_ENGINE_PY, DEPLOY_SH, CHECK_DGX_CODEBASE_SH } from '../data/dgxScripts';
+import { AUDIT_SECTIONS, DGX_WORKER_RUN_COMMAND } from '../data/scriptComparison';
+import {
+  DGX_SETUP_SH,
+  OCR_SPARK_ENGINE_PY,
+  DGX_WORKER_PY,
+  DEPLOY_SH,
+  CHECK_DGX_CODEBASE_SH,
+} from '../data/dgxScripts';
 
 
 export const AuditAndEngineView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'script1' | 'script2' | 'script3' | 'script4' | 'submit'>('script4');
+  const [activeTab, setActiveTab] = useState<'script1' | 'script2' | 'worker' | 'script3' | 'script4' | 'submit'>('script4');
   const [copied, setCopied] = useState<boolean>(false);
   const [telemetry, setTelemetry] = useState<any>(null);
   const [telemetryLoading, setTelemetryLoading] = useState<boolean>(false);
@@ -52,10 +58,12 @@ export const AuditAndEngineView: React.FC = () => {
         return OCR_SPARK_ENGINE_PY;
       case 'script3':
         return DEPLOY_SH;
+      case 'worker':
+        return DGX_WORKER_PY;
       case 'script4':
         return CHECK_DGX_CODEBASE_SH;
       case 'submit':
-        return SPARK_SUBMIT_COMMAND;
+        return DGX_WORKER_RUN_COMMAND;
     }
   };
 
@@ -67,10 +75,12 @@ export const AuditAndEngineView: React.FC = () => {
         return 'ocr_spark_engine.py';
       case 'script3':
         return 'deploy.sh';
+      case 'worker':
+        return 'dgx_worker.py';
       case 'script4':
         return 'check_dgx_codebase.sh';
       case 'submit':
-        return 'spark_submit.sh';
+        return 'run_dgx_worker.sh';
     }
   };
 
@@ -103,32 +113,34 @@ export const AuditAndEngineView: React.FC = () => {
               <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-widest bg-cyan-950/40 text-cyan-300 border border-cyan-500/30 rounded">
                 Production DGX & NVMe Codebase
               </span>
-              <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-widest bg-matrix-900/40 text-matrix-400 border border-matrix-500/30 rounded flex items-center gap-1">
+              <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-widest bg-amber-950/40 text-amber-300 border border-amber-500/30 rounded flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Audited & Hardened
+                Never run on GPU hardware
               </span>
             </div>
             <h1 className="glitch-heading text-2xl uppercase">
-              3 Production Engine Scripts & Architecture Audit
+              DGX Operator Scripts & Issue Register
             </h1>
             <p className="text-sm text-slate-400 mt-1 max-w-3xl font-mono">
-              Equipped with local document/folder ingestion, 10-pass progressive optimization with regression verification, and zero-loss monotonic field invariants.
+              The scripts below are read live from this repository, so what you copy is what actually
+              runs. The pull-model worker protocol is covered by tests and has been verified locally
+              against a real Tesseract binary; the GPU engines it also calls (PaddleOCR, EasyOCR)
+              have never been executed on real hardware.
             </p>
             <div className="mt-2 text-xs bg-amber-950/30 border border-amber-500/30 text-amber-300 rounded-md p-2 flex items-center gap-2 font-mono">
               <span className="font-bold">⚠️ DGX Transfer Note:</span>
-              <span>The preview URL enforces session authentication. To transfer scripts to DGX, click <strong>Download</strong> and transfer via <code className="font-mono bg-black/50 px-1 py-0.5 rounded border border-amber-900/40">scp</code>, or copy and paste the code directly in your terminal.</span>
+              <span>Click <strong>Download</strong> and transfer via <code className="font-mono bg-black/50 px-1 py-0.5 rounded border border-amber-900/40">scp</code>, or copy the code directly into your terminal. (The <code className="font-mono bg-black/50 px-1 py-0.5 rounded border border-amber-900/40">/api/scripts</code> endpoint requires the worker bearer token and is not browser-reachable.)</span>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <a
-              href={`/api/scripts/${getDownloadFilename()}`}
-              download
+            <button
+              onClick={handleDownloadActiveScript}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider text-black bg-matrix-500 hover:bg-matrix-400 rounded-lg shadow-[0_0_18px_-4px_rgba(0,255,65,0.7)] transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
               Download {getDownloadFilename()}
-            </a>
+            </button>
           </div>
         </div>
 
@@ -199,6 +211,23 @@ export const AuditAndEngineView: React.FC = () => {
             </div>
             <p className="text-[11px] text-slate-500 mt-1 font-mono">
               Local-to-DGX orchestrator: authenticated engine sync, 10-pass regression loop controller.
+            </p>
+          </div>
+
+          <div
+            onClick={() => setActiveTab('worker')}
+            className={`p-3 rounded-lg border cursor-pointer transition-all ${
+              activeTab === 'worker'
+                ? 'bg-cyan-950/30 border-cyan-500/50 ring-1 ring-cyan-500/40'
+                : 'bg-black/30 border-white/10 hover:border-matrix-500/30'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono font-bold text-slate-200">Worker: dgx_worker.py</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-cyan-950/50 text-cyan-300 rounded font-mono border border-cyan-500/30">Python 3</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1 font-mono">
+              The job-queue worker. Claims queued documents from this server, OCRs them, posts results back.
             </p>
           </div>
         </div>
@@ -340,7 +369,7 @@ export const AuditAndEngineView: React.FC = () => {
                   : 'text-slate-500 hover:text-slate-300'
               }`}
             >
-              Spark Submit / CLI
+              Run Worker / CLI
             </button>
           </div>
 
@@ -371,20 +400,32 @@ export const AuditAndEngineView: React.FC = () => {
       <div>
         <h2 className="text-base font-mono font-bold text-slate-200 mb-3 flex items-center gap-2 uppercase tracking-wide">
           <ShieldAlert className="w-4 h-4 text-amber-400" />
-          Production Engineering Countermeasures & Audits
+          Engineering Issue Register
         </h2>
+        <p className="text-[11px] font-mono text-slate-500 mb-3">
+          Known issues in the real pipeline. Open items are open — nothing here is marked resolved
+          unless the fix is in this repository today.
+        </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {AUDIT_SECTIONS.map((section) => {
             const isCritical = section.severity === 'CRITICAL';
             const isHigh = section.severity === 'HIGH';
+            const statusStyle =
+              section.status === 'addressed'
+                ? 'bg-matrix-900/40 text-matrix-300 border-matrix-500/40'
+                : section.status === 'mitigated'
+                ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30'
+                : 'bg-rose-950/40 text-rose-300 border-rose-500/30';
 
             return (
               <div key={section.id} className="p-4 neon-card rounded-xl flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="text-[11px] font-mono font-medium text-slate-500 uppercase tracking-wider">
-                      Audit Finding
+                    <span
+                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${statusStyle}`}
+                    >
+                      {section.status.toUpperCase()}
                     </span>
                     <span
                       className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
@@ -405,19 +446,31 @@ export const AuditAndEngineView: React.FC = () => {
 
                   <div className="space-y-2 text-xs">
                     <div className="p-2 bg-rose-950/20 border border-rose-500/20 rounded text-rose-200">
-                      <span className="font-semibold block text-[11px] text-rose-400 mb-0.5 font-mono">Original Problem:</span>
-                      <p className="text-[11px] leading-relaxed font-mono">{section.originalProblem}</p>
+                      <span className="font-semibold block text-[11px] text-rose-400 mb-0.5 font-mono">Problem:</span>
+                      <p className="text-[11px] leading-relaxed font-mono">{section.problem}</p>
                     </div>
 
-                    <div className="p-2 bg-matrix-900/20 border border-matrix-500/20 rounded text-matrix-200">
-                      <span className="font-semibold block text-[11px] text-matrix-400 mb-0.5 font-mono">Production Countermeasure:</span>
-                      <p className="text-[11px] leading-relaxed font-mono">{section.ngxSparkSolution}</p>
+                    <div
+                      className={`p-2 rounded border ${
+                        section.status === 'open'
+                          ? 'bg-amber-950/20 border-amber-500/20 text-amber-200'
+                          : 'bg-matrix-900/20 border-matrix-500/20 text-matrix-200'
+                      }`}
+                    >
+                      <span
+                        className={`font-semibold block text-[11px] mb-0.5 font-mono ${
+                          section.status === 'open' ? 'text-amber-400' : 'text-matrix-400'
+                        }`}
+                      >
+                        Current status:
+                      </span>
+                      <p className="text-[11px] leading-relaxed font-mono">{section.currentStatus}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-3 pt-3 border-t border-matrix-500/15 text-[11px] font-mono font-medium text-matrix-400">
-                  Result: {section.impact}
+                <div className="mt-3 pt-3 border-t border-matrix-500/15 text-[10px] font-mono text-slate-500">
+                  Verify in: {section.evidence.join(', ')}
                 </div>
               </div>
             );

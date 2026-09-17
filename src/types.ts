@@ -92,13 +92,23 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+/**
+ * An entry in the engineering issue register shown in the Audit view.
+ *
+ * `status` is mandatory and drives the UI badge so an unresolved problem can
+ * never be presented as solved. Anything not demonstrably fixed in this
+ * repository is 'open' — describe the real current behaviour in `currentStatus`
+ * rather than the behaviour we would like to have.
+ */
 export interface ScriptAuditSection {
   id: string;
   title: string;
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'RECOMMENDATION';
-  originalProblem: string;
-  ngxSparkSolution: string;
-  impact: string;
+  status: 'addressed' | 'mitigated' | 'open';
+  problem: string;
+  currentStatus: string;
+  /** Real files a reader can open to check the claim for themselves. */
+  evidence: string[];
 }
 
 export interface ServiceAvailabilityResponse {
