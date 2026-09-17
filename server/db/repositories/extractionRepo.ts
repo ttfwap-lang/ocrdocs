@@ -88,6 +88,10 @@ export function createExtractionRepo(db: DatabaseType) {
     `UPDATE fields SET approved = ? WHERE id = ?`,
   );
 
+  const stmtGetFieldById = db.prepare<string>(
+    `SELECT * FROM fields WHERE id = ?`,
+  );
+
   return {
     createExtraction(params: {
       id?: string;
@@ -139,6 +143,10 @@ export function createExtractionRepo(db: DatabaseType) {
       return stmtGetFieldsByExtraction.all(extractionId) as FieldRow[];
     },
 
+    getFieldById(fieldId: string): FieldRow | undefined {
+      return stmtGetFieldById.get(fieldId) as FieldRow | undefined;
+    },
+
     getFieldsAsContract(extractionId: string): ExtractedField[] {
       return this.getFields(extractionId).map(rowToField);
     },
@@ -166,6 +174,7 @@ export function createExtractionRepo(db: DatabaseType) {
         }
       }
       return {
+        id: extraction.id,
         version: extraction.extraction_version,
         documentId: extraction.document_id,
         fields,

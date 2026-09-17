@@ -39,6 +39,8 @@ export interface ExtractedField {
  * downstream consumers (they check version before interpreting fields).
  */
 export interface PersistedExtractionResult {
+  /** The extraction row's own id — clients need it to address review endpoints. */
+  id: string;
   version: number;
   documentId: string;
   fields: ExtractedField[];

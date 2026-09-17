@@ -339,6 +339,64 @@ app.get("/api/documents/:id", (req, res) => {
   });
 });
 
+// Human review: extracted values are candidates until a reviewer approves
+// them. Field rows are returned with their ids so corrections can address a
+// specific field; extraction values themselves are never overwritten, the
+// reviewer's correction is stored alongside as corrected_value.
+app.get("/api/extractions/:id/fields", (req, res) => {
+  const extraction = extractionRepo.getExtractionById(req.params.id);
+  if (!extraction) {
+    return res.status(404).json({ error: "Extraction not found" });
+  }
+  return res.json({
+    extractionId: extraction.id,
+    documentId: extraction.document_id,
+    fields: extractionRepo.getFields(extraction.id),
+  });
+});
+
+app.patch("/api/fields/:id", (req: express.Request<{ id: string }>, res) => {
+  const field = extractionRepo.getFieldById(req.params.id);
+  if (!field) {
+    return res.status(404).json({ error: "Field not found" });
+  }
+
+  const body = req.body ?? {};
+  if (!("correctedValue" in body)) {
+    return res.status(400).json({ error: "correctedValue is required (use null to clear a correction)." });
+  }
+  const correctedValue = body.correctedValue === null ? null : String(body.correctedValue);
+
+  const allowedStatuses: ValidationStatus[] = ["valid", "invalid", "warning", "pending"];
+  const validationStatus: ValidationStatus = allowedStatuses.includes(body.validationStatus)
+    ? body.validationStatus
+    : (field.validation_status as ValidationStatus);
+
+  extractionRepo.correctField(field.id, correctedValue, validationStatus);
+  return res.json({ field: extractionRepo.getFieldById(field.id) });
+});
+
+app.post("/api/fields/:id/approve", (req: express.Request<{ id: string }>, res) => {
+  const field = extractionRepo.getFieldById(req.params.id);
+  if (!field) {
+    return res.status(404).json({ error: "Field not found" });
+  }
+  const body = req.body ?? {};
+  const approved = body.approved === undefined ? true : Boolean(body.approved);
+
+  // A field with no extracted value and no reviewer correction has nothing to
+  // approve — approving it would record an approval of nothing.
+  const effectiveValue = field.corrected_value ?? field.field_value;
+  if (approved && (effectiveValue === null || String(effectiveValue).trim() === "")) {
+    return res.status(400).json({
+      error: "Cannot approve an empty field. Supply a correction first.",
+    });
+  }
+
+  extractionRepo.approveField(field.id, approved);
+  return res.json({ field: extractionRepo.getFieldById(field.id) });
+});
+
 // DGX worker endpoints (pull model): the worker polls for claimed jobs rather
 // than the server pushing to it, so the DGX box needs no inbound network
 // exposure. All three require a shared-secret bearer token.

@@ -14,6 +14,9 @@ automation/
 data/
 storage/
 
+# Locally generated Claude Code artifact previews.
+.claude-artifacts/
+
 # Python bytecode cache (note: some pre-existing .pyc files are already
 # tracked under scripts/__pycache__ from before this rule was added; this
 # only stops new ones from being added).

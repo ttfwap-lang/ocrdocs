@@ -66,12 +66,24 @@ interface DocumentDetail {
   document: LocalDocument;
   jobs: LocalJob[];
   extractions: Array<{
+    id: string;
     version: number;
     documentId: string;
     rawText: string | null;
     fields: ExtractionField[];
     metadata: { extractionVersion: number; createdAt: string; engineUsed?: string; passes?: unknown[] };
   }>;
+}
+
+/** Raw `fields` row shape, as returned by GET /api/extractions/:id/fields. */
+interface ReviewField {
+  id: string;
+  field_name: string;
+  field_value: string | null;
+  confidence: number;
+  validation_status: string;
+  corrected_value: string | null;
+  approved: number;
 }
 
 interface DocumentsViewProps {
@@ -131,6 +143,12 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [uploadQueue, setUploadQueue] = useState<QueueItem[]>([]);
+  const [reviewFields, setReviewFields] = useState<ReviewField[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewShowEmpty, setReviewShowEmpty] = useState(false);
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [savingFieldId, setSavingFieldId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -284,6 +302,87 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
     [documents],
   );
 
+  // --- Human review: corrections and approvals against the real fields table. ---
+
+  const loadReviewFields = useCallback(async (extractionId: string) => {
+    try {
+      const res = await fetch(`/api/extractions/${extractionId}/fields`);
+      if (!res.ok) throw new Error(`Failed to load fields (${res.status})`);
+      const body = await res.json();
+      setReviewFields(body.fields as ReviewField[]);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load review fields');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (reviewOpen && latestExtraction?.id) {
+      loadReviewFields(latestExtraction.id);
+    }
+  }, [reviewOpen, latestExtraction?.id, loadReviewFields]);
+
+  // Close the review panel when switching documents so corrections can never
+  // be shown against the wrong document.
+  useEffect(() => {
+    setReviewOpen(false);
+    setReviewFields([]);
+    setEditingFieldId(null);
+  }, [selectedId]);
+
+  const saveCorrection = async (field: ReviewField, rawValue: string) => {
+    const trimmed = rawValue.trim();
+    setSavingFieldId(field.id);
+    try {
+      const res = await fetch(`/api/fields/${field.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ correctedValue: trimmed === '' ? null : trimmed }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Correction failed (${res.status})`);
+      }
+      const updated = (await res.json()).field as ReviewField;
+      setReviewFields((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+      setEditingFieldId(null);
+    } catch (e: any) {
+      setError(e?.message || 'Correction failed');
+    } finally {
+      setSavingFieldId(null);
+    }
+  };
+
+  const toggleApproval = async (field: ReviewField) => {
+    setSavingFieldId(field.id);
+    try {
+      const res = await fetch(`/api/fields/${field.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved: field.approved !== 1 }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Approval failed (${res.status})`);
+      }
+      const updated = (await res.json()).field as ReviewField;
+      setReviewFields((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+    } catch (e: any) {
+      setError(e?.message || 'Approval failed');
+    } finally {
+      setSavingFieldId(null);
+    }
+  };
+
+  const visibleReviewFields = useMemo(
+    () =>
+      reviewShowEmpty
+        ? reviewFields
+        : reviewFields.filter((f) => f.field_value !== null || f.corrected_value !== null),
+    [reviewFields, reviewShowEmpty],
+  );
+
+  const approvedCount = reviewFields.filter((f) => f.approved === 1).length;
+
   // --- Real exports: serialize exactly what's already in state, nothing synthesized. ---
 
   const exportQueueCSV = () => {
@@ -293,30 +392,79 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
     downloadBlob(csv, `ocrdocs_queue_${Date.now()}.csv`, 'text/csv;charset=utf-8;');
   };
 
-  const exportFieldsCSV = () => {
-    if (!selectedDocument || !latestExtraction) return;
-    const header = ['field_name', 'value', 'confidence', 'validation_status'];
-    const rows = latestExtraction.fields
-      .filter((f) => f.value)
-      .map((f) => [f.name, f.value ?? '', f.confidence, f.validationStatus]);
-    const csv = [header, ...rows].map((r) => r.map(csvEscape).join(',')).join('\n');
-    downloadBlob(csv, `${selectedDocument.filename}_fields_${Date.now()}.csv`, 'text/csv;charset=utf-8;');
+  /**
+   * Exports always read the review table when it is available, so a reviewer's
+   * corrections and approvals travel with the data. Exporting the raw extracted
+   * value after someone corrected it would silently ship a known-wrong value.
+   */
+  const fetchExportRows = async (extractionId: string): Promise<ReviewField[]> => {
+    if (reviewFields.length > 0) return reviewFields;
+    const res = await fetch(`/api/extractions/${extractionId}/fields`);
+    if (!res.ok) throw new Error(`Failed to load fields for export (${res.status})`);
+    return (await res.json()).fields as ReviewField[];
   };
 
-  const exportFieldsJSON = () => {
+  const exportFieldsCSV = async () => {
+    if (!selectedDocument || !latestExtraction) return;
+    try {
+      const rowsSource = await fetchExportRows(latestExtraction.id);
+      const header = [
+        'field_name',
+        'extracted_value',
+        'corrected_value',
+        'final_value',
+        'confidence',
+        'validation_status',
+        'approved',
+      ];
+      const rows = rowsSource
+        .filter((f) => f.field_value !== null || f.corrected_value !== null)
+        .map((f) => [
+          f.field_name,
+          f.field_value ?? '',
+          f.corrected_value ?? '',
+          f.corrected_value ?? f.field_value ?? '',
+          f.confidence,
+          f.validation_status,
+          f.approved === 1 ? 'yes' : 'no',
+        ]);
+      const csv = [header, ...rows].map((r) => r.map(csvEscape).join(',')).join('\n');
+      downloadBlob(csv, `${selectedDocument.filename}_fields_${Date.now()}.csv`, 'text/csv;charset=utf-8;');
+    } catch (e: any) {
+      setError(e?.message || 'CSV export failed');
+    }
+  };
+
+  const exportFieldsJSON = async () => {
     if (!selectedDocument || !detail) return;
-    const payload = {
-      document: selectedDocument,
-      jobs: detail.jobs,
-      extraction: latestExtraction
-        ? {
-            engineUsed: latestExtraction.metadata.engineUsed,
-            extractedAt: latestExtraction.metadata.createdAt,
-            fields: latestExtraction.fields.filter((f) => f.value),
-          }
-        : null,
-    };
-    downloadBlob(JSON.stringify(payload, null, 2), `${selectedDocument.filename}_${Date.now()}.json`, 'application/json');
+    try {
+      const fields = latestExtraction ? await fetchExportRows(latestExtraction.id) : [];
+      const payload = {
+        document: selectedDocument,
+        jobs: detail.jobs,
+        extraction: latestExtraction
+          ? {
+              id: latestExtraction.id,
+              engineUsed: latestExtraction.metadata.engineUsed,
+              extractedAt: latestExtraction.metadata.createdAt,
+              fields: fields
+                .filter((f) => f.field_value !== null || f.corrected_value !== null)
+                .map((f) => ({
+                  name: f.field_name,
+                  extractedValue: f.field_value,
+                  correctedValue: f.corrected_value,
+                  finalValue: f.corrected_value ?? f.field_value,
+                  confidence: f.confidence,
+                  validationStatus: f.validation_status,
+                  approved: f.approved === 1,
+                })),
+            }
+          : null,
+      };
+      downloadBlob(JSON.stringify(payload, null, 2), `${selectedDocument.filename}_${Date.now()}.json`, 'application/json');
+    } catch (e: any) {
+      setError(e?.message || 'JSON export failed');
+    }
   };
 
   return (
@@ -592,6 +740,125 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
                         </div>
                       ))}
                   </div>
+
+                  {/* Human review: corrections + approvals persisted to the fields table. */}
+                  <button
+                    onClick={() => setReviewOpen((v) => !v)}
+                    className="w-full mt-3 py-2 px-3 text-[11px] font-mono font-bold uppercase tracking-wider text-amber-300 bg-black/50 hover:bg-amber-950/30 border border-amber-500/30 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <ListChecks className="w-3.5 h-3.5" />
+                    {reviewOpen ? 'Close Review' : 'Review & Approve'}
+                    {reviewFields.length > 0 && (
+                      <span className="text-matrix-400">
+                        [{approvedCount}/{reviewFields.length}]
+                      </span>
+                    )}
+                  </button>
+
+                  {reviewOpen && (
+                    <div className="mt-3 p-2 bg-black/40 rounded-lg border border-amber-500/20">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-mono font-bold text-amber-300 uppercase tracking-widest">
+                          Reviewer // {approvedCount} approved
+                        </span>
+                        <button
+                          onClick={() => setReviewShowEmpty((v) => !v)}
+                          className="text-[10px] font-mono text-slate-400 hover:text-slate-200 underline underline-offset-2"
+                        >
+                          {reviewShowEmpty ? 'Hide empty' : `Show all ${reviewFields.length}`}
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                        {visibleReviewFields.map((f) => {
+                          const effective = f.corrected_value ?? f.field_value;
+                          const isEditing = editingFieldId === f.id;
+                          const busy = savingFieldId === f.id;
+                          return (
+                            <div
+                              key={f.id}
+                              className={`p-2 rounded border text-xs ${
+                                f.approved === 1
+                                  ? 'bg-matrix-950/30 border-matrix-500/40'
+                                  : 'bg-black/40 border-white/5'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className="text-slate-500 truncate font-mono text-[10px]">{f.field_name}</span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setEditingFieldId(f.id);
+                                      setEditingValue(effective ?? '');
+                                    }}
+                                    className="px-1.5 py-0.5 text-[10px] font-mono text-cyan-300 border border-cyan-500/30 rounded hover:bg-cyan-950/40 disabled:opacity-40"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    disabled={busy}
+                                    onClick={() => toggleApproval(f)}
+                                    className={`px-1.5 py-0.5 text-[10px] font-mono rounded border disabled:opacity-40 ${
+                                      f.approved === 1
+                                        ? 'text-matrix-300 border-matrix-500/40 hover:bg-matrix-950/40'
+                                        : 'text-slate-300 border-slate-600/50 hover:bg-slate-800/40'
+                                    }`}
+                                  >
+                                    {f.approved === 1 ? 'Approved' : 'Approve'}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isEditing ? (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    autoFocus
+                                    value={editingValue}
+                                    onChange={(e) => setEditingValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') saveCorrection(f, editingValue);
+                                      if (e.key === 'Escape') setEditingFieldId(null);
+                                    }}
+                                    className="flex-1 min-w-0 px-1.5 py-1 bg-black/70 border border-cyan-500/40 rounded font-mono text-[11px] text-matrix-200 focus:outline-none focus:border-cyan-400"
+                                    placeholder="Corrected value (blank clears)"
+                                  />
+                                  <button
+                                    disabled={busy}
+                                    onClick={() => saveCorrection(f, editingValue)}
+                                    className="px-1.5 py-1 text-[10px] font-mono text-black bg-matrix-500 hover:bg-matrix-400 rounded disabled:opacity-40"
+                                  >
+                                    {busy ? '...' : 'Save'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingFieldId(null)}
+                                    className="px-1.5 py-1 text-[10px] font-mono text-slate-400 hover:text-slate-200"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="font-mono">
+                                  {f.corrected_value !== null ? (
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="text-amber-300 truncate">{f.corrected_value}</span>
+                                      <span className="text-[10px] text-slate-600 line-through truncate">
+                                        was: {f.field_value ?? '(empty)'}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className={f.field_value ? 'text-matrix-300' : 'text-slate-600 italic'}>
+                                      {f.field_value ?? '(empty)'}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     <button
