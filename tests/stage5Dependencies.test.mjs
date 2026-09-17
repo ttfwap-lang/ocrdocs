@@ -161,7 +161,6 @@ describe('Stage 5 — Reproducible Dependencies & License Screening', () => {
       'numpy',
       'pandas',
       'duckdb',
-      'torch',
       'pytesseract',
       'spacy',
       'easyocr',
@@ -180,11 +179,26 @@ describe('Stage 5 — Reproducible Dependencies & License Screening', () => {
       assert.equal(pkgMap.has(removed), false, `Removed dependency "${removed}" must not be installed by default`);
     }
 
+    // torch is deliberately absent from the pinned requirements: pinning it here
+    // without an --index-url overwrites dgx_setup.sh's architecture-specific CUDA
+    // install (cu124 on aarch64 / cu121 on x86_64) with a CPU-only wheel. Guard the
+    // *decision*, not just its absence, so a careless re-pin here doesn't silently
+    // break GPU OCR — and confirm dgx_setup.sh still actually installs it correctly.
+    assert.equal(pkgMap.has('torch'), false, 'torch must not be pinned in requirements.txt (breaks the DGX CUDA install — see dgx_setup.sh Phase 5)');
+    assert.match(content, /torch is intentionally NOT pinned here/, 'requirements.txt must document why torch is absent, not silently omit it');
+
+    const setupPath = path.join(REPO_ROOT, 'scripts', 'dgx_setup.sh');
+    assert.ok(fs.existsSync(setupPath), 'scripts/dgx_setup.sh must exist');
+    const setupContent = fs.readFileSync(setupPath, 'utf8');
+    assert.match(setupContent, /torch torchvision[\s\S]*?--index-url https:\/\/download\.pytorch\.org\/whl\/cu124/, 'dgx_setup.sh must install the CUDA 12.4 torch build for aarch64 (Grace Blackwell)');
+    assert.match(setupContent, /torch torchvision --index-url https:\/\/download\.pytorch\.org\/whl\/cu121/, 'dgx_setup.sh must install the CUDA 12.1 torch build for x86_64');
+
     // Verify scripts/pyproject.toml also exists
     const pyprojectPath = path.join(REPO_ROOT, 'scripts', 'pyproject.toml');
     assert.ok(fs.existsSync(pyprojectPath), 'scripts/pyproject.toml must exist');
     const pyprojectContent = fs.readFileSync(pyprojectPath, 'utf8');
     assert.ok(pyprojectContent.includes('requires-python = ">=3.10'), 'pyproject.toml must specify requires-python');
+    assert.equal(/^torch==/m.test(pyprojectContent), false, 'torch must not be pinned in pyproject.toml either, for the same reason as requirements.txt');
   });
 
   it('Fact 2: Production Node dependencies are strictly locked to exact versions without loose ranges', () => {

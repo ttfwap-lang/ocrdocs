@@ -12,10 +12,12 @@ Pillow==10.4.0
 pypdfium2==4.30.0
 
 # --- Scientific Computing, Dataframes & Storage (Production Scope: Permissive) ---
-numpy==2.1.1
+numpy==1.26.4
 pandas==2.2.3
 duckdb==1.1.1
-torch==2.4.1
+# torch is intentionally NOT pinned here: dgx_setup.sh Phase 5 installs the
+# architecture-specific CUDA build (cu124 on aarch64) directly. Pinning it
+# again here without an index-url overwrote that build with a CPU-only wheel.
 
 # --- OCR Engines, Text Extraction & NLP (Production Scope: Permissive) ---
 pytesseract==0.3.13
