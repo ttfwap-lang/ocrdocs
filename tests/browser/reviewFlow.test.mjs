@@ -109,7 +109,11 @@ test('browser: reviewer can correct and approve a field, and it persists', async
   // page to load.
   const express = (await import('express')).default;
   serverModule.app.use(express.static(path.join(project, 'dist')));
-  serverModule.app.get('*', (_req, res) => {
+  // Express 5 (path-to-regexp v8) rejects a bare '*' wildcard route at
+  // registration time -- '/*splat' is the named-wildcard equivalent. Same
+  // bug independently exists (and is fixed) in server.ts's own production
+  // catch-all; this harness bypasses startServer() so it needed its own fix.
+  serverModule.app.get('/*splat', (_req, res) => {
     res.sendFile(path.join(project, 'dist', 'index.html'));
   });
 

@@ -755,7 +755,12 @@ async function startServer(options?: {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
+    // Express 5 (path-to-regexp v8) rejects a bare "*" wildcard route at
+    // registration time -- "Missing parameter name at index 1: *" -- which
+    // means production mode could never actually start a server; it threw
+    // before the first request. "/*splat" is the Express 5 equivalent
+    // (named wildcard, matches all remaining path segments).
+    app.get("/*splat", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
