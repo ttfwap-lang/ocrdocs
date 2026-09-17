@@ -778,6 +778,52 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
 # ==============================================================================
 # SINGLE-DOCUMENT MULTI-PASS ENTRYPOINT (for the DGX job-queue worker)
 # ==============================================================================
+def merge_pass_fields(
+    field_keys: List[str],
+    prev_fields: Dict[str, str],
+    prev_confs: Dict[str, float],
+    new_fields: Dict[str, str],
+    new_confs: Dict[str, float],
+    min_replace_confidence: float = 0.60,
+) -> Tuple[Dict[str, str], Dict[str, float], int, int]:
+    """The MONOTONIC QUALITY INVARIANT, in one place.
+
+    Never let a later pass silently erase or downgrade an already-accepted
+    field. Shared by process_document_multipass() (single-document, in-memory)
+    and execute_pass_and_verify() (corpus-wide batch/DuckDB mode) — these two
+    entrypoints previously each carried their own copy of this exact rule,
+    which meant a fix to one could silently miss the other.
+
+    Returns (merged_fields, merged_confs, delta_new_fields, regressions_prevented).
+    """
+    merged_fields: Dict[str, str] = {}
+    merged_confs: Dict[str, float] = {}
+    delta_new_fields = 0
+    regressions_prevented = 0
+
+    for k in field_keys:
+        prev_val = prev_fields.get(k, "") or ""
+        new_val = new_fields.get(k, "") or ""
+        new_conf = new_confs.get(k, 0.0)
+
+        if prev_val and not new_val:
+            merged_fields[k] = prev_val
+            merged_confs[k] = prev_confs.get(k, 0.0)
+            regressions_prevented += 1
+        elif prev_val and new_val and new_conf < min_replace_confidence:
+            merged_fields[k] = prev_val
+            merged_confs[k] = prev_confs.get(k, 0.0)
+        elif new_val:
+            if not prev_val:
+                delta_new_fields += 1
+            merged_fields[k] = new_val
+            merged_confs[k] = new_conf
+        else:
+            merged_fields[k] = ""
+            merged_confs[k] = 0.0
+
+    return merged_fields, merged_confs, delta_new_fields, regressions_prevented
+
 def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str, Any]:
     """
     Runs the real progressive multi-pass pipeline against one claimed job.
@@ -825,35 +871,9 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
         if result.get("raw_text"):
             latest_raw_text = result["raw_text"]
 
-        delta_new_fields = 0
-        regressions_prevented = 0
-        merged_fields: Dict[str, str] = {}
-        merged_confs: Dict[str, float] = {}
-
-        for k in field_keys:
-            prev_val = prev_fields.get(k, "")
-            new_val = new_fields.get(k, "") or ""
-            new_conf = new_confs.get(k, 0.0)
-
-            # MONOTONIC QUALITY INVARIANT (same rule as execute_pass_and_verify):
-            # never let a later pass silently erase or downgrade an already
-            # accepted field.
-            if prev_val and not new_val:
-                merged_fields[k] = prev_val
-                merged_confs[k] = prev_confs.get(k, 0.0)
-                regressions_prevented += 1
-            elif prev_val and new_val and new_conf < 0.60:
-                merged_fields[k] = prev_val
-                merged_confs[k] = prev_confs.get(k, 0.0)
-            elif new_val:
-                if not prev_val:
-                    delta_new_fields += 1
-                merged_fields[k] = new_val
-                merged_confs[k] = new_conf
-            else:
-                merged_fields[k] = ""
-                merged_confs[k] = 0.0
-
+        merged_fields, merged_confs, delta_new_fields, regressions_prevented = merge_pass_fields(
+            field_keys, prev_fields, prev_confs, new_fields, new_confs
+        )
         prev_fields, prev_confs = merged_fields, merged_confs
         filled = sum(1 for v in merged_fields.values() if v)
         recall_percent = round((filled / total_fields) * 100, 1) if total_fields else 0.0
@@ -947,33 +967,25 @@ def execute_pass_and_verify(pass_num: int, files: List[str]) -> Dict[str, Any]:
     newly_resolved_fields = 0
     updated_records = []
 
+    field_keys = list(BANK_FIELD_PATTERNS.keys())
     for status, fpath, res in results:
         fname = os.path.basename(fpath)
         prev_rec = prev_dict.get(fname, {})
         new_fields = res.get("fields", {})
         new_confs = res.get("confidences", {})
+        # The persisted `identities` table has no per-field confidence column
+        # (only an aggregate confidence_score), so there's no real "previous
+        # confidence" to feed the shared merge — matching this function's
+        # prior behavior, which never used one either (the invariant only
+        # ever needed the NEW value's confidence to decide whether to accept
+        # a replacement).
+        prev_fields_only = {k: str(prev_rec.get(k, "") or "") for k in field_keys}
 
-        merged_fields = {}
-        # MONOTONIC QUALITY INVARIANT:
-        # Never overwrite an existing high-confidence field with an empty or low-confidence match
-        for k in BANK_FIELD_PATTERNS.keys():
-            prev_val = str(prev_rec.get(k, "") or "")
-            new_val = str(new_fields.get(k, "") or "")
-            new_conf = new_confs.get(k, 0.0)
-
-            if prev_val and not new_val:
-                # Potential regression detected -> block downgrade
-                merged_fields[k] = prev_val
-                regressions_prevented += 1
-            elif prev_val and new_val and new_conf < 0.60:
-                # Existing value was preserved
-                merged_fields[k] = prev_val
-            elif new_val:
-                if not prev_val:
-                    newly_resolved_fields += 1
-                merged_fields[k] = new_val
-            else:
-                merged_fields[k] = ""
+        merged_fields, _merged_confs, delta_fields, regressions = merge_pass_fields(
+            field_keys, prev_fields_only, {}, new_fields, new_confs
+        )
+        newly_resolved_fields += delta_fields
+        regressions_prevented += regressions
 
         avg_conf = float(np.mean(list(new_confs.values())) if new_confs else 0.0)
         abn_v = validate_australian_abn(merged_fields.get("abn", ""))
