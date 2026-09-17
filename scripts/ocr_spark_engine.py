@@ -728,16 +728,24 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     try:
         if ext == ".pdf":
             doc = pdfium.PdfDocument(str(path))
-            for page in doc:
-                txt = page.get_textpage().get_text_bounded()
-                if txt.strip():
-                    raw_texts.append(txt)
-                    used_native_text = True
-                if pass_num > 1 or not txt.strip():
-                    # Rasterize page for visual OCR passes
-                    dpi = 200 if pass_num < 6 else 300
-                    bitmap = page.render(scale=dpi / 72)
-                    images.append(bitmap.to_pil().convert("RGB"))
+            for page_index, page in enumerate(doc):
+                # One corrupted page must not discard every already-parsed
+                # page in this pass -- previously the whole per-page loop
+                # was inside the outer try/except, so a single bad page in
+                # an otherwise-fine 20-page statement threw PARSE_ERROR for
+                # the entire document, losing all prior pages' text/images.
+                try:
+                    txt = page.get_textpage().get_text_bounded()
+                    if txt.strip():
+                        raw_texts.append(txt)
+                        used_native_text = True
+                    if pass_num > 1 or not txt.strip():
+                        # Rasterize page for visual OCR passes
+                        dpi = 200 if pass_num < 6 else 300
+                        bitmap = page.render(scale=dpi / 72)
+                        images.append(bitmap.to_pil().convert("RGB"))
+                except Exception as e:
+                    logging.warning(f"[!] {fpath}: page {page_index} failed to parse/render, skipping it: {e}")
             doc.close()
         elif ext in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"]:
             images.append(Image.open(path).convert("RGB"))

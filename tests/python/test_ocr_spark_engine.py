@@ -211,3 +211,67 @@ def test_abn_checksum_validation():
 def test_bsb_validation():
     assert engine.validate_australian_bsb("062-000") is True
     assert engine.validate_australian_bsb("00-0000") is False
+
+
+# ---------------------------------------------------------------------------
+# One corrupted PDF page must not discard the rest of the document.
+#
+# This one intentionally uses fault-injected fake pdfium pages rather than a
+# real corrupted PDF file: producing a PDF that's genuinely malformed on
+# exactly one page while staying openable is impractical to construct
+# reliably as a test fixture, and the thing under test here is control flow
+# (does one page's exception get isolated) not OCR quality, so a controlled
+# fault is the right tool -- unlike the OCR-accuracy tests above, which
+# deliberately avoid mocking engine output.
+# ---------------------------------------------------------------------------
+
+class _FakeTextpage:
+    def __init__(self, text: str):
+        self._text = text
+
+    def get_text_bounded(self) -> str:
+        return self._text
+
+
+class _FakeBitmap:
+    def to_pil(self) -> Image.Image:
+        return Image.new("RGB", (10, 10), color="white")
+
+
+class _FakeGoodPage:
+    def get_textpage(self) -> _FakeTextpage:
+        return _FakeTextpage("Balance: $100.00")
+
+    def render(self, scale: float) -> _FakeBitmap:
+        return _FakeBitmap()
+
+
+class _FakeBrokenPage:
+    def get_textpage(self):
+        raise RuntimeError("simulated corrupted page")
+
+
+class _FakePdfDocument:
+    """Stands in for pypdfium2.PdfDocument: iterable of pages, closeable."""
+
+    def __init__(self, _path):
+        self._pages = [_FakeGoodPage(), _FakeBrokenPage(), _FakeGoodPage()]
+
+    def __iter__(self):
+        return iter(self._pages)
+
+    def close(self):
+        pass
+
+
+def test_one_corrupted_pdf_page_does_not_discard_the_rest(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine.pdfium, "PdfDocument", _FakePdfDocument)
+    fake_pdf = tmp_path / "statement.pdf"
+    fake_pdf.write_bytes(b"%PDF-1.4 not a real pdf, replaced by the fake above")
+
+    status, fpath, result = engine.process_single_file_for_pass((str(fake_pdf), 1))
+
+    assert status == "SUCCESS", f"one bad page should not fail the whole document, got: {result}"
+    # Both good pages' native text made it through despite the broken page
+    # between them.
+    assert result["raw_text"].count("Balance: $100.00") == 2
