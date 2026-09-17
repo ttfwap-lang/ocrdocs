@@ -80,12 +80,23 @@ export const AUDIT_SECTIONS: ScriptAuditSection[] = [
     id: 'no-hardware-validation',
     title: 'The DGX path has never run on real GPU hardware',
     severity: 'HIGH',
-    status: 'open',
+    status: 'mitigated',
     problem:
-      'The multi-engine ensemble (PaddleOCR, EasyOCR, optional Surya) is the reason for offloading to a DGX at all, yet none of it has been executed on the target machine.',
+      'The multi-engine ensemble (PaddleOCR, EasyOCR, optional Surya) is the reason for offloading to a DGX at all, yet none of it had been executed on the target machine.',
     currentStatus:
-      'Open. The claim/file/result protocol and the pass loop have been verified end to end locally against a real Tesseract binary on real pixels, and the endpoint contract is covered by tests. PaddleOCR, EasyOCR and Surya have never been executed by this pipeline, on any machine. Throughput, VRAM ceiling and per-engine accuracy are all unmeasured.',
-    evidence: ['scripts/dgx_worker.py', 'tests/dgxJobEndpoints.test.mjs'],
+      'PaddleOCR and EasyOCR have now been executed for real against real pixels on the actual DGX (NVIDIA GB10 / Grace Blackwell), not just code-inspected: both loaded via init_worker() and each ran a real pass, producing genuinely varying confidence scores that tracked actual OCR quality (EasyOCR correctly assigned its lowest confidence, 0.42, to the one line it garbled, versus 0.72-0.89 on clean lines). The new TrOCR handwriting engine was also run for real with OCRDOCS_ENABLE_HANDWRITING_ENGINE enabled: model downloaded, loaded in ~27s, ran inference on the GPU. Surya remains correctly untested — it stays gated off by default (GPL-3.0) and was not enabled for this run. Still open and unmeasured: sustained throughput, the VRAM ceiling under concurrent workers (see vram-multi-engine-loading above — this was a single-document smoke run, not a load test), and rigorous per-engine accuracy against a ground-truth corpus rather than one hand-built test image.',
+    evidence: ['scripts/ocr_spark_engine.py', 'scripts/dgx_worker.py', 'tests/python/test_ocr_spark_engine.py'],
+  },
+  {
+    id: 'express5-wildcard-route',
+    title: 'Production mode could not start the server at all',
+    severity: 'CRITICAL',
+    status: 'addressed',
+    problem:
+      "server.ts's production-mode SPA catch-all used Express 4's bare-wildcard route syntax, app.get(\"*\", ...). Express 5 (this app's actual version) uses path-to-regexp v8, which rejects a bare '*' at route-registration time — the process would throw \"Missing parameter name at index 1: *\" the moment startServer() reached that line with NODE_ENV=production, before accepting a single request. Nothing in the test suite ever exercised this: the existing tests all run with NODE_ENV=test, which takes the dev-mode Vite-middleware branch instead, so this was invisible until something actually ran the production branch.",
+    currentStatus:
+      "Found by actually running the review-flow browser test end to end (real Playwright, real installed Chrome) rather than leaving it in its default \"skip when Chrome is absent\" state. The test harness had an independent copy of the identical bug (it bypasses startServer() and registers its own catch-all). Both fixed to Express 5's named-wildcard form, /*splat. Re-ran the browser test after the fix: it now genuinely passes — a real browser uploads a document, corrects and approves a field, and a server-side fetch (not the UI's own claim) confirms the correction reached the database with the original value preserved, surviving a full page reload.",
+    evidence: ['server.ts', 'tests/browser/reviewFlow.test.mjs'],
   },
 ];
 
