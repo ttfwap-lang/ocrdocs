@@ -70,7 +70,7 @@ fi
 
 echo "[*] Phase 6: Installing pinned OCR, Computer Vision & NLP dependencies..."
 pip install -r "${SCRIPT_DIR}/requirements.txt" --quiet --retries 10 --timeout 120
-pip install -e "${SCRIPT_DIR}[screened]" --quiet --retries 10 --timeout 120
+pip install -e "${SCRIPT_DIR}[screened,handwriting]" --quiet --retries 10 --timeout 120
 
 echo "[*] Phase 7: Downloading SpaCy English NLP language model..."
 if ! python3 -c "import spacy; spacy.load('en_core_web_sm')" 2>/dev/null; then

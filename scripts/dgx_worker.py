@@ -28,6 +28,7 @@ import sys
 import time
 import logging
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -49,6 +50,13 @@ MAX_PASSES = int(os.environ.get("OCRDOCS_MAX_PASSES", "10"))
 DOWNLOAD_DIR = Path(
     os.environ.get("OCRDOCS_WORKER_DOWNLOAD_DIR", str(Path(tempfile.gettempdir()) / "ocrdocs_worker"))
 )
+# Coarse outer deadline for one document's whole multipass run. Individual
+# engine calls inside ocr_spark_engine already carry their own per-call
+# timeout (OCRDOCS_ENGINE_TIMEOUT_SECONDS), but this is defense in depth: the
+# worker has a single poll loop, so any one job hanging blocks every other
+# queued document indefinitely without a job-level ceiling too.
+JOB_TIMEOUT_SECONDS = float(os.environ.get("OCRDOCS_JOB_TIMEOUT_SECONDS", "600"))
+_job_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-job")
 
 
 def _headers() -> Dict[str, str]:
@@ -95,7 +103,12 @@ def process_claimed_job(claim: Dict[str, Any]) -> None:
         return
 
     try:
-        result = process_document_multipass(str(local_path), max_passes=MAX_PASSES)
+        future = _job_executor.submit(process_document_multipass, str(local_path), max_passes=MAX_PASSES)
+        result = future.result(timeout=JOB_TIMEOUT_SECONDS)
+    except FutureTimeoutError:
+        logging.error(f"[-] Job {job_id}: pipeline exceeded {JOB_TIMEOUT_SECONDS}s job-level timeout, abandoning.")
+        post_result(job_id, {"status": "FAILED", "error": f"Pipeline exceeded {JOB_TIMEOUT_SECONDS}s timeout"})
+        return
     except Exception as e:
         logging.exception(f"[-] Job {job_id}: pipeline raised an unhandled exception")
         post_result(job_id, {"status": "FAILED", "error": str(e)})
@@ -103,8 +116,10 @@ def process_claimed_job(claim: Dict[str, Any]) -> None:
     finally:
         try:
             local_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as e:
+            # Not fatal to the job, but a failed delete on a long-running
+            # worker silently leaks disk over time if never logged.
+            logging.warning(f"[!] Job {job_id}: failed to remove temp file {local_path}: {e}")
 
     if result.get("status") != "SUCCESS":
         error = result.get("error", "Unknown pipeline failure")

@@ -19,6 +19,8 @@ import json
 import time
 import argparse
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -63,6 +65,16 @@ try:
 except ImportError:
     run_ocr = None
 
+# Handwriting-specialized recognition. Permissive (MIT-family HF model +
+# Apache-2.0 transformers) so, unlike Surya, no license gate is needed — it's
+# gated purely for operational reasons (multi-GB model download + VRAM),
+# opt-in via OCRDOCS_ENABLE_HANDWRITING_ENGINE.
+try:
+    from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+except ImportError:
+    TrOCRProcessor = None
+    VisionEncoderDecoderModel = None
+
 # ==============================================================================
 # CONFIGURATION & NVME PATHING
 # ==============================================================================
@@ -80,6 +92,24 @@ ERROR_LOG = LOGS_DIR / "pipeline_errors.log"
 # "restricted to local research/evaluation mode; excluded from production
 # deployment." It must never load by default in the commercial pipeline.
 RESEARCH_ENGINES_ENABLED = os.environ.get("OCRDOCS_ENABLE_RESEARCH_ENGINES", "false").strip().lower() == "true"
+
+# Handwriting engine: opt-in (model download + VRAM cost), not license-gated.
+HANDWRITING_ENGINE_ENABLED = os.environ.get("OCRDOCS_ENABLE_HANDWRITING_ENGINE", "false").strip().lower() == "true"
+HANDWRITING_MODEL_NAME = os.environ.get("OCRDOCS_HANDWRITING_MODEL", "microsoft/trocr-base-handwritten")
+
+# Per-engine call deadline. This is a *logical* timeout: it unblocks our own
+# control flow and logs+skips the engine rather than blocking the pass
+# indefinitely, since a genuinely hung native/C call inside a thread cannot be
+# force-killed from Python without a subprocess boundary. Still the correct
+# fix for the actual failure mode (one pathological image freezing the whole
+# 10-pass loop) — the pipeline now degrades instead of hanging.
+ENGINE_TIMEOUT_SECONDS = float(os.environ.get("OCRDOCS_ENGINE_TIMEOUT_SECONDS", "45"))
+_engine_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ocr-engine")
+
+def _run_with_timeout(fn, *args, timeout: float = ENGINE_TIMEOUT_SECONDS, **kwargs):
+    """Runs fn(*args, **kwargs) with a logical deadline; raises on hang or error."""
+    future = _engine_executor.submit(fn, *args, **kwargs)
+    return future.result(timeout=timeout)
 
 # Ensure directories exist
 for d in [INPUT_DIR, OUTPUT_DIR, DB_PATH.parent, NOOCR_DIR, LOGS_DIR]:
@@ -219,7 +249,7 @@ def validate_australian_dob(dob_str: str) -> bool:
     if not m:
         return False
     year = int(m.group(3))
-    age = 2026 - year
+    age = datetime.now(timezone.utc).year - year
     return 18 <= age <= 105
 
 def validate_australian_phone(phone_str: str) -> bool:
@@ -245,9 +275,22 @@ _surya_det_proc = None
 _surya_rec = None
 _surya_rec_proc = None
 _nlp = None
+_trocr_processor = None
+_trocr_model = None
+_worker_initialized = False
 
 def init_worker():
-    global _paddle, _easy, _surya_det, _surya_det_proc, _surya_rec, _surya_rec_proc, _nlp
+    """Loads every OCR/NLP engine once and caches it in module globals.
+
+    Idempotent by design: process_document_multipass() previously called this
+    unconditionally on every single job, forcing Paddle/EasyOCR/spaCy to
+    reload from scratch each time on a long-running worker (needless VRAM
+    churn/fragmentation on a shared GPU). Now a second call is a no-op.
+    """
+    global _paddle, _easy, _surya_det, _surya_det_proc, _surya_rec, _surya_rec_proc
+    global _nlp, _trocr_processor, _trocr_model, _worker_initialized
+    if _worker_initialized:
+        return
     try:
         gpu_available = torch.cuda.is_available()
         if PaddleOCR is not None:
@@ -268,108 +311,290 @@ def init_worker():
                 "research-only). Set OCRDOCS_ENABLE_RESEARCH_ENGINES=true to enable "
                 "for local evaluation."
             )
+        if TrOCRProcessor is not None and HANDWRITING_ENGINE_ENABLED:
+            logging.info(f"[*] OCRDOCS_ENABLE_HANDWRITING_ENGINE=true: loading {HANDWRITING_MODEL_NAME}...")
+            _trocr_processor = TrOCRProcessor.from_pretrained(HANDWRITING_MODEL_NAME)
+            _trocr_model = VisionEncoderDecoderModel.from_pretrained(HANDWRITING_MODEL_NAME)
+            if gpu_available:
+                _trocr_model = _trocr_model.to("cuda")
+        elif TrOCRProcessor is not None:
+            logging.info(
+                "[*] Handwriting engine (TrOCR) available but disabled by default "
+                "(model download + VRAM cost). Set OCRDOCS_ENABLE_HANDWRITING_ENGINE=true to enable."
+            )
         if spacy is not None:
             _nlp = spacy.load("en_core_web_sm")
+        _worker_initialized = True
     except Exception as e:
+        logging.exception(f"[-] Worker init failed: {e}")
         with open(ERROR_LOG, "a", encoding="utf-8") as f:
             f.write(f"Worker Init Exception: {e}\n")
 
 # ==============================================================================
 # PASS-AWARE PROGRESSIVE DOCUMENT EXTRACTION (10 PASSES)
 # ==============================================================================
-def enhance_image_for_pass(image: Image.Image, pass_num: int) -> Image.Image:
-    """Applies tailored image processing filters depending on the pass iteration."""
-    if pass_num <= 1:
+def assess_image_quality(image: Image.Image) -> Dict[str, float]:
+    """Measures blur, contrast, brightness, and skew so preprocessing can be
+    routed by actual image condition instead of blindly following pass index.
+
+    blur_variance: Laplacian variance. Low (<100) means likely blurry.
+    skew_angle_deg: estimated rotation needed to make text horizontal.
+    """
+    gray = np.array(image.convert("L"))
+    blur_variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    contrast = float(gray.std())
+    brightness = float(gray.mean())
+    skew_angle_deg = _estimate_skew_angle(gray)
+    return {
+        "blur_variance": blur_variance,
+        "contrast": contrast,
+        "brightness": brightness,
+        "skew_angle_deg": skew_angle_deg,
+        "is_blurry": blur_variance < 100.0,
+        "is_low_contrast": contrast < 35.0,
+        "is_skewed": abs(skew_angle_deg) > 1.0,
+    }
+
+def _estimate_skew_angle(gray: np.ndarray) -> float:
+    """Estimates rotation angle (degrees) needed to make text rows horizontal,
+    via a bounded projection-profile search: the angle that maximizes the
+    variance of the horizontal row-sum profile is the one where text rows are
+    most sharply aligned (peaks at each line of text, troughs between lines).
+
+    Deliberately NOT using cv2.minAreaRect on scattered text coordinates —
+    that method is well-known to be unstable for sparse multi-word layouts
+    (verified locally: it returned 90 degrees for a plainly horizontal test
+    image), which would cause a destructive spurious rotation instead of a
+    correction. The search is bounded to +/-15 degrees since real-world
+    document skew from scanning/photographing rarely exceeds that.
+    """
+    try:
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        if cv2.countNonZero(thresh) < 50:
+            return 0.0
+
+        # Search on a small thumbnail for speed; the resulting angle applies
+        # equally to the full-resolution image.
+        h, w = thresh.shape
+        scale = min(1.0, 400.0 / max(h, w))
+        small = cv2.resize(thresh, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_NEAREST) if scale < 1.0 else thresh
+        sh, sw = small.shape
+
+        best_angle, best_score = 0.0, -1.0
+        for angle in np.arange(-15.0, 15.5, 0.5):
+            M = cv2.getRotationMatrix2D((sw / 2, sh / 2), angle, 1.0)
+            rotated = cv2.warpAffine(small, M, (sw, sh), flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            score = float(np.var(rotated.sum(axis=1)))
+            if score > best_score:
+                best_score, best_angle = score, float(angle)
+        return best_angle
+    except Exception:
+        return 0.0
+
+def deskew_image(image: Image.Image, angle_deg: float) -> Image.Image:
+    """Rotates the image to correct measured skew. No-op below ~0.3deg since
+    that's within OCR engines' own tolerance and not worth the resample cost."""
+    if abs(angle_deg) < 0.3:
         return image
+    return image.rotate(-angle_deg, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(255, 255, 255))
+
+def denoise_image(image: Image.Image) -> Image.Image:
+    """Non-local-means denoise — targets the grainy phone-photo / low-quality
+    scan case that plain contrast/threshold passes don't address at all."""
+    np_img = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
+    denoised = cv2.fastNlMeansDenoisingColored(np_img, None, h=7, hColor=7, templateWindowSize=7, searchWindowSize=21)
+    return Image.fromarray(cv2.cvtColor(denoised, cv2.COLOR_BGR2RGB))
+
+def enhance_image_for_pass(image: Image.Image, pass_num: int, quality: Optional[Dict[str, float]] = None) -> Image.Image:
+    """Applies image processing tailored to the pass iteration AND, when a
+    quality assessment is supplied, to the image's actual measured condition —
+    a skewed or blurry image gets deskewed/denoised regardless of which pass
+    number happens to be running, instead of only on a fixed schedule."""
+    result = image
+
+    if quality:
+        if quality.get("is_skewed"):
+            result = deskew_image(result, quality["skew_angle_deg"])
+        if quality.get("is_blurry"):
+            result = denoise_image(result)
+
+    if pass_num <= 1:
+        return result
     elif pass_num == 2:
         # Pass 2: Grayscale & slight contrast boost
-        return ImageEnhance.Contrast(image.convert("L")).enhance(1.4).convert("RGB")
+        return ImageEnhance.Contrast(result.convert("L")).enhance(1.4).convert("RGB")
     elif pass_num == 3:
         # Pass 3: Edge sharpening for text boundary detection
-        return image.filter(ImageFilter.SHARPEN)
+        return result.filter(ImageFilter.SHARPEN)
     elif pass_num == 4:
         # Pass 4: CLAHE-like contrast equalization
-        np_img = np.array(image.convert("L"))
+        np_img = np.array(result.convert("L"))
         clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
         eq = clahe.apply(np_img)
         return Image.fromarray(eq).convert("RGB")
     elif pass_num == 5:
         # Pass 5: Otsu auto-binarization for low-contrast photocopies
-        np_img = np.array(image.convert("L"))
+        np_img = np.array(result.convert("L"))
         _, thresh = cv2.threshold(np_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         return Image.fromarray(thresh).convert("RGB")
     elif pass_num >= 6:
         # Pass 6+: High-frequency unsharp mask + 1.6x bicubic scale
-        w, h = image.size
-        scaled = image.resize((int(w * 1.4), int(h * 1.4)), Image.Resampling.BICUBIC)
+        w, h = result.size
+        scaled = result.resize((int(w * 1.4), int(h * 1.4)), Image.Resampling.BICUBIC)
         return scaled.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
-    return image
+    return result
 
-def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str]]:
+def _tesseract_lines_with_confidence(image: Image.Image) -> Dict[str, float]:
+    """Reconstructs lines from Tesseract's word-level image_to_data output and
+    computes each line's real mean word confidence (0-1), instead of the flat
+    hardcoded confidence the rest of the pipeline used to assume."""
+    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    lines: Dict[Tuple[int, int, int], List[Tuple[str, int]]] = {}
+    for i, word in enumerate(data.get("text", [])):
+        word = word.strip()
+        if not word:
+            continue
+        conf = int(data["conf"][i]) if str(data["conf"][i]).lstrip("-").isdigit() else -1
+        key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+        lines.setdefault(key, []).append((word, conf))
+
+    line_confidences: Dict[str, float] = {}
+    for words in lines.values():
+        text = " ".join(w for w, _ in words).strip()
+        if not text:
+            continue
+        confs = [c for _, c in words if c >= 0]
+        line_confidences[text] = (sum(confs) / len(confs) / 100.0) if confs else 0.5
+    return line_confidences
+
+def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dict[str, float]]:
     """Executes specific OCR algorithms tailored to the current pass.
 
-    Returns (text, engines_actually_invoked) — the engine list is derived
-    from what ran, not a hardcoded label, so telemetry can never claim an
-    engine that didn't execute.
+    Returns (text, engines_actually_invoked, line_confidences). The engine
+    list is derived from what ran, not a hardcoded label. line_confidences
+    maps each collected text line to a REAL per-engine confidence (0-1) —
+    Tesseract via image_to_data, PaddleOCR's own already-computed score,
+    EasyOCR's detail=1 score — so downstream field extraction no longer has
+    to invent a number. Engine failures are logged (not silently swallowed)
+    and each call runs under ENGINE_TIMEOUT_SECONDS so one pathological image
+    can't hang the whole multipass loop.
     """
-    enhanced_img = enhance_image_for_pass(image, pass_num)
-    collected = set()
+    quality = assess_image_quality(image)
+    enhanced_img = enhance_image_for_pass(image, pass_num, quality=quality)
+    collected: Dict[str, float] = {}
     engines_used: List[str] = []
     cv_img = cv2.cvtColor(np.array(enhanced_img), cv2.COLOR_RGB2BGR)
 
-    # Pass 1-2: Fast Tesseract
+    def _merge(text: str, conf: float):
+        text = text.strip()
+        if len(text) > 1:
+            collected[text] = max(collected.get(text, 0.0), conf)
+
+    # Pass 1-2, 6-10: Fast Tesseract
     if pytesseract is not None and pass_num in [1, 2, 6, 7, 8, 9, 10]:
         try:
-            tess_txt = pytesseract.image_to_string(enhanced_img)
-            for line in tess_txt.splitlines():
-                if len(line.strip()) > 1:
-                    collected.add(line.strip())
+            line_confs = _run_with_timeout(_tesseract_lines_with_confidence, enhanced_img)
+            for text, conf in line_confs.items():
+                _merge(text, conf)
             engines_used.append("Tesseract")
-        except Exception:
-            pass
+        except FutureTimeoutError:
+            logging.warning(f"[!] Tesseract timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
+        except Exception as e:
+            logging.warning(f"[!] Tesseract failed on pass {pass_num}: {e}")
 
-    # Pass 3-4, 7-10: PaddleOCR with Angle Classification
+    # Pass 3, 7-10: PaddleOCR with Angle Classification
     if _paddle is not None and pass_num in [3, 7, 8, 9, 10]:
         try:
-            p_res = _paddle.ocr(cv_img, cls=True)
+            p_res = _run_with_timeout(_paddle.ocr, cv_img, cls=True)
             if p_res:
                 for block in p_res:
                     if block:
                         for line in block:
-                            collected.add(line[1][0].strip())
+                            # line[1] = (text, confidence) — Paddle already computes this;
+                            # previously discarded, now the real value used downstream.
+                            _merge(line[1][0], float(line[1][1]))
             engines_used.append("PaddleOCR")
-        except Exception:
-            pass
+        except FutureTimeoutError:
+            logging.warning(f"[!] PaddleOCR timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
+        except Exception as e:
+            logging.warning(f"[!] PaddleOCR failed on pass {pass_num}: {e}")
 
     # Pass 4, 8, 10: EasyOCR deep convolutional model
     if _easy is not None and pass_num in [4, 8, 10]:
         try:
-            for txt in _easy.readtext(cv_img, detail=0):
-                collected.add(txt.strip())
+            results = _run_with_timeout(_easy.readtext, cv_img, detail=1)
+            for _, text, conf in results:
+                _merge(text, float(conf))
             engines_used.append("EasyOCR")
-        except Exception:
-            pass
+        except FutureTimeoutError:
+            logging.warning(f"[!] EasyOCR timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
+        except Exception as e:
+            logging.warning(f"[!] EasyOCR failed on pass {pass_num}: {e}")
 
     # Pass 5, 9, 10: Surya Layout & Recognition (research mode only — see
     # RESEARCH_ENGINES_ENABLED; _surya_rec stays None unless explicitly opted in)
     if _surya_rec is not None and pass_num in [5, 9, 10]:
         try:
-            preds = run_ocr([enhanced_img], [_surya_det], [_surya_det_proc], [_surya_rec], [_surya_rec_proc])
+            preds = _run_with_timeout(
+                run_ocr, [enhanced_img], [_surya_det], [_surya_det_proc], [_surya_rec], [_surya_rec_proc]
+            )
             for page in preds:
                 for line in page.text_lines:
-                    collected.add(line.text.strip())
+                    # Surya's TextLine exposes .confidence in recent versions; fall back
+                    # to a documented, conservative default if this build doesn't.
+                    conf = float(getattr(line, "confidence", 0.75) or 0.75)
+                    _merge(line.text, conf)
             engines_used.append("Surya")
-        except Exception:
-            pass
+        except FutureTimeoutError:
+            logging.warning(f"[!] Surya timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
+        except Exception as e:
+            logging.warning(f"[!] Surya failed on pass {pass_num}: {e}")
+
+    # Pass 6-10: handwriting-specialized recognition (opt-in — see
+    # HANDWRITING_ENGINE_ENABLED; _trocr_model stays None unless explicitly enabled).
+    # TrOCR is generation-based (no native per-token confidence exposed by the
+    # simple generate() API), so its lines get an honest fixed confidence
+    # rather than a fabricated precise-looking number.
+    if _trocr_model is not None and pass_num in [6, 7, 8, 9, 10]:
+        try:
+            gen_text = _run_with_timeout(_run_trocr, enhanced_img)
+            for line in gen_text.splitlines():
+                _merge(line, 0.70)
+            engines_used.append("TrOCR-Handwriting")
+        except FutureTimeoutError:
+            logging.warning(f"[!] TrOCR timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
+        except Exception as e:
+            logging.warning(f"[!] TrOCR failed on pass {pass_num}: {e}")
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     gc.collect()
 
-    return "\n".join(collected), engines_used
+    return "\n".join(collected.keys()), engines_used, collected
 
-def extract_australian_banking_fields(text: str) -> Dict[str, Any]:
-    """Extracts and validates all 30 Australian banking application fields."""
+def _run_trocr(image: Image.Image) -> str:
+    """Runs the TrOCR handwriting model over the whole image. TrOCR is
+    designed for single text-line crops, so for a full document image this is
+    a best-effort whole-image pass intended to supplement, not replace, the
+    printed-text engines above — most useful on later passes once earlier
+    engines have identified the document warrants a dedicated handwriting try."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    pixel_values = _trocr_processor(images=image, return_tensors="pt").pixel_values.to(device)
+    generated_ids = _trocr_model.generate(pixel_values, max_new_tokens=256)
+    return _trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+    """Extracts and validates all 30 Australian banking application fields.
+
+    line_confidences (optional): maps a raw OCR'd line of text to the real
+    per-engine confidence that produced it (see run_pass_ocr). When supplied,
+    the contextual line-scan below uses the actual OCR confidence for that
+    line instead of a flat hardcoded constant — this is what the monotonic
+    quality gate in process_document_multipass actually needs to mean
+    something. When absent (native-PDF/docx/txt text that was never OCR'd),
+    a high fixed confidence is used deliberately: that text is exact, not a
+    model's guess.
+    """
     data: Dict[str, Any] = {field: "" for field in BANK_FIELD_PATTERNS.keys()}
     confidences: Dict[str, float] = {field: 0.0 for field in BANK_FIELD_PATTERNS.keys()}
 
@@ -434,15 +659,23 @@ def extract_australian_banking_fields(text: str) -> Dict[str, Any]:
         if not cleaned_line:
             continue
 
+        # Real confidence for this line if it came from OCR; otherwise this
+        # line is native/exact text (never passed through an OCR engine) so a
+        # high fixed confidence is appropriate rather than an OCR guess.
+        if line_confidences is None:
+            line_conf = 0.95
+        else:
+            line_conf = line_confidences.get(cleaned_line, 0.75)
+
         for field, pattern in BANK_FIELD_PATTERNS.items():
             if pattern.search(cleaned_line):
                 # Search for values following a colon, dash, or space
                 parts = re.split(r"[:\t\-\=]", cleaned_line, maxsplit=1)
                 if len(parts) > 1 and len(parts[1].strip()) > 1:
                     val = parts[1].strip()
-                    if not data[field] or confidences[field] < 0.80:
+                    if not data[field] or confidences[field] < line_conf:
                         data[field] = val
-                        confidences[field] = 0.82
+                        confidences[field] = line_conf
 
     # Currency bindings for income/expense fields
     if currencies:
@@ -516,11 +749,13 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     # Run OCR on images for current pass
     ocr_texts = []
     engines_used: List[str] = []
+    ocr_line_confidences: Dict[str, float] = {}
     if used_native_text:
         engines_used.append("Native PDF Text Layer")
     for img in images:
-        txt, engines = run_pass_ocr(img, pass_num)
+        txt, engines, line_confs = run_pass_ocr(img, pass_num)
         ocr_texts.append(txt)
+        ocr_line_confidences.update(line_confs)
         for e in engines:
             if e not in engines_used:
                 engines_used.append(e)
@@ -529,7 +764,13 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     if not combined_text.strip():
         return "NOOCR", fpath, {}
 
-    result = extract_australian_banking_fields(combined_text)
+    # Only pass real confidences when at least one line actually went through
+    # an OCR engine this pass — a native-text-only document (no images at
+    # all) should get the "exact text" confidence path, not an empty dict
+    # that would otherwise fall through to the conservative 0.75 default.
+    result = extract_australian_banking_fields(
+        combined_text, ocr_line_confidences if ocr_line_confidences else None
+    )
     result["raw_text"] = combined_text
     result["engines_used"] = engines_used
     return "SUCCESS", fpath, result
@@ -755,7 +996,11 @@ def execute_pass_and_verify(pass_num: int, files: List[str]) -> Dict[str, Any]:
         con.execute("PRAGMA busy_timeout=15000;")
         df_update = pd.DataFrame(updated_records)
         con.register("df_update", df_update)
-        con.execute("INSERT OR REPLACE INTO identities SELECT * FROM df_update")
+        # Explicit, name-matched column list on both sides — SELECT * relied
+        # on df_update's dict-derived column order exactly matching the DDL's
+        # column order, a silent landmine if either list is ever reordered.
+        col_list = ", ".join(df_update.columns)
+        con.execute(f"INSERT OR REPLACE INTO identities ({col_list}) SELECT {col_list} FROM df_update")
 
         # Export consolidated snapshot
         df_all = con.execute("SELECT * FROM identities").fetchdf()

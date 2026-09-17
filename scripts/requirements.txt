@@ -35,3 +35,11 @@ paddleocr==2.8.1
 paddlepaddle==2.6.2
 # Surya OCR: GPL-3.0 (Evaluation / Research mode only; excluded from default production builds)
 surya-ocr==0.4.14
+
+# --- Handwriting Recognition (Production Scope: Permissive; opt-in via
+#     OCRDOCS_ENABLE_HANDWRITING_ENGINE, not a license restriction — see
+#     scripts/ocr_spark_engine.py HANDWRITING_ENGINE_ENABLED) ---
+# transformers: Apache-2.0. Needs torch>=2.5 for full model support; degrades
+# gracefully (tokenizer/config utilities only) on older torch, matching the
+# unpinned-torch policy above.
+transformers==4.46.3
