@@ -8,12 +8,69 @@ on every machine this suite runs on, so nothing here asserts on their
 behavior; a test that only passes because an engine is silently absent would
 prove nothing and is worse than no test.
 """
+import time
 from datetime import datetime, timezone
 
 import pytest
 from PIL import Image, ImageDraw
 
 import ocr_spark_engine as engine
+
+
+# ---------------------------------------------------------------------------
+# _run_with_timeout -- a real executor-deadlock bug, caught by review before
+# it shipped further. A timeout on a shared, fixed-size ThreadPoolExecutor
+# only stops the CALLER from waiting; it cannot stop the underlying thread if
+# the call is genuinely hung. With a shared pool, every real timeout
+# permanently consumed one worker slot (the orphaned call keeps running
+# forever), so after enough real timeouts every future call would queue
+# forever waiting for a slot that never frees -- a total, silent stall.
+# Fixed by giving every call its own single-use executor instead of sharing
+# one. These tests prove the fix, not just the timeout itself firing.
+# ---------------------------------------------------------------------------
+
+def test_run_with_timeout_raises_on_a_real_hang():
+    def hang():
+        time.sleep(5)
+        return "should never be seen"
+
+    with pytest.raises(engine.FutureTimeoutError):
+        engine._run_with_timeout(hang, timeout=0.2)
+
+
+def test_timed_out_call_does_not_starve_a_later_call():
+    """The actual regression test: if this were still a shared fixed-size
+    pool, the orphaned hang below would permanently occupy its only worker
+    slot and this second, fast call would queue forever waiting for a slot
+    that never frees -- this test would hang instead of completing."""
+    def hang():
+        time.sleep(5)
+
+    with pytest.raises(engine.FutureTimeoutError):
+        engine._run_with_timeout(hang, timeout=0.2)
+
+    start = time.perf_counter()
+    result = engine._run_with_timeout(lambda: "fast", timeout=5.0)
+    elapsed = time.perf_counter() - start
+
+    assert result == "fast"
+    assert elapsed < 2.0, f"second call took {elapsed:.1f}s after the first timed out -- looks starved, not independent"
+
+
+def test_dgx_worker_has_no_shared_job_executor():
+    """Regression guard: dgx_worker.py's job-level timeout had the identical
+    bug (max_workers=1, so a single real timeout stalled the worker
+    permanently for every job after it). The fix removed the shared
+    module-level executor entirely in favor of one fresh executor per job
+    inside process_claimed_job() -- this asserts that anti-pattern doesn't
+    silently come back."""
+    import dgx_worker
+    assert not hasattr(dgx_worker, "_job_executor"), (
+        "dgx_worker._job_executor exists again -- a shared, fixed-size "
+        "executor for job timeouts reintroduces the exact deadlock this "
+        "test suite exists to catch: one real timeout permanently occupies "
+        "its only slot and every subsequent job queues forever."
+    )
 
 
 # ---------------------------------------------------------------------------

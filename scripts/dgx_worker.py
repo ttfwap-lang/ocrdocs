@@ -55,8 +55,16 @@ DOWNLOAD_DIR = Path(
 # timeout (OCRDOCS_ENGINE_TIMEOUT_SECONDS), but this is defense in depth: the
 # worker has a single poll loop, so any one job hanging blocks every other
 # queued document indefinitely without a job-level ceiling too.
+#
+# Deliberately NOT a persistent shared executor -- caught by review, not
+# just theory: future.result(timeout=...) only stops the CALLER waiting, it
+# cannot stop a genuinely hung thread. A shared max_workers=1 pool means the
+# FIRST job that legitimately times out leaves that one worker slot
+# permanently occupied by the orphaned call forever, so the second job's
+# .submit() queues indefinitely behind it -- a single real timeout would
+# have permanently stalled the entire worker for every job after it. Each
+# job now gets a fresh single-use executor instead.
 JOB_TIMEOUT_SECONDS = float(os.environ.get("OCRDOCS_JOB_TIMEOUT_SECONDS", "600"))
-_job_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-job")
 
 
 def _headers() -> Dict[str, str]:
@@ -102,8 +110,9 @@ def process_claimed_job(claim: Dict[str, Any]) -> None:
         post_result(job_id, {"status": "FAILED", "error": f"Download failed: {e}"})
         return
 
+    job_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-job")
     try:
-        future = _job_executor.submit(process_document_multipass, str(local_path), max_passes=MAX_PASSES)
+        future = job_executor.submit(process_document_multipass, str(local_path), max_passes=MAX_PASSES)
         result = future.result(timeout=JOB_TIMEOUT_SECONDS)
     except FutureTimeoutError:
         logging.error(f"[-] Job {job_id}: pipeline exceeded {JOB_TIMEOUT_SECONDS}s job-level timeout, abandoning.")
@@ -114,6 +123,11 @@ def process_claimed_job(claim: Dict[str, Any]) -> None:
         post_result(job_id, {"status": "FAILED", "error": str(e)})
         return
     finally:
+        # wait=False: on a timeout above, the underlying call may still be
+        # genuinely running (there's no way to force-kill it from Python) --
+        # don't block this function's return on it, just let this whole
+        # single-use executor be abandoned/orphaned rather than reused.
+        job_executor.shutdown(wait=False)
         try:
             local_path.unlink(missing_ok=True)
         except Exception as e:

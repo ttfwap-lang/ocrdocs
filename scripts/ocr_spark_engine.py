@@ -104,12 +104,31 @@ HANDWRITING_MODEL_NAME = os.environ.get("OCRDOCS_HANDWRITING_MODEL", "microsoft/
 # fix for the actual failure mode (one pathological image freezing the whole
 # 10-pass loop) — the pipeline now degrades instead of hanging.
 ENGINE_TIMEOUT_SECONDS = float(os.environ.get("OCRDOCS_ENGINE_TIMEOUT_SECONDS", "45"))
-_engine_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ocr-engine")
 
 def _run_with_timeout(fn, *args, timeout: float = ENGINE_TIMEOUT_SECONDS, **kwargs):
-    """Runs fn(*args, **kwargs) with a logical deadline; raises on hang or error."""
-    future = _engine_executor.submit(fn, *args, **kwargs)
-    return future.result(timeout=timeout)
+    """Runs fn(*args, **kwargs) with a logical deadline; raises on hang or error.
+
+    Uses a FRESH single-use executor per call, not a shared fixed-size pool.
+    This was a real bug caught by an independent review, not just theory:
+    Future.result(timeout=...) only stops the CALLER from waiting -- it does
+    not, and cannot, stop the underlying thread if the call is genuinely
+    hung (no way to force-kill a thread from Python without a subprocess
+    boundary; documented above). A shared pool's worker thread stays
+    permanently occupied by that orphaned call. With enough real timeouts
+    over a worker's lifetime, a fixed-size shared pool eventually has every
+    slot permanently consumed by orphaned hangs, and every subsequent
+    .submit() call queues forever waiting for a thread that will never free
+    up -- a total, silent stall of every future OCR pass, not just the one
+    that actually hung. A fresh executor per call means an orphaned hang
+    becomes one abandoned thread (shutdown(wait=False) does not block on
+    it), not a permanently lost slot in a pool every future call depends on.
+    """
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-engine")
+    try:
+        future = executor.submit(fn, *args, **kwargs)
+        return future.result(timeout=timeout)
+    finally:
+        executor.shutdown(wait=False)
 
 # Ensure directories exist
 for d in [INPUT_DIR, OUTPUT_DIR, DB_PATH.parent, NOOCR_DIR, LOGS_DIR]:
