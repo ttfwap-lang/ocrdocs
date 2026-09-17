@@ -1,1 +1,126 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Orbitron:wght@400..900&display=swap');
 @import "tailwindcss";
+
+@theme {
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --font-display: 'Orbitron', 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-void: #030405;
+  --color-panel: #0a0d0a;
+  --color-panel-2: #0d120e;
+
+  --color-matrix-50: #e9ffe9;
+  --color-matrix-200: #a8ffc0;
+  --color-matrix-300: #6dff8f;
+  --color-matrix-400: #39ff6a;
+  --color-matrix-500: #00ff41;
+  --color-matrix-600: #00cc34;
+  --color-matrix-900: #012b0c;
+
+  --color-neon-cyan: #00f6ff;
+  --color-neon-magenta: #ff2fd6;
+  --color-neon-amber: #ffb100;
+  --color-neon-rose: #ff3860;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-void);
+  color: #d5ffe0;
+  font-family: var(--font-mono);
+}
+
+/* Thin neon-tinted scrollbars, everywhere. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-matrix-600) #0a0d0a;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: #05070550;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-matrix-600);
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--color-matrix-500);
+  color: #001a06;
+}
+
+/* --- Decorative primitives (never bound to app data — purely cosmetic) --- */
+
+@keyframes scanline-drift {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100%; }
+}
+
+.crt-scanlines {
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 255, 65, 0.035) 0px,
+    rgba(0, 255, 65, 0.035) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  background-size: 100% 6px;
+  animation: scanline-drift 9s linear infinite;
+  mix-blend-mode: overlay;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.glow-pulse {
+  animation: glow-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes glitch-skew {
+  0%, 92%, 100% { transform: translate(0, 0); opacity: 1; }
+  93% { transform: translate(-1px, 0.5px); opacity: 0.85; }
+  94% { transform: translate(1px, -0.5px); opacity: 1; }
+  95% { transform: translate(-0.5px, 0); opacity: 0.9; }
+}
+
+.glitch-heading {
+  font-family: var(--font-display);
+  position: relative;
+  letter-spacing: 0.04em;
+  text-shadow:
+    0 0 6px rgba(0, 255, 65, 0.65),
+    0 0 18px rgba(0, 255, 65, 0.35);
+  animation: glitch-skew 6s steps(1) infinite;
+}
+
+.neon-border {
+  border: 1px solid rgba(0, 255, 65, 0.25);
+  box-shadow:
+    0 0 0 1px rgba(0, 255, 65, 0.05) inset,
+    0 0 18px -6px rgba(0, 255, 65, 0.35);
+}
+
+.neon-card {
+  background: linear-gradient(180deg, rgba(13, 18, 14, 0.92), rgba(6, 9, 7, 0.92));
+  border: 1px solid rgba(0, 255, 65, 0.18);
+  box-shadow: 0 0 24px -10px rgba(0, 255, 65, 0.25);
+  backdrop-filter: blur(6px);
+}
+
+.text-glow-green {
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.55);
+}
+.text-glow-cyan {
+  text-shadow: 0 0 8px rgba(0, 246, 255, 0.55);
+}
+.text-glow-magenta {
+  text-shadow: 0 0 8px rgba(255, 47, 214, 0.55);
+}

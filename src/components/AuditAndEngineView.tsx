@@ -8,16 +8,8 @@ import {
   Download,
   Copy,
   Check,
-  Terminal,
   ShieldAlert,
-  FolderDown,
-  PlayCircle,
-  FileCode,
-  ExternalLink,
   ShieldCheck,
-  HardDrive,
-  Activity,
-  Cpu,
   RefreshCw,
   Server
 } from 'lucide-react';
@@ -104,27 +96,27 @@ export const AuditAndEngineView: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="p-6 bg-white border border-slate-200 rounded-xl shadow-xs">
+      <div className="p-6 neon-card rounded-xl">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-800 rounded-md">
+              <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-widest bg-cyan-950/40 text-cyan-300 border border-cyan-500/30 rounded">
                 Production DGX & NVMe Codebase
               </span>
-              <span className="px-2 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-800 rounded-md flex items-center gap-1">
+              <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-widest bg-matrix-900/40 text-matrix-400 border border-matrix-500/30 rounded flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5" />
                 Audited & Hardened
               </span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            <h1 className="glitch-heading text-2xl uppercase">
               3 Production Engine Scripts & Architecture Audit
             </h1>
-            <p className="text-sm text-slate-600 mt-1 max-w-3xl">
+            <p className="text-sm text-slate-400 mt-1 max-w-3xl font-mono">
               Equipped with local document/folder ingestion, 10-pass progressive optimization with regression verification, and zero-loss monotonic field invariants.
             </p>
-            <div className="mt-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-md p-2 flex items-center gap-2">
+            <div className="mt-2 text-xs bg-amber-950/30 border border-amber-500/30 text-amber-300 rounded-md p-2 flex items-center gap-2 font-mono">
               <span className="font-bold">⚠️ DGX Transfer Note:</span>
-              <span>The preview URL enforces session authentication. To transfer scripts to DGX, click <strong>Download</strong> and transfer via <code className="font-mono bg-amber-100 px-1 py-0.5 rounded">scp</code>, or copy and paste the code directly in your terminal.</span>
+              <span>The preview URL enforces session authentication. To transfer scripts to DGX, click <strong>Download</strong> and transfer via <code className="font-mono bg-black/50 px-1 py-0.5 rounded border border-amber-900/40">scp</code>, or copy and paste the code directly in your terminal.</span>
             </div>
           </div>
 
@@ -132,7 +124,7 @@ export const AuditAndEngineView: React.FC = () => {
             <a
               href={`/api/scripts/${getDownloadFilename()}`}
               download
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider text-black bg-matrix-500 hover:bg-matrix-400 rounded-lg shadow-[0_0_18px_-4px_rgba(0,255,65,0.7)] transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
               Download {getDownloadFilename()}
@@ -141,20 +133,20 @@ export const AuditAndEngineView: React.FC = () => {
         </div>
 
         {/* Quick Access Links to All 4 Scripts */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-5 pt-5 border-t border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-5 pt-5 border-t border-matrix-500/15">
           <div
             onClick={() => setActiveTab('script4')}
             className={`p-3 rounded-lg border cursor-pointer transition-all ${
               activeTab === 'script4'
-                ? 'bg-blue-50/60 border-blue-300 ring-1 ring-blue-400'
-                : 'bg-emerald-50/50 border-emerald-200 hover:bg-emerald-50'
+                ? 'bg-cyan-950/30 border-cyan-500/50 ring-1 ring-cyan-500/40'
+                : 'bg-matrix-900/10 border-matrix-500/20 hover:bg-matrix-900/20'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-900">Script 4: check_dgx_codebase.sh</span>
-              <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-mono font-semibold">New E2E</span>
+              <span className="text-xs font-mono font-bold text-slate-200">Script 4: check_dgx_codebase.sh</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-matrix-900/50 text-matrix-400 rounded font-mono font-semibold border border-matrix-500/30">New E2E</span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-slate-500 mt-1 font-mono">
               Deep scans DGX NVMe codebase, Python venv, CUDA, and uplinks full audit back to UI.
             </p>
           </div>
@@ -163,15 +155,15 @@ export const AuditAndEngineView: React.FC = () => {
             onClick={() => setActiveTab('script1')}
             className={`p-3 rounded-lg border cursor-pointer transition-all ${
               activeTab === 'script1'
-                ? 'bg-blue-50/60 border-blue-300 ring-1 ring-blue-400'
-                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                ? 'bg-cyan-950/30 border-cyan-500/50 ring-1 ring-cyan-500/40'
+                : 'bg-black/30 border-white/10 hover:border-matrix-500/30'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-900">Script 1: dgx_setup.sh</span>
-              <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded font-mono">Bash</span>
+              <span className="text-xs font-mono font-bold text-slate-200">Script 1: dgx_setup.sh</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded font-mono">Bash</span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-slate-500 mt-1 font-mono">
               ARM64/x86 DGX provisioner, pinned dependencies, CUDA 12.4, PaddleOCR, EasyOCR, and DuckDB WAL.
             </p>
           </div>
@@ -180,15 +172,15 @@ export const AuditAndEngineView: React.FC = () => {
             onClick={() => setActiveTab('script2')}
             className={`p-3 rounded-lg border cursor-pointer transition-all ${
               activeTab === 'script2'
-                ? 'bg-blue-50/60 border-blue-300 ring-1 ring-blue-400'
-                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                ? 'bg-cyan-950/30 border-cyan-500/50 ring-1 ring-cyan-500/40'
+                : 'bg-black/30 border-white/10 hover:border-matrix-500/30'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-900">Script 2: ocr_spark_engine.py</span>
-              <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-mono">Python 3</span>
+              <span className="text-xs font-mono font-bold text-slate-200">Script 2: ocr_spark_engine.py</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-cyan-950/50 text-cyan-300 rounded font-mono border border-cyan-500/30">Python 3</span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-slate-500 mt-1 font-mono">
               10-pass progressive loop, 30 Australian banking fields, regression verification, early stop.
             </p>
           </div>
@@ -197,29 +189,29 @@ export const AuditAndEngineView: React.FC = () => {
             onClick={() => setActiveTab('script3')}
             className={`p-3 rounded-lg border cursor-pointer transition-all ${
               activeTab === 'script3'
-                ? 'bg-blue-50/60 border-blue-300 ring-1 ring-blue-400'
-                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                ? 'bg-cyan-950/30 border-cyan-500/50 ring-1 ring-cyan-500/40'
+                : 'bg-black/30 border-white/10 hover:border-matrix-500/30'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-900">Script 3: deploy.sh</span>
-              <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded font-mono">Bash</span>
+              <span className="text-xs font-mono font-bold text-slate-200">Script 3: deploy.sh</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded font-mono">Bash</span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
-              Local-to-DGX orchestrator, automated Drive sync, regression loop controller.
+            <p className="text-[11px] text-slate-500 mt-1 font-mono">
+              Local-to-DGX orchestrator: authenticated engine sync, 10-pass regression loop controller.
             </p>
           </div>
         </div>
       </div>
 
       {/* Live DGX Telemetry Report Card */}
-      <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-100">
+      <div className="p-5 neon-card rounded-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-matrix-500/15">
           <div className="flex items-center gap-2">
-            <Server className="w-5 h-5 text-blue-600" />
+            <Server className="w-5 h-5 text-cyan-400" />
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Remote DGX Codebase & Hardware Audit Feed</h2>
-              <p className="text-xs text-slate-500">Live telemetric reports transmitted from <code className="text-xs font-mono bg-slate-100 px-1 py-0.5 rounded">check_dgx_codebase.sh</code></p>
+              <h2 className="text-sm font-mono font-bold text-slate-200">Remote DGX Codebase & Hardware Audit Feed</h2>
+              <p className="text-xs text-slate-500 font-mono">Live telemetric reports transmitted from <code className="text-xs font-mono bg-black/50 px-1 py-0.5 rounded border border-white/10">check_dgx_codebase.sh</code></p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -239,16 +231,16 @@ export const AuditAndEngineView: React.FC = () => {
                   }
                 }
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-slate-300 bg-black/40 hover:bg-white/5 border border-white/10 rounded-lg transition-colors"
             >
               <span>Paste Report JSON</span>
             </button>
             <button
               onClick={fetchTelemetry}
               disabled={telemetryLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-slate-300 bg-black/40 hover:bg-white/5 border border-white/10 rounded-lg transition-colors"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${telemetryLoading ? 'animate-spin text-blue-600' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${telemetryLoading ? 'animate-spin text-cyan-400' : ''}`} />
               <span>Refresh Status</span>
             </button>
           </div>
@@ -257,95 +249,95 @@ export const AuditAndEngineView: React.FC = () => {
         {telemetry ? (
           <div className="mt-4 space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                <span className="text-[11px] text-slate-500 block">Host & User</span>
-                <span className="text-xs font-bold text-slate-900 font-mono">{telemetry.currentUser}@{telemetry.hostname}</span>
+              <div className="p-3 bg-black/40 border border-white/10 rounded-lg">
+                <span className="text-[11px] text-slate-500 block font-mono">Host & User</span>
+                <span className="text-xs font-bold text-slate-200 font-mono">{telemetry.currentUser}@{telemetry.hostname}</span>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                <span className="text-[11px] text-slate-500 block">Architecture</span>
-                <span className="text-xs font-bold text-slate-900 font-mono">{telemetry.architecture} ({telemetry.kernel})</span>
+              <div className="p-3 bg-black/40 border border-white/10 rounded-lg">
+                <span className="text-[11px] text-slate-500 block font-mono">Architecture</span>
+                <span className="text-xs font-bold text-slate-200 font-mono">{telemetry.architecture} ({telemetry.kernel})</span>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                <span className="text-[11px] text-slate-500 block">NVMe Root</span>
-                <span className="text-xs font-bold text-emerald-700 font-mono">
+              <div className="p-3 bg-black/40 border border-white/10 rounded-lg">
+                <span className="text-[11px] text-slate-500 block font-mono">NVMe Root</span>
+                <span className="text-xs font-bold text-matrix-400 font-mono">
                   {telemetry.nvmeExists ? 'Mounted' : 'Missing'} ({telemetry.inputFilesCount || 0} input files)
                 </span>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                <span className="text-[11px] text-slate-500 block">Python Venv</span>
-                <span className={`text-xs font-bold font-mono ${telemetry.venvExists ? 'text-emerald-700' : 'text-rose-600'}`}>
+              <div className="p-3 bg-black/40 border border-white/10 rounded-lg">
+                <span className="text-[11px] text-slate-500 block font-mono">Python Venv</span>
+                <span className={`text-xs font-bold font-mono ${telemetry.venvExists ? 'text-matrix-400' : 'text-rose-400'}`}>
                   {telemetry.venvExists ? 'Active' : 'Uninitialized'}
                 </span>
               </div>
             </div>
 
             {telemetry.pythonDiagnostics && (
-              <div className="p-3 bg-slate-900 text-slate-200 rounded-lg font-mono text-xs overflow-x-auto">
-                <span className="text-[11px] text-slate-400 block mb-1 font-sans">Virtualenv ML Diagnostics:</span>
+              <div className="p-3 bg-black/60 border border-white/10 text-slate-300 rounded-lg font-mono text-xs overflow-x-auto">
+                <span className="text-[11px] text-slate-500 block mb-1">Virtualenv ML Diagnostics:</span>
                 <pre>{JSON.stringify(telemetry.pythonDiagnostics, null, 2)}</pre>
               </div>
             )}
           </div>
         ) : (
-          <div className="mt-4 p-4 bg-slate-50 border border-dashed border-slate-300 rounded-lg text-center">
-            <p className="text-xs text-slate-600 font-medium">No DGX telemetry report received yet.</p>
-            <p className="text-[11px] text-slate-500 mt-1">
-              Run <code className="bg-slate-200 text-slate-800 px-1 py-0.5 rounded font-mono">./check_dgx_codebase.sh</code> on your DGX terminal to transmit full codebase structure, CUDA capabilities, and environment state.
+          <div className="mt-4 p-4 bg-black/30 border border-dashed border-white/15 rounded-lg text-center">
+            <p className="text-xs text-slate-400 font-mono font-medium">No DGX telemetry report received yet.</p>
+            <p className="text-[11px] text-slate-500 mt-1 font-mono">
+              Run <code className="bg-black/60 text-cyan-300 px-1 py-0.5 rounded border border-cyan-900/40">./check_dgx_codebase.sh</code> on your DGX terminal to transmit full codebase structure, CUDA capabilities, and environment state.
             </p>
           </div>
         )}
       </div>
 
       {/* Code Editor & Viewer */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-        <div className="p-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+      <div className="neon-card rounded-xl overflow-hidden">
+        <div className="p-3 border-b border-matrix-500/15 bg-black/30 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={() => setActiveTab('script4')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-mono font-semibold rounded-lg transition-colors ${
                 activeTab === 'script4'
-                  ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white/5 text-cyan-300 border border-cyan-500/30'
+                  : 'text-slate-500 hover:text-slate-300'
               }`}
             >
               check_dgx_codebase.sh
             </button>
             <button
               onClick={() => setActiveTab('script1')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-mono font-semibold rounded-lg transition-colors ${
                 activeTab === 'script1'
-                  ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white/5 text-cyan-300 border border-cyan-500/30'
+                  : 'text-slate-500 hover:text-slate-300'
               }`}
             >
               dgx_setup.sh
             </button>
             <button
               onClick={() => setActiveTab('script2')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-mono font-semibold rounded-lg transition-colors ${
                 activeTab === 'script2'
-                  ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white/5 text-cyan-300 border border-cyan-500/30'
+                  : 'text-slate-500 hover:text-slate-300'
               }`}
             >
               ocr_spark_engine.py
             </button>
             <button
               onClick={() => setActiveTab('script3')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-mono font-semibold rounded-lg transition-colors ${
                 activeTab === 'script3'
-                  ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white/5 text-cyan-300 border border-cyan-500/30'
+                  : 'text-slate-500 hover:text-slate-300'
               }`}
             >
               deploy.sh
             </button>
             <button
               onClick={() => setActiveTab('submit')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-mono font-semibold rounded-lg transition-colors ${
                 activeTab === 'submit'
-                  ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white/5 text-cyan-300 border border-cyan-500/30'
+                  : 'text-slate-500 hover:text-slate-300'
               }`}
             >
               Spark Submit / CLI
@@ -355,14 +347,14 @@ export const AuditAndEngineView: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleCopyCode(getActiveCode())}
-              className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+              className="px-3 py-1.5 text-xs font-mono font-medium text-slate-300 bg-black/40 hover:bg-white/5 border border-white/10 rounded-lg transition-colors flex items-center gap-1.5"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? <Check className="w-3.5 h-3.5 text-matrix-400" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copied ? 'Copied' : 'Copy Code'}</span>
             </button>
             <button
               onClick={handleDownloadActiveScript}
-              className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+              className="px-3 py-1.5 text-xs font-mono font-medium text-slate-300 bg-black/40 hover:bg-white/5 border border-white/10 rounded-lg transition-colors flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download</span>
@@ -370,15 +362,15 @@ export const AuditAndEngineView: React.FC = () => {
           </div>
         </div>
 
-        <pre className="p-4 bg-slate-950 text-slate-200 font-mono text-xs overflow-x-auto max-h-[520px] leading-relaxed select-all">
+        <pre className="p-4 bg-black text-matrix-300 font-mono text-xs overflow-x-auto max-h-[520px] leading-relaxed select-all">
           <code>{getActiveCode()}</code>
         </pre>
       </div>
 
       {/* Audit Findings Grid */}
       <div>
-        <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-          <ShieldAlert className="w-4 h-4 text-amber-500" />
+        <h2 className="text-base font-mono font-bold text-slate-200 mb-3 flex items-center gap-2 uppercase tracking-wide">
+          <ShieldAlert className="w-4 h-4 text-amber-400" />
           Production Engineering Countermeasures & Audits
         </h2>
 
@@ -388,43 +380,43 @@ export const AuditAndEngineView: React.FC = () => {
             const isHigh = section.severity === 'HIGH';
 
             return (
-              <div key={section.id} className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col justify-between">
+              <div key={section.id} className="p-4 neon-card rounded-xl flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+                    <span className="text-[11px] font-mono font-medium text-slate-500 uppercase tracking-wider">
                       Audit Finding
                     </span>
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
                         isCritical
-                          ? 'bg-rose-100 text-rose-800'
+                          ? 'bg-rose-950/40 text-rose-300 border-rose-500/30'
                           : isHigh
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-blue-100 text-blue-800'
+                          ? 'bg-amber-950/40 text-amber-300 border-amber-500/30'
+                          : 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30'
                       }`}
                     >
                       {section.severity}
                     </span>
                   </div>
 
-                  <h3 className="text-xs font-bold text-slate-900 mb-2">
+                  <h3 className="text-xs font-mono font-bold text-slate-200 mb-2">
                     {section.title}
                   </h3>
 
                   <div className="space-y-2 text-xs">
-                    <div className="p-2 bg-rose-50/70 border border-rose-100 rounded text-rose-900">
-                      <span className="font-semibold block text-[11px] text-rose-800 mb-0.5">Original Problem:</span>
-                      <p className="text-[11px] leading-relaxed">{section.originalProblem}</p>
+                    <div className="p-2 bg-rose-950/20 border border-rose-500/20 rounded text-rose-200">
+                      <span className="font-semibold block text-[11px] text-rose-400 mb-0.5 font-mono">Original Problem:</span>
+                      <p className="text-[11px] leading-relaxed font-mono">{section.originalProblem}</p>
                     </div>
 
-                    <div className="p-2 bg-emerald-50/70 border border-emerald-100 rounded text-emerald-900">
-                      <span className="font-semibold block text-[11px] text-emerald-800 mb-0.5">Production Countermeasure:</span>
-                      <p className="text-[11px] leading-relaxed">{section.ngxSparkSolution}</p>
+                    <div className="p-2 bg-matrix-900/20 border border-matrix-500/20 rounded text-matrix-200">
+                      <span className="font-semibold block text-[11px] text-matrix-400 mb-0.5 font-mono">Production Countermeasure:</span>
+                      <p className="text-[11px] leading-relaxed font-mono">{section.ngxSparkSolution}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-3 pt-3 border-t border-slate-100 text-[11px] font-medium text-emerald-700">
+                <div className="mt-3 pt-3 border-t border-matrix-500/15 text-[11px] font-mono font-medium text-matrix-400">
                   Result: {section.impact}
                 </div>
               </div>

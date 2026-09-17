@@ -243,9 +243,9 @@ export const MatcherStudio: React.FC<MatcherStudioProps> = ({
   return (
     <div className="space-y-4">
       {/* HUD Header */}
-      <div className="bg-[#0a0a0a] border border-slate-800 p-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      <div className="neon-card p-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
         <div>
-          <h1 className="text-2xl font-mono font-bold tracking-widest text-white uppercase mb-1">
+          <h1 className="glitch-heading text-2xl uppercase mb-1">
             Data Extraction Grid
           </h1>
           <p className="text-xs font-mono text-slate-500 uppercase tracking-widest">

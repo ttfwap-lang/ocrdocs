@@ -56,13 +56,13 @@ export const GeminiChatbot: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] bg-[#0a0a0a] border border-slate-800">
+    <div className="flex flex-col h-[calc(100vh-140px)] neon-card">
       {/* Header */}
-      <div className="border-b border-slate-800 bg-black p-4 flex justify-between items-center">
+      <div className="border-b border-matrix-500/15 bg-black/40 p-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <Terminal className="w-5 h-5 text-amber-500" />
-          <h2 className="text-sm font-mono font-bold tracking-widest text-white uppercase">AI Intelligence Terminal</h2>
-          <span className="px-2 py-0.5 border border-amber-900 bg-amber-950/20 text-amber-500 text-[9px] font-mono uppercase tracking-widest animate-pulse">Live</span>
+          <Terminal className="w-5 h-5 text-matrix-400" />
+          <h2 className="glitch-heading text-sm uppercase">AI Intelligence Terminal</h2>
+          <span className="px-2 py-0.5 border border-matrix-500/40 bg-matrix-900/30 text-matrix-400 text-[9px] font-mono uppercase tracking-widest animate-pulse">Live</span>
         </div>
         <button onClick={() => setMessages([messages[0]])} className="text-slate-500 hover:text-white transition-colors">
           <RefreshCw className="w-4 h-4" />

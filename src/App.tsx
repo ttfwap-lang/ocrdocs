@@ -10,6 +10,7 @@ import { DocumentsView } from './components/DocumentsView';
 import { AuditAndEngineView } from './components/AuditAndEngineView';
 import { RegexDictionaryView } from './components/RegexDictionaryView';
 import { GeminiChatbot } from './components/GeminiChatbot';
+import { MatrixRain } from './components/MatrixRain';
 import { SAMPLE_DOCUMENTS } from './data/sampleDocuments';
 import { extractBankFieldsFromText } from './utils/ocrMatcherEngine';
 import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from './data/bankFields';
@@ -86,7 +87,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-slate-300 flex flex-col font-sans selection:bg-cyan-900 selection:text-cyan-50">
+    <div className="min-h-screen bg-void text-slate-300 flex flex-col font-mono selection:bg-matrix-500 selection:text-black relative">
+      <MatrixRain />
+      <div className="relative z-10 flex flex-col min-h-screen">
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -95,16 +98,16 @@ export default function App() {
       />
 
       {/* Live Status Bar */}
-      <div className="bg-[#0a0a0a] border-b border-slate-800 py-1.5 px-4 text-[10px] font-mono tracking-widest text-slate-500 uppercase">
+      <div className="bg-black/70 backdrop-blur-sm border-b border-matrix-500/15 py-1.5 px-4 text-[10px] font-mono tracking-widest uppercase">
         <div className="max-w-screen-2xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4 flex-wrap">
-            <span className={`flex items-center gap-1.5 font-bold ${statusBar.dgxWorkerAvailable ? 'text-emerald-500' : 'text-amber-500'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${statusBar.dgxWorkerAvailable ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            <span className={`flex items-center gap-1.5 font-bold ${statusBar.dgxWorkerAvailable ? 'text-matrix-400 text-glow-green' : 'text-amber-400'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full glow-pulse ${statusBar.dgxWorkerAvailable ? 'bg-matrix-500' : 'bg-amber-400'}`} />
               DGX WORKER: {statusBar.dgxWorkerAvailable ? 'LIVE' : 'UNCONFIGURED'}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 text-cyan-700 font-bold">
+          <div className="flex items-center gap-2 text-cyan-400 font-bold text-glow-cyan">
             <span>{statusBar.documentCount} DOCUMENTS</span>
           </div>
         </div>
@@ -122,6 +125,7 @@ export default function App() {
         {activeTab === 'regex' && <RegexDictionaryView />}
         {activeTab === 'copilot' && <GeminiChatbot />}
       </main>
+      </div>
     </div>
   );
 }

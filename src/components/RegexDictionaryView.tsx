@@ -43,8 +43,8 @@ export const RegexDictionaryView: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="bg-[#0a0a0a] border border-slate-800 p-6">
-        <h1 className="text-2xl font-mono font-bold tracking-widest text-white uppercase mb-2">
+      <div className="neon-card p-6">
+        <h1 className="glitch-heading text-2xl uppercase mb-2">
           Regex Intelligence Database
         </h1>
         <p className="text-xs font-mono text-slate-500 uppercase tracking-widest max-w-4xl">
@@ -72,8 +72,8 @@ export const RegexDictionaryView: React.FC = () => {
               onClick={() => setSelectedCat(cat.id as any)}
               className={`px-4 py-2 text-[10px] font-mono uppercase tracking-widest whitespace-nowrap border transition-all ${
                 selectedCat === cat.id
-                  ? 'bg-cyan-950/30 text-cyan-400 border-cyan-800'
-                  : 'bg-black text-slate-500 border-slate-800 hover:border-slate-600'
+                  ? 'bg-matrix-900/40 text-matrix-400 border-matrix-500/50'
+                  : 'bg-black text-slate-500 border-slate-800 hover:border-matrix-500/30'
               }`}
             >
               {cat.label}
@@ -85,7 +85,7 @@ export const RegexDictionaryView: React.FC = () => {
       {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {filtered.map((field) => (
-          <div key={field.id} className="bg-[#0a0a0a] border border-slate-800 flex flex-col group hover:border-cyan-900/50 transition-colors">
+          <div key={field.id} className="neon-card flex flex-col group hover:border-matrix-500/40 transition-colors">
             <div className="p-3 border-b border-slate-800 flex items-start justify-between bg-black">
               <div className="flex items-center gap-3">
                 <span className="w-6 h-6 border border-slate-700 text-slate-400 text-[10px] font-mono flex items-center justify-center bg-[#111]">
