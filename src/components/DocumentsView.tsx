@@ -37,7 +37,7 @@ import type { LocalDocument, LocalJob } from '../types';
 const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff'];
 const UPLOAD_CONCURRENCY = 3;
 
-type QueueStatus = 'pending' | 'uploading' | 'extracted' | 'queued_ocr' | 'error';
+type QueueStatus = 'pending' | 'uploading' | 'extracted' | 'queued_ocr' | 'duplicate' | 'error';
 
 interface QueueItem {
   id: string;
@@ -164,7 +164,10 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
   const queueCounts = useMemo(
     () => ({
       total: uploadQueue.length,
-      done: uploadQueue.filter((q) => q.status === 'extracted' || q.status === 'queued_ocr').length,
+      done: uploadQueue.filter(
+        (q) => q.status === 'extracted' || q.status === 'queued_ocr' || q.status === 'duplicate',
+      ).length,
+      duplicates: uploadQueue.filter((q) => q.status === 'duplicate').length,
       failed: uploadQueue.filter((q) => q.status === 'error').length,
     }),
     [uploadQueue],
@@ -225,6 +228,12 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
       if (res.status === 201) {
         updateQueueItem(item.id, { status: 'extracted', message: 'Fields extracted' });
         return 'extracted';
+      }
+      // 200 means identical content was already uploaded; the server returned
+      // the existing document rather than processing the same bytes again.
+      if (res.status === 200 && data.duplicate) {
+        updateQueueItem(item.id, { status: 'duplicate', message: 'Already uploaded — skipped' });
+        return 'duplicate';
       }
       if (res.status === 202) {
         updateQueueItem(item.id, { status: 'queued_ocr', message: data.message || 'Queued for DGX OCR' });
@@ -370,6 +379,21 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
       setError(e?.message || 'Approval failed');
     } finally {
       setSavingFieldId(null);
+    }
+  };
+
+  const reprocessDocument = async (documentId: string) => {
+    try {
+      const res = await fetch(`/api/documents/${documentId}/reprocess`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body.error || `Reprocess failed (${res.status})`);
+      }
+      setNotice(body.message || 'Queued for reprocessing.');
+      await fetchDocuments();
+      await fetchDetail(documentId);
+    } catch (e: any) {
+      setError(e?.message || 'Reprocess failed');
     }
   };
 
@@ -580,7 +604,7 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
                   <div className="flex items-center gap-2 min-w-0">
                     {q.status === 'pending' && <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
                     {q.status === 'uploading' && <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin shrink-0" />}
-                    {(q.status === 'extracted' || q.status === 'queued_ocr') && (
+                    {(q.status === 'extracted' || q.status === 'queued_ocr' || q.status === 'duplicate') && (
                       <CheckCircle2 className="w-3.5 h-3.5 text-matrix-400 shrink-0" />
                     )}
                     {q.status === 'error' && <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
@@ -590,14 +614,14 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
                     className={`shrink-0 ${
                       q.status === 'error'
                         ? 'text-rose-400'
-                        : q.status === 'extracted' || q.status === 'queued_ocr'
+                        : q.status === 'extracted' || q.status === 'queued_ocr' || q.status === 'duplicate'
                         ? 'text-matrix-400'
                         : 'text-slate-500'
                     }`}
                   >
                     {q.status === 'pending' && 'waiting...'}
                     {q.status === 'uploading' && 'uploading...'}
-                    {(q.status === 'extracted' || q.status === 'queued_ocr' || q.status === 'error') && (q.message || q.status)}
+                    {(q.status === 'extracted' || q.status === 'queued_ocr' || q.status === 'duplicate' || q.status === 'error') && (q.message || q.status)}
                   </span>
                 </div>
               ))}
@@ -740,6 +764,14 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
                         </div>
                       ))}
                   </div>
+
+                  <button
+                    onClick={() => reprocessDocument(selectedDocument.id)}
+                    className="w-full mt-3 py-2 px-3 text-[11px] font-mono font-bold uppercase tracking-wider text-cyan-300 bg-black/50 hover:bg-cyan-950/40 border border-cyan-500/30 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Re-run OCR (new version)
+                  </button>
 
                   {/* Human review: corrections + approvals persisted to the fields table. */}
                   <button

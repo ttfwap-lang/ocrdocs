@@ -25,6 +25,10 @@ export function createDocumentRepo(db: DatabaseType) {
     `SELECT * FROM documents ORDER BY uploaded_at DESC`,
   );
 
+  const stmtGetByContentHash = db.prepare<string>(
+    `SELECT * FROM documents WHERE content_hash = ? ORDER BY uploaded_at LIMIT 1`,
+  );
+
   const stmtUpdateStatus = db.prepare<[string, string]>(
     `UPDATE documents SET status = ? WHERE id = ?`,
   );
@@ -60,6 +64,11 @@ export function createDocumentRepo(db: DatabaseType) {
 
     getAll(): DocumentRow[] {
       return stmtGetAll.all() as DocumentRow[];
+    },
+
+    /** Identical bytes mean an identical document — used to skip re-OCRing a re-upload. */
+    getByContentHash(contentHash: string): DocumentRow | undefined {
+      return stmtGetByContentHash.get(contentHash) as DocumentRow | undefined;
     },
 
     updateStatus(id: string, status: string): void {

@@ -220,6 +220,24 @@ test('Phase 5 — job leases and endpoint hardening', async (t) => {
     );
   });
 
+  await t.test('re-uploading identical bytes returns the existing document instead of duplicating work', async () => {
+    const first = await uploadImage(baseUrl, 'dedup.png');
+    assert.equal(first.duplicate, undefined, 'the first upload is not a duplicate');
+    const documentId = first.document.id;
+
+    // Same bytes, different filename — content, not name, decides identity.
+    const second = await uploadImage(baseUrl, 'dedup.png');
+    assert.equal(second.duplicate, true);
+    assert.equal(second.document.id, documentId, 'must return the original document');
+
+    const all = await (await fetch(`${baseUrl}/api/documents`)).json();
+    const matching = all.filter((d) => d.content_hash === first.document.content_hash);
+    assert.equal(matching.length, 1, 'identical content must not create a second document row');
+
+    // And it must not have queued a second OCR job for work already done.
+    assert.equal(second.jobs.length, 1, 'a duplicate upload must not enqueue another job');
+  });
+
   await t.test('reprocess refuses to double-queue a document and 404s an unknown one', async () => {
     const unknown = await fetch(`${baseUrl}/api/documents/nope/reprocess`, { method: 'POST' });
     assert.equal(unknown.status, 404);

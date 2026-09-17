@@ -73,6 +73,9 @@ export function runMigrations(db: DatabaseType): void {
 
     CREATE INDEX IF NOT EXISTS idx_jobs_status
       ON jobs(status);
+
+    CREATE INDEX IF NOT EXISTS idx_documents_content_hash
+      ON documents(content_hash);
   `);
 
   addColumnIfMissing(db, 'jobs', 'attempts', 'INTEGER NOT NULL DEFAULT 0');

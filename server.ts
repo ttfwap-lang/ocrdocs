@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { createHash, timingSafeEqual } from "crypto";
-import { readFile } from "fs/promises";
+import { readFile, unlink } from "fs/promises";
 import { PDFParse } from "pdf-parse";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
@@ -307,6 +307,28 @@ app.post("/api/documents", upload.single("file"), async (req, res) => {
 
     const fileBuffer = await readFile(req.file.path);
     const contentHash = createHash("sha256").update(fileBuffer).digest("hex");
+
+    // Identical bytes are the same document. Re-uploading one (easy to do when
+    // bulk-ingesting a folder) should not create a second row, store a second
+    // copy of the PII, or spend another GPU pass on work already done. Use
+    // POST /api/documents/:id/reprocess to deliberately re-run a document.
+    const existing = documentRepo.getByContentHash(contentHash);
+    if (existing) {
+      await unlink(req.file.path).catch(() => {
+        // The duplicate upload's bytes are redundant; failing to remove the
+        // temp copy must not fail the request.
+      });
+      const extractions = extractionRepo.getExtractionsByDocument(existing.id);
+      return res.status(200).json({
+        document: existing,
+        jobs: jobRepo.getByDocument(existing.id),
+        extraction: extractions.length
+          ? extractionRepo.getFullResult(extractions[extractions.length - 1].id)
+          : null,
+        duplicate: true,
+        message: `Identical content already uploaded as "${existing.filename}". Returning the existing document instead of processing it again.`,
+      });
+    }
 
     const document = documentRepo.insert({
       filename: req.file.originalname,

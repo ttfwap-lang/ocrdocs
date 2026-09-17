@@ -62,7 +62,9 @@ async function uploadPng(baseUrl, filename = 'scan.png') {
     `--${boundary}\r\n` +
     `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
     `Content-Type: image/png\r\n\r\n` +
-    `not-a-real-png-but-multer-only-checks-mimetype\r\n` +
+    // Content must differ per file: identical bytes are deduplicated by the
+    // server, which would return the first document instead of a new job.
+    `not-a-real-png-but-multer-only-checks-mimetype-${filename}\r\n` +
     `--${boundary}--\r\n`;
 
   const res = await fetch(`${baseUrl}/api/documents`, {
