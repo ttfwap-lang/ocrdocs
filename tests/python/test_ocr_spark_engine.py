@@ -271,6 +271,65 @@ def test_bsb_validation():
 
 
 # ---------------------------------------------------------------------------
+# BSB/DOB false-positive matching (the Python-dictionary counterpart of the
+# same class of bug documented for the TypeScript matcher in the issue
+# register). A real fix was found partially applied and uncommitted by an
+# interrupted review pass -- verified here rather than trusted, and the
+# result is a genuine but PARTIAL improvement, not a full fix. Both are
+# recorded explicitly so nobody has to rediscover the gap by hand later.
+# ---------------------------------------------------------------------------
+
+def test_bsb_regex_requires_an_explicit_separator():
+    """Real, if narrow, improvement: a bare 6-digit run with no separator
+    character no longer matches as a BSB at all (previously the separator
+    was optional, so e.g. an unrelated 6-consecutive-digit account number
+    typed with no grouping could be misread as a BSB)."""
+    text = "Reference 123456 for your records"
+    result = engine.extract_australian_banking_fields(text)
+    assert result["fields"]["bsb"] == ""
+
+
+def test_bsb_regex_still_false_positives_on_a_spaced_abn():
+    """Honest limitation, verified directly rather than assumed fixed: the
+    mandatory-separator change above does NOT fix the false positive
+    documented in the issue register, because an ABN's own digit-group
+    spacing ("51 824 753 556") already contains a real space -- exactly the
+    separator character the regex requires. This still misreads part of the
+    ABN as a BSB. This test exists so nobody mistakes the narrower fix above
+    for a complete one; a real fix needs label-context anchoring, not just a
+    mandatory separator."""
+    text = "ABN: 51 824 753 556"
+    result = engine.extract_australian_banking_fields(text)
+    assert result["fields"]["bsb"] != "", (
+        "if this now passes, the false positive has actually been fixed -- "
+        "update this test (and the issue register) to say so instead of "
+        "deleting it"
+    )
+
+
+def test_format_only_validated_fields_get_reduced_confidence():
+    """BSB and DOB validation both only check the value's SHAPE (a plausible
+    range, a parseable date), not that it's actually the right identifier in
+    context -- the issue register's own diagnosis of why these false
+    positives get reported as high-confidence 'valid' matches. Confidence
+    for the whole-text, no-label digit sweep was lowered (0.98->0.60 BSB,
+    0.95->0.85 DOB) to more honestly reflect that.
+
+    Deliberately uses text with NO "BSB"/"DOB" label anywhere near the
+    value: a real label match goes through the separate contextual
+    line-scanning path instead (matched a field's own name near a colon),
+    which legitimately keeps high confidence -- that IS strong context, not
+    a false positive, and correctly overrides these lower values when both
+    paths find the same field. This test would misleadingly pass even with
+    the confidence fix reverted if it used a labelled value instead."""
+    result = engine.extract_australian_banking_fields("Reference 062-000 filed under 15/06/1985 correspondence")
+    if result["fields"]["bsb"]:
+        assert result["confidences"]["bsb"] <= 0.60
+    if result["fields"]["date_of_birth"]:
+        assert result["confidences"]["date_of_birth"] <= 0.85
+
+
+# ---------------------------------------------------------------------------
 # One corrupted PDF page must not discard the rest of the document.
 #
 # This one intentionally uses fault-injected fake pdfium pages rather than a

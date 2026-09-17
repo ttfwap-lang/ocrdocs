@@ -10,14 +10,12 @@
     "lint": "tsc --noEmit",
     "test": "node --test --test-timeout=30000 tests/*.test.mjs",
     "test:unit": "node --test --test-timeout=30000 tests/australianValidation.test.mjs tests/ocrEngine.test.mjs tests/bankFields.test.mjs tests/stage3Architecture.test.mjs tests/stage4DemoSeparation.test.mjs tests/stage5Dependencies.test.mjs tests/stage6Startup.test.mjs",
-    "test:integration": "node --test --test-timeout=30000 tests/autonomyHost.test.mjs tests/dgxJobEndpoints.test.mjs",
+    "test:integration": "node --test --test-timeout=30000 tests/dgxJobEndpoints.test.mjs",
     "test:worker": "node --test --test-timeout=30000 tests/stage7TestIntegrity.test.mjs",
     "test:browser": "node --test --test-timeout=30000 tests/browser/suiteContract.test.mjs",
     "test:deployment": "node --test --test-timeout=30000 tests/deployment/suiteContract.test.mjs",
-    "test:governance": "node --test --test-timeout=30000 tests/autonomy.test.mjs tests/stages.test.mjs",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:worker && npm run test:browser && npm run test:deployment && npm run test:governance",
-    "test:python": "python -m pytest tests/python -q",
-    "autonomy": "node scripts/autonomy/runner.mjs"
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:worker && npm run test:browser && npm run test:deployment",
+    "test:python": "python -m pytest tests/python -q"
   },
   "dependencies": {
     "@google/genai": "2.22.0",

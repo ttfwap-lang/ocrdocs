@@ -291,7 +291,7 @@ app.post("/api/chat", async (req, res) => {
       "and KYC banking application forms. Give clear, production-grade technical guidance with code snippets.";
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       contents: formattedContents,
       config: {
         systemInstruction: systemInstruction || defaultSystemInstruction,

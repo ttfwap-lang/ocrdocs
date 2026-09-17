@@ -151,92 +151,182 @@ BANK_FIELD_PATTERNS: Dict[str, re.Pattern] = {
         r"(tit[l1]e|sa[l1]utation|honorific|prefix|mr|mrs|ms|miss|dr|prof|rev)\b", re.I
     ),
     "given_names": re.compile(
-        r"(given[_-]?names?|first[_-]?name|forename|christian[_-]?name|primary[_-]?name|1st[_-]?name)\b", re.I
+        r"(given[\s_-]?names?|first[\s_-]?name|forename|christian[\s_-]?name|primary[\s_-]?name|1st[\s_-]?name)\b", re.I
     ),
     "middle_name": re.compile(
-        r"(middle[_-]?names?|middle[_-]?initials?|other[_-]?names?|second[_-]?name)\b", re.I
+        r"(middle[\s_-]?names?|middle[\s_-]?initials?|other[\s_-]?names?|second[\s_-]?name)\b", re.I
     ),
     "family_name": re.compile(
-        r"(family[_-]?names?|surname|last[_-]?name|maiden[_-]?name)\b", re.I
+        r"(family[\s_-]?names?|surname|last[\s_-]?name|maiden[\s_-]?name)\b", re.I
     ),
     "date_of_birth": re.compile(
-        r"(dob|date[_-]?of[_-]?birth|birth[_-]?date|born[_-]?on|b[_-]?day)\b", re.I
+        r"(dob|date[\s_-]?of[\s_-]?birth|birth[\s_-]?date|born[\s_-]?on|b[\s_-]?day)\b", re.I
     ),
     "residency_status": re.compile(
-        r"(residency[_-]?status|citizenship|permanent[_-]?resident|visa[_-]?holder|australian[_-]?citizen|pr[_-]?status)\b", re.I
+        r"(residency[\s_-]?status|citizenship|permanent[\s_-]?resident|visa[\s_-]?holder|australian[\s_-]?citizen|pr[\s_-]?status)\b", re.I
     ),
     "marital_status": re.compile(
-        r"(marital[_-]?status|relationship[_-]?status|single|married|de[_-]?facto|defacto|divorced|separated|widowed)\b", re.I
+        r"(marital[\s_-]?status|relationship[\s_-]?status|single|married|de[\s_-]?facto|defacto|divorced|separated|widowed)\b", re.I
     ),
     "dependants_count": re.compile(
-        r"(dependants?|dependents?|children|kids|child[_-]?count|number[_-]?of[_-]?deps)\b", re.I
+        r"(dependants?|dependents?|children|kids|child[\s_-]?count|number[\s_-]?of[\s_-]?deps)\b", re.I
     ),
     "residential_address": re.compile(
-        r"(residential[_-]?address|current[_-]?address|home[_-]?address|street[_-]?address|property[_-]?address)\b", re.I
+        r"(residential[\s_-]?address|current[\s_-]?address|home[\s_-]?address|street[\s_-]?address|property[\s_-]?address)\b", re.I
     ),
     "address_tenure": re.compile(
-        r"(time[_-]?at[_-]?address|years[_-]?at[_-]?address|months[_-]?residing|tenure[_-]?length)\b", re.I
+        r"(time[\s_-]?at[\s_-]?address|years[\s_-]?at[\s_-]?address|months[\s_-]?residing|tenure[\s_-]?length)\b", re.I
     ),
     "previous_address": re.compile(
-        r"(previous[_-]?address|prior[_-]?residence|former[_-]?address|past[_-]?address)\b", re.I
+        r"(previous[\s_-]?address|prior[\s_-]?residence|former[\s_-]?address|past[\s_-]?address)\b", re.I
     ),
     "housing_situation": re.compile(
-        r"(housing[_-]?situation|residential[_-]?status|renting|mortgaged|owned[_-]?outright|boarding|living[_-]?with[_-]?parents)\b", re.I
+        r"(housing[\s_-]?situation|residential[\s_-]?status|renting|mortgaged|owned[\s_-]?outright|boarding|living[\s_-]?with[\s_-]?parents)\b", re.I
     ),
     "mobile_number": re.compile(
-        r"(mobile[_-]?number|contact[_-]?number|cell[_-]?phone|phone|tel)\b", re.I
+        r"(mobile[\s_-]?number|contact[\s_-]?number|cell[\s_-]?phone|phone|tel)\b", re.I
     ),
     "email_address": re.compile(
-        r"(email[_-]?address|contact[_-]?email|electronic[_-]?mail)\b", re.I
+        r"(email[\s_-]?address|contact[\s_-]?email|electronic[\s_-]?mail)\b", re.I
     ),
     "drivers_licence": re.compile(
-        r"(driver[s\']?[_-]?licen[sc]e|licen[sc]e[_-]?number|card[_-]?number|dl[_-]?no)\b", re.I
+        r"(driver[s\']?[\s_-]?licen[sc]e|licen[sc]e[\s_-]?number|card[\s_-]?number|dl[\s_-]?no)\b", re.I
     ),
     "passport_details": re.compile(
-        r"(passport[_-]?number|travel[_-]?document|passport[_-]?no|issuing[_-]?country)\b", re.I
+        r"(passport[\s_-]?number|travel[\s_-]?document|passport[\s_-]?no|issuing[\s_-]?country)\b", re.I
     ),
     "employment_status": re.compile(
-        r"(employment[_-]?status|full[_-]?time|part[_-]?time|casual|contractor|self[_-]?employed|unemployed)\b", re.I
+        r"(employment[\s_-]?status|full[\s_-]?time|part[\s_-]?time|casual|contractor|self[\s_-]?employed|unemployed)\b", re.I
     ),
     "occupation_industry": re.compile(
-        r"(occupation|profession|job[_-]?title|industry[_-]?sector|vocation|trade)\b", re.I
+        r"(occupation|profession|job[\s_-]?title|industry[\s_-]?sector|vocation|trade)\b", re.I
     ),
     "employer_details": re.compile(
-        r"(employer[_-]?name|company[_-]?name|business[_-]?name|organisation|workplace)\b", re.I
+        r"(employer[\s_-]?name|company[\s_-]?name|business[\s_-]?name|organisation|workplace)\b", re.I
     ),
     "employment_tenure": re.compile(
-        r"(time[_-]?with[_-]?employer|years[_-]?employed|service[_-]?length|employment[_-]?duration)\b", re.I
+        r"(time[\s_-]?with[\s_-]?employer|years[\s_-]?employed|service[\s_-]?length|employment[\s_-]?duration)\b", re.I
     ),
     "gross_annual_income": re.compile(
-        r"(gross[_-]?annual[_-]?income|base[_-]?salary|gross[_-]?earnings|total[_-]?remuneration|gross[_-]?wage)\b", re.I
+        r"(gross[\s_-]?annual[\s_-]?income|base[\s_-]?salary|gross[\s_-]?earnings|total[\s_-]?remuneration|gross[\s_-]?wage)\b", re.I
     ),
     "net_monthly_income": re.compile(
-        r"(net[_-]?monthly[_-]?income|take[_-]?home[_-]?pay|net[_-]?salary|after[_-]?tax[_-]?income)\b", re.I
+        r"(net[\s_-]?monthly[\s_-]?income|take[\s_-]?home[\s_-]?pay|net[\s_-]?salary|after[\s_-]?tax[\s_-]?income)\b", re.I
     ),
     "salary_frequency": re.compile(
-        r"(salary[_-]?frequency|pay[_-]?cycle|weekly|fortnightly|monthly|annual|per[_-]?annum|p\.?a\.?)\b", re.I
+        r"(salary[\s_-]?frequency|pay[\s_-]?cycle|weekly|fortnightly|monthly|annual|per[\s_-]?annum|p\.?a\.?)\b", re.I
     ),
     "other_income": re.compile(
-        r"(other[_-]?income|rental[_-]?income|dividends|bonuses|overtime|family[_-]?tax[_-]?benefit)\b", re.I
+        r"(other[\s_-]?income|rental[\s_-]?income|dividends|bonuses|overtime|family[\s_-]?tax[\s_-]?benefit)\b", re.I
     ),
     "living_expenses": re.compile(
-        r"(living[_-]?expenses|hem[_-]?benchmark|monthly[_-]?expenditure|household[_-]?expenses|basic[_-]?living)\b", re.I
+        r"(living[\s_-]?expenses|hem[\s_-]?benchmark|monthly[\s_-]?expenditure|household[\s_-]?expenses|basic[\s_-]?living)\b", re.I
     ),
     "credit_card_limits": re.compile(
-        r"(credit[_-]?card[_-]?limit|card[_-]?balance|existing[_-]?cards?|revolving[_-]?credit)\b", re.I
+        r"(credit[\s_-]?card[\s_-]?limit|card[\s_-]?balance|existing[\s_-]?cards?|revolving[\s_-]?credit)\b", re.I
     ),
     "other_liabilities": re.compile(
-        r"(other[_-]?liabilities|personal[_-]?loans?|car[_-]?loan|hecs[_-]?help|mortgage[_-]?debt)\b", re.I
+        r"(other[\s_-]?liabilities|personal[\s_-]?loans?|car[\s_-]?loan|hecs[\s_-]?help|mortgage[\s_-]?debt)\b", re.I
     ),
     "bsb": re.compile(
-        r"\b(bsb|bank[_-]?state[_-]?branch|branch[_-]?code)\b", re.I
+        r"\b(bsb|bank[\s_-]?state[\s_-]?branch|branch[\s_-]?code)\b", re.I
     ),
     "account_number": re.compile(
-        r"\b(account[_-]?number|acc[_-]?no|account[_-]?#|acc[_-]?num)\b", re.I
+        r"\b(account[\s_-]?number|acc[\s_-]?no|account[\s_-]?#|acc[\s_-]?num)\b", re.I
     ),
     "abn": re.compile(
-        r"\b(abn|australian[_-]?business[_-]?number|acn)\b", re.I
-    )
+        r"\b(abn|australian[\s_-]?business[\s_-]?number|acn)\b", re.I
+    ),
+    "tax_file_number": re.compile(
+        r"\b(tax[\s_-]?file[\s_-]?number|tax[\s_-]?id|tf[\s_-]?number|tfn|tax[\s_-]?file[\s_-]?no)\b", re.I
+    ),
+    "drivers_licence_number": re.compile(
+        r"\b(driver[s']?[\s_-]?licen[sc]e[\s_-]?number|licen[sc]e[\s_-]?no[\s_-]?#|dl[\s_-]?number|licence[\s_-]?number)\b", re.I
+    ),
+    "drivers_licence_state": re.compile(
+        r"\b(licen[sc]e[\s_-]?state|licence[\s_-]?jurisdiction|state[\s_-]?of[\s_-]?issue|issuing[\s_-]?state|licence[\s_-]?issued[\s_-]?in)\b", re.I
+    ),
+    "drivers_licence_expiry": re.compile(
+        r"\b(licen[sc]e[\s_-]?expir|licen[sc]e[\s_-]?expiry|licence[\s_-]?expir|dl[\s_-]?expir|licence[\s_-]?ex[\s_-]?date|licence[\s_-]?expiry[\s_-]?date)\b", re.I
+    ),
+    "passport_expiry": re.compile(
+        r"\b(passport[\s_-]?expir|passport[\s_-]?expiry|passport[\s_-]?ex[\s_-]?date|passport[\s_-]?expiry[\s_-]?date|passport[\s_-]?expires)\b", re.I
+    ),
+    "passport_issuing_country": re.compile(
+        r"\b(passport[\s_-]?issue[\s_-]?country|passport[\s_-]?country|issuing[\s_-]?country|country[\s_-]?of[\s_-]?issue|passport[\s_-]?issued[\s_-]?in)\b", re.I
+    ),
+    "postal_address": re.compile(
+        r"\b(postal[\s_-]?address|mailing[\s_-]?address|mail[\s_-]?address|post[\s_-]?address)\b", re.I
+    ),
+    "country_of_birth": re.compile(
+        r"\b(country[\s_-]?of[\s_-]?birth|birth[\s_-]?country|place[\s_-]?of[\s_-]?birth|birthplace|born[\s_-]?in)\b", re.I
+    ),
+    "gender": re.compile(
+        r"\b(gender|gender[\s_-]?at[\s_-]?birth|sex[\s_-]?at[\s_-]?birth)\b", re.I
+    ),
+    "loan_amount_requested": re.compile(
+        r"\b(loan[\s_-]?amount|amount[\s_-]?borrowed|finance[\s_-]?amount|amount[\s_-]?financed|requested[\s_-]?loan|borrowing[\s_-]?amount|principal[\s_-]?amount)\b", re.I
+    ),
+    "loan_type": re.compile(
+        r"\b(loan[\s_-]?type|type[\s_-]?of[\s_-]?loan|loan[\s_-]?product|finance[\s_-]?type|credit[\s_-]?type|loan[\s_-]?category)\b", re.I
+    ),
+    "loan_term_years": re.compile(
+        r"\b(loan[\s_-]?term|loan[\s_-]?duration|term[\s_-]?in[\s_-]?years|loan[\s_-]?tenure|repayment[\s_-]?term|amortisation[\s_-]?period|loan[\s_-]?length)\b", re.I
+    ),
+    "loan_purpose": re.compile(
+        r"\b(loan[\s_-]?purpose|purpose[\s_-]?of[\s_-]?loan|intended[\s_-]?use|use[\s_-]?of[\s_-]?funds|loan[\s_-]?reason|financing[\s_-]?purpose)\b", re.I
+    ),
+    "existing_loan_amount": re.compile(
+        r"\b(existing[\s_-]?loan|current[\s_-]?loan|outstanding[\s_-]?loan|existing[\s_-]?loan[\s_-]?balance|current[\s_-]?loan[\s_-]?balance|total[\s_-]?existing[\s_-]?debt|balance[\s_-]?outstanding)\b", re.I
+    ),
+    "monthly_loan_repayment": re.compile(
+        r"\b(monthly[\s_-]?repayment|monthly[\s_-]?loan[\s_-]?payment|repayment[\s_-]?amount|monthly[\s_-]?installment|monthly[\s_-]?payment|installment[\s_-]?amount)\b", re.I
+    ),
+    "total_monthly_debt": re.compile(
+        r"\b(total[\s_-]?monthly[\s_-]?debt|total[\s_-]?debt|aggregate[\s_-]?debt|total[\s_-]?monthly[\s_-]?obligation|combined[\s_-]?monthly[\s_-]?debt)\b", re.I
+    ),
+    "savings_balance": re.compile(
+        r"\b(savings[\s_-]?balance|savings[\s_-]?amount|deposit[\s_-]?balance|bank[\s_-]?savings|total[\s_-]?savings|savings[\s_-]?total)\b", re.I
+    ),
+    "investment_balance": re.compile(
+        r"\b(investment[\s_-]?balance|investment[\s_-]?value|investment[\s_-]?holding|investment[\s_-]?total|total[\s_-]?investment|portfolio[\s_-]?value)\b", re.I
+    ),
+    "property_value": re.compile(
+        r"\b(property[\s_-]?value|real[\s_-]?estate[\s_-]?value|home[\s_-]?value|estimated[\s_-]?property[\s_-]?value|market[\s_-]?value|valuation[\s_-]?amount|property[\s_-]?worth)\b", re.I
+    ),
+    "superannuation_balance": re.compile(
+        r"\b(superannuation|super[\s_-]?balance|super[\s_-]?fund[\s_-]?balance|retirement[\s_-]?savings|super[\s_-]?value|total[\s_-]?super)\b", re.I
+    ),
+    "existing_credit_cards": re.compile(
+        r"\b(existing[\s_-]?credit[\s_-]?card|number[\s_-]?of[\s_-]?credit[\s_-]?cards|credit[\s_-]?cards|active[\s_-]?cards|credit[\s_-]?card[\s_-]?count)\b", re.I
+    ),
+    "total_credit_limits": re.compile(
+        r"\b(total[\s_-]?credit[\s_-]?limit|aggregate[\s_-]?credit|combined[\s_-]?credit[\s_-]?limit|credit[\s_-]?limit[\s_-]?total|total[\s_-]?credit[\s_-]?card[\s_-]?limit)\b", re.I
+    ),
+    "total_existing_debt": re.compile(
+        r"\b(total[\s_-]?existing[\s_-]?debt|overall[\s_-]?debt|total[\s_-]?liabilities|aggregate[\s_-]?liability|total[\s_-]?liability)\b", re.I
+    ),
+    "life_insurance_cover": re.compile(
+        r"\b(life[\s_-]?insurance|life[\s_-]?cover|critical[\s_-]?illness[\s_-]?cover|income[\s_-]?protection[\s_-]?cover|death[\s_-]?benefit|life[\s_-]?insurance[\s_-]?cover)\b", re.I
+    ),
+    "monthly_rent": re.compile(
+        r"\b(monthly[\s_-]?rent|rent[\s_-]?paid|rent[\s_-]?amount|rental[\s_-]?amount|weekly[\s_-]?rent|rent[\s_-]?per[\s_-]?month)\b", re.I
+    ),
+    "monthly_other_expenses": re.compile(
+        r"\b(other[\s_-]?monthly[\s_-]?expenses|monthly[\s_-]?other[\s_-]?expenses|discretionary[\s_-]?spending|other[\s_-]?commitments|monthly[\s_-]?commitments|other[\s_-]?monthly[\s_-]?outgoings)\b", re.I
+    ),
+    "employment_industry_code": re.compile(
+        r"\b(industry[\s_-]?code|an[\s_-]?code|anzsic[\s_-]?code|occupation[\s_-]?code|job[\s_-]?code|industry[\s_-]?classif)\b", re.I
+    ),
+    "years_employment_current": re.compile(
+        r"\b(years[\s_-]?with[\s_-]?employer|current[\s_-]?employer[\s_-]?tenure|tenure[\s_-]?with[\s_-]?current|at[\s_-]?current[\s_-]?role|years[\s_-]?in[\s_-]?current[\s_-]?role|length[\s_-]?of[\s_-]?current[\s_-]?employment)\b", re.I
+    ),
+    "previous_employer": re.compile(
+        r"\b(previous[\s_-]?employer|prior[\s_-]?employer|former[\s_-]?employer|last[\s_-]?employer|previous[\s_-]?employer[\s_-]?name)\b", re.I
+    ),
+    "applicants_count": re.compile(
+        r"\b(number[\s_-]?of[\s_-]?applicants|number[\s_-]?of[\s_-]?applicant|co[\s_-]?applicants|joint[\s_-]?applicants|applicants[\s_-]?count)\b", re.I
+    ),
 }
 
 # ==============================================================================
@@ -633,7 +723,7 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
     phones = re.findall(r"(?:\+?61\s?|0)[2-478](?:[ -]?[0-9]){8}\b", text)
     dobs = re.findall(r"\b(0[1-9]|[12][0-9]|3[01])[-/.](0[1-9]|1[012])[-/.]((?:19|20)\d\d)\b", text)
     abns = re.findall(r"\b(\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3})\b", text)
-    bsbs = re.findall(r"\b(\d{3}[- ]?\d{3})\b", text)
+    bsbs = re.findall(r"\b(\d{3}[- ]\d{3})\b", text)
     postcodes = re.findall(r"\b(0[2-9]\d{2}|[1-9]\d{3})\b", text)
     currencies = re.findall(r"\$\s?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|\b[0-9]{4,7}\b)", text)
 
@@ -663,14 +753,14 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
     for bsb in bsbs:
         if validate_australian_bsb(bsb):
             data["bsb"] = bsb
-            confidences["bsb"] = 0.98
+            confidences["bsb"] = 0.60
             break
 
     for dob in dobs:
         dob_str = f"{dob[0]}/{dob[1]}/{dob[2]}"
         if validate_australian_dob(dob_str):
             data["date_of_birth"] = dob_str
-            confidences["date_of_birth"] = 0.95
+            confidences["date_of_birth"] = 0.85
             break
 
     if phones:

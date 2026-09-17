@@ -1,5 +1,5 @@
 {
-  "sourceOfTruth": "PROJECT_CHARTER.md §Autonomous decisions and boundaries (line 18) and §Complete roadmap Stage 2",
+  "sourceOfTruth": "docs/OCR_MULTI_PASS_PIPELINE.md - outcome definitions, rejection codes, applicant rules",
   "outcomes": {
     "extract": {
       "description": "High-confidence values extracted from a digital text layer; no human review required before export.",

@@ -102,7 +102,7 @@ test('Stage 3: Authoritative contracts freeze TypeScript types and SQLite schema
   assert.ok(contractsText.includes('CREATE TABLE IF NOT EXISTS audit_log'), 'must define audit_log table schema');
 });
 
-test('Stage 3: Failure state machine conforms to schema and covers all 5 charter failure triggers', async () => {
+test('Stage 3: Failure state machine conforms to schema and covers all 5 failure-scenario triggers', async () => {
   const { stateMachine } = await loadStage3Files();
   validateStateMachine(stateMachine);
 });

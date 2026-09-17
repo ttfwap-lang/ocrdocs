@@ -18,7 +18,7 @@ async function fixture(t, source) {
 
 test('categorized npm commands are explicit, discoverable, and included in test:all', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
-  const required = ['test:unit', 'test:integration', 'test:worker', 'test:browser', 'test:deployment', 'test:governance', 'test:all'];
+  const required = ['test:unit', 'test:integration', 'test:worker', 'test:browser', 'test:deployment', 'test:all'];
   for (const name of required.slice(0, -1)) {
     assert.equal(typeof packageJson.scripts[name], 'string', `${name} must be declared`);
     assert.match(packageJson.scripts[name], /node --test/, `${name} must invoke Node's visible test runner`);

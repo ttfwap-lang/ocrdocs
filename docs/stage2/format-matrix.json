@@ -1,5 +1,5 @@
 {
-  "sourceOfTruth": "PROJECT_CHARTER.md §Autonomous decisions and boundaries (lines 13-14)",
+  "sourceOfTruth": "docs/OCR_SUPPORTED_FORMATS.md - authoritative upload allow-list (server/middleware/upload.ts)",
   "limits": {
     "maxSizeBytes": 26214400,
     "maxPages": 50,

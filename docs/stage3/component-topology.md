@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This document specifies the authoritative architectural topology, process boundaries, data flows, and storage consistency model for the `ocrdocs` banking document processing system, fulfilling the Stage 3 charter requirements of `PROJECT_CHARTER.md:24-35`.
+This document specifies the authoritative architectural topology, process boundaries, data flows, and storage consistency model for the `ocrdocs` banking document processing system, fulfilling the Stage 3 architecture invariants in `docs/stage3/authoritative-contracts.md`.
 
 The system is architected as a **single-organization, self-hosted processing system** prioritizing transactional durability, data sovereignty, strict applicant data isolation, and crash-resilient job execution.
 
@@ -81,7 +81,7 @@ The system is architected as a **single-organization, self-hosted processing sys
 
 ## 4. Authoritative vs Ephemeral Data Boundaries
 
-Per `PROJECT_CHARTER.md:28` (Architecture Invariant 5), **in-memory event emitters (`EventEmitter`) or ephemeral RAM structures must NEVER serve as a durable queue or authoritative state store.**
+Per Architecture Invariant 5 (docs/stage3/authoritative-contracts.md), **in-memory event emitters (`EventEmitter`) or ephemeral RAM structures must NEVER serve as a durable queue or authoritative state store.**
 
 | Layer | Durability Class | Storage Mechanism | Authoritative For | On Process Crash / Restart |
 |---|---|---|---|---|

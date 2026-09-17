@@ -4,7 +4,7 @@
 
 This document specifies the authoritative contracts and boundaries between system components, formalizing the interface contracts across SQLite, disk storage, memory structures, and worker processes.
 
-In accordance with `PROJECT_CHARTER.md:28` (Architecture Invariant 5), in-memory event buses (e.g. `EventEmitter`) are strictly ephemeral. **SQLite is the sole authoritative source of truth for jobs, documents, leases, and review outcomes.**
+In accordance with Architecture Invariant 5 (docs/stage3/authoritative-contracts.md), in-memory event buses (e.g. `EventEmitter`) are strictly ephemeral. **SQLite is the sole authoritative source of truth for jobs, documents, leases, and review outcomes.**
 
 ---
 
@@ -172,4 +172,4 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity
      - `secondary`: Co-borrower or joint applicant.
      - `guarantor`: Third-party financial guarantor.
      - `ambiguous`: Document contains fields not attributable without human-in-the-loop review.
-   - Per `PROJECT_CHARTER.md:48-49`, applicant attribution is never inferred when ambiguous.
+   - Per the field-attribution rule (docs/stage3/authoritative-contracts.md), applicant attribution is never inferred when ambiguous.

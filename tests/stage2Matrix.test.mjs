@@ -18,7 +18,7 @@ import * as esbuild from 'esbuild';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const project = path.resolve(__dirname, '..');
 
-const MAX_SIZE_BYTES = 26214400; // 25 MiB, from PROJECT_CHARTER.md §Autonomous decisions
+const MAX_SIZE_BYTES = 26214400; // 25 MiB upload cap
 const MAX_PAGES = 50;
 const SUPPORTED_FORMATS = ['pdf_digital', 'pdf_scanned', 'pdf_mixed', 'image_png', 'image_jpeg'];
 const APPLICANT_SUPPORTS = ['single', 'joint', 'guarantor'];
@@ -93,7 +93,7 @@ test('field-inventory.json matches the live catalogue (99 fields: 90 app + 9 cor
   assert.deepEqual(nums.slice(90), [101, 102, 103, 104, 105, 106, 107, 108, 109], 'core numbers 101..109');
 });
 
-test('format-matrix.json covers all formats x applicants within charter limits', () => {
+test('format-matrix.json covers all formats x applicants within declared limits', () => {
   const matrix = readJson(ARTIFACTS.matrix);
 
   assert.deepEqual(matrix.supportedFormats, SUPPORTED_FORMATS, '5 supported formats');

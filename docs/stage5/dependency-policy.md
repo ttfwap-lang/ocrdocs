@@ -1,7 +1,7 @@
 # Dependency and Runtime Installation Policy
 
 **Stage 5 Deliverable — Authoritative Policy**  
-**Charter Gate Fulfillment:** *Pin compatible runtimes, packages, native tools and models, screen licenses and document installation/update policy. Gate: clean target installation works without hidden caches/settings; new engine choices repeat these checks.*
+**Dependency Gate Policy:** *Pin compatible runtimes, packages, native tools and models, screen licenses and document installation/update policy. Gate: clean target installation works without hidden caches/settings; new engine choices repeat these checks.*
 
 ---
 
@@ -88,7 +88,7 @@ The commercial license screening rules govern all dependencies directly integrat
 
 ## 4. New Engine Choice Verification Protocol
 
-Per charter gate (*"new engine choices repeat these checks"*), whenever an additional OCR engine, layout parser, or language model is evaluated or introduced to the pipeline, the following 4-step checklist must be executed before promotion:
+Per this policy (*"new engine choices repeat these checks"*), whenever an additional OCR engine, layout parser, or language model is evaluated or introduced to the pipeline, the following 4-step checklist must be executed before promotion:
 
 1. **License Screening Check**:
    - Inspect package source and upstream model weights license.

@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "stage": 3,
   "title": "Architecture Failure Model and State Machine",
-  "charterRef": "PROJECT_CHARTER.md:51-52",
   "states": [
     "pending",
     "claimed",
@@ -214,5 +213,6 @@
         "Worker retains lease and retries write with exponential jittered backoff (100ms, 200ms, 400ms)."
       ]
     }
-  ]
+  ],
+  "sourceRef": "docs/stage3/authoritative-contracts.md (process + failure-state contracts)"
 }
