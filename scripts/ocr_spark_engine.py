@@ -393,10 +393,19 @@ def _estimate_skew_angle(gray: np.ndarray) -> float:
 
 def deskew_image(image: Image.Image, angle_deg: float) -> Image.Image:
     """Rotates the image to correct measured skew. No-op below ~0.3deg since
-    that's within OCR engines' own tolerance and not worth the resample cost."""
+    that's within OCR engines' own tolerance and not worth the resample cost.
+
+    angle_deg (from assess_image_quality/_estimate_skew_angle) is already the
+    correction angle in PIL/OpenCV's shared positive-is-counter-clockwise
+    convention (the search finds the angle that, when applied via
+    cv2.getRotationMatrix2D, straightens the text rows) -- so it's applied
+    directly via Image.rotate(angle_deg), not negated. A caught-in-testing
+    bug: an earlier version negated this, which doubled skew instead of
+    correcting it (verified: a deliberately 6deg-rotated test image came out
+    at 12deg residual skew instead of ~0)."""
     if abs(angle_deg) < 0.3:
         return image
-    return image.rotate(-angle_deg, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(255, 255, 255))
+    return image.rotate(angle_deg, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(255, 255, 255))
 
 def denoise_image(image: Image.Image) -> Image.Image:
     """Non-local-means denoise — targets the grainy phone-photo / low-quality
