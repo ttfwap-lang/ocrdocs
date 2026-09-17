@@ -714,6 +714,40 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
 # ==============================================================================
 # SINGLE FILE PROCESSING WITH FILE PARSING
 # ==============================================================================
+# Native PDF text (pdfium's get_textpage()) can't change between passes of
+# the same file, but process_single_file_for_pass previously re-extracted it
+# on every one of up to 10 passes regardless. Cached per-process, keyed by
+# (path, mtime, size) so a changed file on disk isn't served stale text.
+# Note: this only actually helps the single-document worker path
+# (process_document_multipass, all passes run sequentially in the same
+# process) -- the batch/CLI path's multiprocessing.Pool uses
+# maxtasksperchild=1 (a fresh process per task, by design, for memory
+# isolation), so the cache starts empty there every time; harmless, just not
+# where the win applies.
+_native_text_cache: Dict[Tuple[str, int, int], List[str]] = {}
+
+def _extract_pdf_page_texts(fpath: str) -> List[str]:
+    path = Path(fpath)
+    stat = path.stat()
+    cache_key = (fpath, stat.st_mtime_ns, stat.st_size)
+    cached = _native_text_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    page_texts: List[str] = []
+    doc = pdfium.PdfDocument(str(path))
+    for page_index, page in enumerate(doc):
+        try:
+            page_texts.append(page.get_textpage().get_text_bounded())
+        except Exception as e:
+            logging.warning(f"[!] {fpath}: page {page_index} failed to extract native text: {e}")
+            page_texts.append("")
+    doc.close()
+
+    _native_text_cache.clear()  # single-entry cache: one file in flight per worker process at a time
+    _native_text_cache[cache_key] = page_texts
+    return page_texts
+
 def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[str, Any]]:
     fpath, pass_num = args
     path = Path(fpath)
@@ -727,6 +761,7 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
 
     try:
         if ext == ".pdf":
+            page_texts = _extract_pdf_page_texts(fpath)
             doc = pdfium.PdfDocument(str(path))
             for page_index, page in enumerate(doc):
                 # One corrupted page must not discard every already-parsed
@@ -735,7 +770,7 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
                 # an otherwise-fine 20-page statement threw PARSE_ERROR for
                 # the entire document, losing all prior pages' text/images.
                 try:
-                    txt = page.get_textpage().get_text_bounded()
+                    txt = page_texts[page_index] if page_index < len(page_texts) else ""
                     if txt.strip():
                         raw_texts.append(txt)
                         used_native_text = True
@@ -745,7 +780,7 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
                         bitmap = page.render(scale=dpi / 72)
                         images.append(bitmap.to_pil().convert("RGB"))
                 except Exception as e:
-                    logging.warning(f"[!] {fpath}: page {page_index} failed to parse/render, skipping it: {e}")
+                    logging.warning(f"[!] {fpath}: page {page_index} failed to render, skipping it: {e}")
             doc.close()
         elif ext in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"]:
             images.append(Image.open(path).convert("RGB"))
