@@ -3,14 +3,14 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { redact, refreshController, runLoop, runProcess, snapshot } from './runner.mjs';
+import { redact, refreshController, renameWithRetry, runLoop, runProcess, snapshot } from './runner.mjs';
 
 const controls = name => name.startsWith('scripts/autonomy/') || name === 'tests/autonomy.test.mjs' || name === 'tests/autonomyHost.test.mjs';
 const load = async file => JSON.parse(await fs.readFile(file, 'utf8'));
 const present = async file => fs.access(file).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
 const store = async (file, data) => {
   await fs.writeFile(`${file}.pending`, JSON.stringify(data, null, 2) + '\n');
-  await fs.rename(`${file}.pending`, file);
+  await renameWithRetry(`${file}.pending`, file);
 };
 const fingerprint = files => Object.fromEntries(Object.entries(files).filter(([name]) => controls(name)).map(([name, value]) => [name, value.hash]));
 

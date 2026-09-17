@@ -16,6 +16,7 @@
     "test:deployment": "node --test --test-timeout=30000 tests/deployment/suiteContract.test.mjs",
     "test:governance": "node --test --test-timeout=30000 tests/autonomy.test.mjs tests/stages.test.mjs",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:worker && npm run test:browser && npm run test:deployment && npm run test:governance",
+    "test:python": "python -m pytest tests/python -q",
     "autonomy": "node scripts/autonomy/runner.mjs"
   },
   "dependencies": {

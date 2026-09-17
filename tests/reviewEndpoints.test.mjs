@@ -96,6 +96,35 @@ async function uploadPdf(baseUrl, pdfBuffer, filename = 'application.pdf') {
   return { status: res.status, json: await res.json() };
 }
 
+/** Minimal parser for the fully-quoted CSV rows this endpoint emits. */
+function parseCsvRow(row) {
+  const cells = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < row.length; i++) {
+    const ch = row[i];
+    if (inQuotes) {
+      if (ch === '"' && row[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      cells.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cells.push(cur);
+  return cells;
+}
+
 const SAMPLE_LINES = [
   'Given Name: JOHNNY',
   'Family Name: TESTCASE',
@@ -252,6 +281,48 @@ test('Phase 4 — human review loop over a real native-text PDF', async (t) => {
 
     const still = (await getFields()).find((f) => f.id === empty.id);
     assert.equal(still.approved, 0);
+  });
+
+  await t.test('consolidated CSV carries corrections, approval state, and is injection-safe', async () => {
+    // Plant a value that Excel/Sheets would execute as a formula if exported raw.
+    const fields = await getFields();
+    const target = fields.find((f) => f.field_name === 'Australian Business Number (ABN)');
+    const patch = await fetch(`${baseUrl}/api/fields/${target.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correctedValue: '=cmd|"/c calc"!A1' }),
+    });
+    assert.equal(patch.status, 200);
+    await fetch(`${baseUrl}/api/fields/${target.id}/approve`, { method: 'POST' });
+
+    const res = await fetch(`${baseUrl}/api/export/consolidated.csv`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/csv/);
+    const csv = await res.text();
+
+    const [header, ...rows] = csv.split('\n');
+    assert.match(header, /"document_id"/);
+    assert.match(header, /"Australian Business Number \(ABN\)"/);
+    assert.match(header, /"Australian Business Number \(ABN\)__approved"/);
+    assert.ok(rows.length >= 1, 'every document should get a row');
+
+    // The formula must be neutralised, not passed through raw.
+    assert.ok(
+      !csv.includes('"=cmd'),
+      'a value starting with = must not be emitted as a live formula',
+    );
+    assert.ok(csv.includes(`"'=cmd|""/c calc""!A1"`), 'the value should still be readable, just inert');
+
+    // Check the ABN column specifically. A blanket "the old value is absent"
+    // assertion would be wrong: '51 824 753 556' legitimately still appears in
+    // the Employer Name column, because the matcher has a known false positive
+    // there (recorded as open in the issue register).
+    const headerCells = parseCsvRow(header);
+    const abnIndex = headerCells.indexOf('Australian Business Number (ABN)');
+    assert.ok(abnIndex >= 0);
+    const dataRow = parseCsvRow(rows.find((r) => r.includes("'=cmd")));
+    assert.equal(dataRow[abnIndex], '\'=cmd|"/c calc"!A1', 'the ABN cell holds the reviewer correction');
+    assert.equal(dataRow[abnIndex + 1], 'yes', 'approval state travels in the adjacent column');
   });
 
   await t.test('an empty field becomes approvable once a reviewer supplies a value', async () => {

@@ -37,11 +37,34 @@ export function redact(text, environment = process.env) {
   return safe.replace(/Bearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [REDACTED]');
 }
 
+/**
+ * Replace a file by rename, retrying the transient Windows failures.
+ *
+ * write-then-rename is the right atomic-replace pattern, but on Windows the
+ * rename intermittently fails with EPERM/EACCES/EBUSY when something else
+ * momentarily holds a handle on the destination — Defender or the search
+ * indexer scanning the file we just wrote is the usual cause. It is transient
+ * by nature, so a bounded retry is the fix; without it the autonomy runner can
+ * lose a checkpoint write in normal operation, not just in tests.
+ */
+export async function renameWithRetry(from, to, attempts = 10) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await fs.rename(from, to);
+      return;
+    } catch (error) {
+      const transient = error.code === 'EPERM' || error.code === 'EACCES' || error.code === 'EBUSY';
+      if (!transient || attempt >= attempts) throw error;
+      await new Promise(resolve => setTimeout(resolve, attempt * 20));
+    }
+  }
+}
+
 async function atomic(file, content) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const temporary = `${file}.pending`;
   await fs.writeFile(temporary, content);
-  await fs.rename(temporary, file);
+  await renameWithRetry(temporary, file);
 }
 
 async function save(file, value) { await atomic(file, JSON.stringify(value, null, 2) + '\n'); }

@@ -48,6 +48,21 @@ const MAX_JOB_ATTEMPTS = Number(process.env.OCRDOCS_MAX_JOB_ATTEMPTS || 3);
 // so it is capped before matching rather than trusted to be a sane size.
 const MAX_EXTRACTION_TEXT_CHARS = Number(process.env.OCRDOCS_MAX_EXTRACTION_TEXT_CHARS || 2_000_000);
 
+/**
+ * Quote a CSV cell, neutralising spreadsheet formula injection.
+ *
+ * Field values come out of untrusted uploaded documents. A value beginning
+ * with =, +, - or @ is executed as a formula when the CSV is opened in Excel
+ * or Sheets, so a crafted document could run a command on a reviewer's
+ * machine. Prefixing a single quote makes the cell inert while keeping the
+ * text readable.
+ */
+function csvEscape(value: unknown): string {
+  const str = value === null || value === undefined ? "" : String(value);
+  const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
 function capExtractionText(text: string): { text: string; truncated: boolean } {
   if (text.length <= MAX_EXTRACTION_TEXT_CHARS) {
     return { text, truncated: false };
@@ -418,6 +433,85 @@ app.get("/api/documents/:id", (req, res) => {
     jobs,
     extractions: extractions.map((e) => extractionRepo.getFullResult(e.id)),
   });
+});
+
+/**
+ * Consolidated export: one row per document, one column per field, across the
+ * whole corpus. This is the artifact an analyst actually wants out of a batch
+ * run — the per-document exports in the UI answer "what did this document
+ * say", this answers "what did all of them say".
+ *
+ * Reviewer corrections win over extracted values, because a corrected value is
+ * the one a human vouched for. `<field>__approved` columns travel alongside so
+ * a consumer can tell a reviewed value from an unreviewed one instead of
+ * having to assume.
+ */
+app.get("/api/export/consolidated.csv", (_req, res) => {
+  const documents = documentRepo.getAll();
+
+  // Column set is the union of field names actually present, so the export
+  // reflects real data rather than a hardcoded schema that could drift.
+  const fieldNames: string[] = [];
+  const perDocument = documents.map((doc) => {
+    const extractions = extractionRepo.getExtractionsByDocument(doc.id);
+    const latest = extractions.length ? extractions[extractions.length - 1] : undefined;
+    const rows = latest ? extractionRepo.getFields(latest.id) : [];
+    const values = new Map<string, { value: string; approved: boolean }>();
+    for (const row of rows) {
+      if (!fieldNames.includes(row.field_name)) {
+        fieldNames.push(row.field_name);
+      }
+      const effective = row.corrected_value ?? row.field_value;
+      if (effective !== null) {
+        values.set(row.field_name, { value: effective, approved: row.approved === 1 });
+      }
+    }
+    return { doc, latest, values };
+  });
+
+  const header = [
+    "document_id",
+    "filename",
+    "status",
+    "uploaded_at",
+    "content_hash",
+    "extraction_version",
+    "engine_used",
+    ...fieldNames.flatMap((name) => [name, `${name}__approved`]),
+  ];
+
+  const lines = [header.map(csvEscape).join(",")];
+  for (const { doc, latest, values } of perDocument) {
+    let engineUsed = "";
+    if (latest?.extraction_json) {
+      try {
+        engineUsed = JSON.parse(latest.extraction_json).engineUsed ?? "";
+      } catch {
+        // A malformed blob must not break the whole export.
+      }
+    }
+    const row = [
+      doc.id,
+      doc.filename,
+      doc.status,
+      doc.uploaded_at,
+      doc.content_hash ?? "",
+      latest?.extraction_version ?? "",
+      engineUsed,
+      ...fieldNames.flatMap((name) => {
+        const hit = values.get(name);
+        return [hit?.value ?? "", hit ? (hit.approved ? "yes" : "no") : ""];
+      }),
+    ];
+    lines.push(row.map(csvEscape).join(","));
+  }
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="ocrdocs_consolidated_${Date.now()}.csv"`,
+  );
+  return res.send(lines.join("\n"));
 });
 
 /**

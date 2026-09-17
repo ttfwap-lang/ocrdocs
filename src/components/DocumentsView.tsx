@@ -118,9 +118,18 @@ function getFileIcon(mimeType: string | null) {
   return <FileText className="w-4 h-4 text-slate-400" />;
 }
 
+/**
+ * Quote a CSV cell, neutralising spreadsheet formula injection.
+ *
+ * These values come from untrusted uploaded documents. A cell beginning with
+ * =, +, - or @ executes as a formula when opened in Excel or Sheets, so a
+ * crafted document could run a command on a reviewer's machine. Prefixing a
+ * single quote makes it inert while keeping the text readable.
+ */
 function csvEscape(value: unknown): string {
   const str = value === null || value === undefined ? '' : String(value);
-  return `"${str.replace(/"/g, '""')}"`;
+  const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 function downloadBlob(content: string, filename: string, mimeType: string) {
@@ -543,6 +552,16 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({ onSelectDocumentFo
               <Download className="w-3.5 h-3.5" />
               Export Queue
             </button>
+            <a
+              href="/api/export/consolidated.csv"
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider text-cyan-300 bg-black/50 hover:bg-cyan-950/40 border border-cyan-500/30 rounded-lg transition-colors ${
+                documents.length === 0 ? 'pointer-events-none opacity-40' : ''
+              }`}
+              title="One row per document, one column per field, across every document — reviewer corrections win, with an __approved column beside each value"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Export All Fields
+            </a>
             <label className="inline-flex items-center gap-2 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider text-black bg-matrix-500 hover:bg-matrix-400 rounded-lg shadow-[0_0_18px_-4px_rgba(0,255,65,0.7)] transition-colors cursor-pointer disabled:opacity-50">
               <Upload className="w-3.5 h-3.5" />
               Upload Files
