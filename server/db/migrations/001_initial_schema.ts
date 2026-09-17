@@ -74,4 +74,23 @@ export function runMigrations(db: DatabaseType): void {
     CREATE INDEX IF NOT EXISTS idx_jobs_status
       ON jobs(status);
   `);
+
+  addColumnIfMissing(db, 'jobs', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+}
+
+/**
+ * SQLite has no `ADD COLUMN IF NOT EXISTS`, and this migration runs on every
+ * boot, so re-adding a column would throw on an existing database.
+ */
+function addColumnIfMissing(
+  db: DatabaseType,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.some((c) => c.name === column)) {
+    return;
+  }
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }

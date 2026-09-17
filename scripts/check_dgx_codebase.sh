@@ -257,8 +257,18 @@ echo "..."
 
 echo ""
 echo "[*] Step 8: Transmitting Audit Report to Server: ${REPORT_SERVER_URL}..."
+if [[ -z "${DGX_WORKER_TOKEN:-}" ]]; then
+    echo "[-] DGX_WORKER_TOKEN is not set. The telemetry endpoint requires the same" >&2
+    echo "    bearer token as the job-queue endpoints; export it and re-run." >&2
+    echo "[!] Saving report locally instead: ${NVME_ROOT}/logs/e2e_codebase_audit.json"
+    mkdir -p "${NVME_ROOT}/logs"
+    cp "$TMP_REPORT" "${NVME_ROOT}/logs/e2e_codebase_audit.json"
+    exit 1
+fi
+
 HTTP_CODE="$(curl -s -o /tmp/dgx_uplink_resp.json -w "%{http_code}" -X POST "${REPORT_SERVER_URL}" \
     -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${DGX_WORKER_TOKEN}" \
     --data-binary @"$TMP_REPORT" || echo "failed")"
 
 if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "201" ]]; then

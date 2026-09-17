@@ -19,13 +19,37 @@ export function createJobRepo(db: DatabaseType) {
 
   const stmtDequeue = db.prepare(
     `UPDATE jobs
-     SET status = 'processing', started_at = datetime('now')
+     SET status = 'processing', started_at = datetime('now'), attempts = attempts + 1
      WHERE id = (
        SELECT id FROM jobs
        WHERE status = 'queued'
        ORDER BY rowid
        LIMIT 1
      )
+     RETURNING *`,
+  );
+
+  // A worker that dies mid-job leaves its row in 'processing' forever: nothing
+  // else will ever claim it, and the document silently never gets processed.
+  // These two statements expire such leases — retrying while attempts remain,
+  // and failing the job permanently once they are exhausted so it cannot loop.
+  const stmtReclaimStale = db.prepare<[string, number]>(
+    `UPDATE jobs
+     SET status = 'queued', started_at = NULL
+     WHERE status = 'processing'
+       AND started_at IS NOT NULL
+       AND started_at < datetime('now', ?)
+       AND attempts < ?
+     RETURNING *`,
+  );
+
+  const stmtFailExhausted = db.prepare<[string, string, number]>(
+    `UPDATE jobs
+     SET status = 'failed', completed_at = ?, error = 'Worker lease expired and retry budget exhausted'
+     WHERE status = 'processing'
+       AND started_at IS NOT NULL
+       AND started_at < datetime('now', ?)
+       AND attempts >= ?
      RETURNING *`,
   );
 
@@ -102,6 +126,26 @@ export function createJobRepo(db: DatabaseType) {
         null,
         jobId,
       );
+    },
+
+    /**
+     * Expire worker leases that have gone stale, so a job whose worker died is
+     * not abandoned in 'processing' forever. Jobs with retries left go back to
+     * 'queued'; jobs that have burned their retry budget are failed outright
+     * rather than cycling between queued and processing indefinitely.
+     */
+    reclaimStale(leaseSeconds: number, maxAttempts: number): {
+      requeued: JobRow[];
+      failed: JobRow[];
+    } {
+      const cutoff = `-${Math.max(1, Math.floor(leaseSeconds))} seconds`;
+      const failed = stmtFailExhausted.all(
+        new Date().toISOString(),
+        cutoff,
+        maxAttempts,
+      ) as JobRow[];
+      const requeued = stmtReclaimStale.all(cutoff, maxAttempts) as JobRow[];
+      return { requeued, failed };
     },
   };
 }

@@ -37,6 +37,24 @@ const documentRepo = createDocumentRepo(db);
 const jobRepo = createJobRepo(db);
 const extractionRepo = createExtractionRepo(db);
 
+// How long a claimed job may sit in 'processing' before its worker is presumed
+// dead, and how many times a job may be claimed before it is failed for good.
+const WORKER_LEASE_SECONDS = Number(process.env.OCRDOCS_WORKER_LEASE_SECONDS || 900);
+const MAX_JOB_ATTEMPTS = Number(process.env.OCRDOCS_MAX_JOB_ATTEMPTS || 3);
+
+// Field extraction runs 99 regexes synchronously on the request thread, so an
+// unbounded document would block the event loop for every other request. The
+// text is untrusted (it comes out of an uploaded file, or back from a worker),
+// so it is capped before matching rather than trusted to be a sane size.
+const MAX_EXTRACTION_TEXT_CHARS = Number(process.env.OCRDOCS_MAX_EXTRACTION_TEXT_CHARS || 2_000_000);
+
+function capExtractionText(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_EXTRACTION_TEXT_CHARS) {
+    return { text, truncated: false };
+  }
+  return { text: text.slice(0, MAX_EXTRACTION_TEXT_CHARS), truncated: true };
+}
+
 function constantTimeEquals(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -161,26 +179,58 @@ app.get("/api/scripts/:scriptName", requireWorkerAuth, async (req: express.Reque
 let latestDgxTelemetryReport: any = null;
 const dgxReportHistory: any[] = [];
 
-app.post("/api/dgx/telemetry-report", (req, res) => {
+/** Truncate an untrusted value to a bounded string, or drop it entirely. */
+function boundedString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return undefined;
+  }
+  const str = String(value);
+  return str.length > maxLength ? `${str.slice(0, maxLength)}… [truncated]` : str;
+}
+
+/**
+ * Telemetry arrives from a remote machine, so it is untrusted input rendered
+ * into an operator UI. Only known fields are kept, each length-capped: the
+ * previous handler spread the entire request body into memory, letting any
+ * caller retain up to the 10MB JSON limit per report across 20 history slots.
+ */
+function normalizeTelemetryReport(body: any, sourceIp: string) {
+  return {
+    receivedAt: new Date().toISOString(),
+    sourceIp,
+    hostname: boundedString(body?.hostname, 256),
+    currentUser: boundedString(body?.currentUser, 256),
+    timestamp: boundedString(body?.timestamp, 64),
+    architecture: boundedString(body?.architecture, 128),
+    kernel: boundedString(body?.kernel, 256),
+    cpuModel: boundedString(body?.cpuModel, 256),
+    memTotal: boundedString(body?.memTotal, 64),
+    gpuInfo: boundedString(body?.gpuInfo, 2_000),
+    nvidiaSmiVersion: boundedString(body?.nvidiaSmiVersion, 128),
+    inputFilesCount: boundedString(body?.inputFilesCount, 32),
+    pythonDiagnostics: boundedString(body?.pythonDiagnostics, 8_000),
+    directoryTree: boundedString(body?.directoryTree, 16_000),
+    errorLog: boundedString(body?.errorLog, 8_000),
+  };
+}
+
+app.post("/api/dgx/telemetry-report", requireWorkerAuth, (req, res) => {
   try {
-    const report = req.body;
-    latestDgxTelemetryReport = {
-      ...report,
-      receivedAt: new Date().toISOString(),
-      sourceIp: req.ip || req.headers["x-forwarded-for"] || "remote-dgx"
-    };
+    const sourceIp = String(req.ip || req.headers["x-forwarded-for"] || "remote-dgx").slice(0, 128);
+    latestDgxTelemetryReport = normalizeTelemetryReport(req.body, sourceIp);
+
     dgxReportHistory.unshift(latestDgxTelemetryReport);
     if (dgxReportHistory.length > 20) dgxReportHistory.pop();
 
-    console.log(`[DGX-TELEMETRY] Received E2E codebase audit report from ${latestDgxTelemetryReport.hostname || "unknown host"} (${latestDgxTelemetryReport.currentUser})`);
-    
+    console.log(
+      `[DGX-TELEMETRY] Report from ${latestDgxTelemetryReport.hostname || "unknown host"} (${latestDgxTelemetryReport.currentUser || "unknown user"})`,
+    );
+
     return res.json({
       status: "received",
-      message: "DGX E2E codebase report successfully received and analyzed by Remix Engine.",
       timestamp: latestDgxTelemetryReport.receivedAt,
       hostname: latestDgxTelemetryReport.hostname,
       inputFilesCount: latestDgxTelemetryReport.inputFilesCount,
-      pythonDiagnostics: latestDgxTelemetryReport.pythonDiagnostics
     });
   } catch (err: any) {
     return res.status(400).json({ error: "Invalid report payload: " + err.message });
@@ -298,12 +348,21 @@ app.post("/api/documents", upload.single("file"), async (req, res) => {
       });
     }
 
-    const fields = extractBankFieldsFromText(text).map(toExtractedField);
+    const capped = capExtractionText(text);
+    if (capped.truncated) {
+      console.warn(
+        `[EXTRACT] Document ${document.id} text truncated to ${MAX_EXTRACTION_TEXT_CHARS} chars for matching`,
+      );
+    }
+    const fields = extractBankFieldsFromText(capped.text).map(toExtractedField);
     const extraction = extractionRepo.createExtraction({
       documentId: document.id,
-      rawText: text,
-      extractionVersion: 1,
-      extractionJson: JSON.stringify({ engineUsed: "native-pdf-text" }),
+      rawText: capped.text,
+      extractionVersion: extractionRepo.nextVersionForDocument(document.id),
+      extractionJson: JSON.stringify({
+        engineUsed: "native-pdf-text",
+        textTruncated: capped.truncated,
+      }),
     });
     extractionRepo.insertFields(extraction.id, fields);
 
@@ -336,6 +395,37 @@ app.get("/api/documents/:id", (req, res) => {
     document,
     jobs,
     extractions: extractions.map((e) => extractionRepo.getFullResult(e.id)),
+  });
+});
+
+/**
+ * Queue an existing document for another OCR pass. Useful after the worker's
+ * engines change, or to retry a document that failed. Each run produces a new
+ * extraction version; prior extractions and any approvals on them are left
+ * intact rather than overwritten.
+ */
+app.post("/api/documents/:id/reprocess", (req: express.Request<{ id: string }>, res) => {
+  const document = documentRepo.getById(req.params.id);
+  if (!document) {
+    return res.status(404).json({ error: "Document not found" });
+  }
+
+  const active = jobRepo
+    .getByDocument(document.id)
+    .find((j) => j.status === "queued" || j.status === "processing");
+  if (active) {
+    return res.status(409).json({
+      error: "A job for this document is already queued or processing.",
+      job: active,
+    });
+  }
+
+  const job = jobRepo.enqueue({ documentId: document.id });
+  documentRepo.updateStatus(document.id, "uploaded");
+  return res.status(202).json({
+    document: documentRepo.getById(document.id),
+    job,
+    message: "Queued for reprocessing. A DGX worker will claim it on its next poll.",
   });
 });
 
@@ -401,6 +491,18 @@ app.post("/api/fields/:id/approve", (req: express.Request<{ id: string }>, res) 
 // than the server pushing to it, so the DGX box needs no inbound network
 // exposure. All three require a shared-secret bearer token.
 app.get("/api/jobs/claim", requireWorkerAuth, (_req, res) => {
+  // Expire dead workers' leases before claiming, so a job orphaned by a
+  // crashed worker is retried instead of sitting in 'processing' forever.
+  const reclaimed = jobRepo.reclaimStale(WORKER_LEASE_SECONDS, MAX_JOB_ATTEMPTS);
+  if (reclaimed.requeued.length > 0 || reclaimed.failed.length > 0) {
+    console.log(
+      `[JOBS] Expired stale leases: ${reclaimed.requeued.length} requeued, ${reclaimed.failed.length} failed after ${MAX_JOB_ATTEMPTS} attempts`,
+    );
+    for (const job of reclaimed.failed) {
+      documentRepo.updateStatus(job.document_id, "failed");
+    }
+  }
+
   const job = jobRepo.dequeue();
   if (!job) {
     return res.status(204).end();
@@ -458,14 +560,21 @@ app.post("/api/jobs/:id/result", requireWorkerAuth, (req: express.Request<{ id: 
     // matching — the Python side's own field guesses (used only to drive its
     // pass loop's early-stop heuristic) are never persisted directly, so the
     // TS and Python field dictionaries can never silently drift apart.
-    const fields = extractBankFieldsFromText(rawText).map(toExtractedField);
+    const capped = capExtractionText(rawText);
+    if (capped.truncated) {
+      console.warn(
+        `[EXTRACT] Job ${job.id} worker text truncated to ${MAX_EXTRACTION_TEXT_CHARS} chars for matching`,
+      );
+    }
+    const fields = extractBankFieldsFromText(capped.text).map(toExtractedField);
     const extraction = extractionRepo.createExtraction({
       documentId: job.document_id,
-      rawText,
-      extractionVersion: 1,
+      rawText: capped.text,
+      extractionVersion: extractionRepo.nextVersionForDocument(job.document_id),
       extractionJson: JSON.stringify({
-        engineUsed: typeof body.engineUsed === "string" ? body.engineUsed : "dgx-multipass",
-        passes: Array.isArray(body.passes) ? body.passes : [],
+        engineUsed: typeof body.engineUsed === "string" ? body.engineUsed.slice(0, 128) : "dgx-multipass",
+        passes: Array.isArray(body.passes) ? body.passes.slice(0, 50) : [],
+        textTruncated: capped.truncated,
       }),
     });
     extractionRepo.insertFields(extraction.id, fields);

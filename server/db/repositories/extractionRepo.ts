@@ -92,6 +92,10 @@ export function createExtractionRepo(db: DatabaseType) {
     `SELECT * FROM fields WHERE id = ?`,
   );
 
+  const stmtMaxVersionForDoc = db.prepare<string>(
+    `SELECT MAX(extraction_version) AS maxVersion FROM extractions WHERE document_id = ?`,
+  );
+
   return {
     createExtraction(params: {
       id?: string;
@@ -117,6 +121,16 @@ export function createExtractionRepo(db: DatabaseType) {
 
     getExtractionsByDocument(documentId: string): ExtractionRow[] {
       return stmtGetExtractionsByDoc.all(documentId) as ExtractionRow[];
+    },
+
+    /**
+     * Version numbers are per document: re-processing a document yields
+     * version 2, 3, ... so prior extractions stay distinguishable instead of
+     * every row claiming to be version 1.
+     */
+    nextVersionForDocument(documentId: string): number {
+      const row = stmtMaxVersionForDoc.get(documentId) as { maxVersion: number | null } | undefined;
+      return (row?.maxVersion ?? 0) + 1;
     },
 
     insertFields(extractionId: string, fields: ExtractedField[]): void {
