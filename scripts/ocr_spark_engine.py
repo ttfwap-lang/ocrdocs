@@ -604,7 +604,7 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
     cv_img = cv2.cvtColor(np.array(enhanced_img), cv2.COLOR_RGB2BGR)
 
     def _merge(text: str, conf: float):
-        text = text.strip()
+        text = " ".join(text.strip().split())
         if len(text) > 1:
             collected[text] = max(collected.get(text, 0.0), conf)
 
@@ -1051,7 +1051,12 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
         })
 
         consecutive_zero_delta = consecutive_zero_delta + 1 if delta_new_fields == 0 else 0
-        early_stop = (consecutive_zero_delta >= 2 and pass_num >= 3) or (recall_percent >= 95 and pass_num >= 4)
+        used_native_text = "Native PDF Text Layer" in result.get("engines_used", [])
+        early_stop = (
+            (consecutive_zero_delta >= 2 and pass_num >= 3)
+            or (recall_percent >= 95 and pass_num >= 4)
+            or (used_native_text and recall_percent >= 95 and pass_num >= 1)
+        )
         if early_stop:
             break
 
@@ -1064,8 +1069,10 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
         "validBsb": validate_australian_bsb(prev_fields.get("bsb", "")),
         "validDob": validate_australian_dob(prev_fields.get("date_of_birth", "")),
         "passes": passes,
-        "engineUsed": "multipass-ensemble",
-    }
+        "engineUsed": ",".join(
+            sorted({e for p in passes for e in p.get("enginesUsed", [])})
+        ) or "multipass-ensemble",
+   }
 
 
 # ==============================================================================
