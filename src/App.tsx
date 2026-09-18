@@ -3,37 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navbar, NavTab } from './components/Navbar';
-import { MatcherStudio } from './components/MatcherStudio';
-import { DocumentsView } from './components/DocumentsView';
-import { AuditAndEngineView } from './components/AuditAndEngineView';
-import { RegexDictionaryView } from './components/RegexDictionaryView';
+import { IdentitiesView } from './components/IdentitiesView';
 import { GeminiChatbot } from './components/GeminiChatbot';
 import { MatrixRain } from './components/MatrixRain';
-import { SAMPLE_DOCUMENTS } from './data/sampleDocuments';
-import { extractBankFieldsFromText } from './utils/ocrMatcherEngine';
-import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from './data/bankFields';
 import type { ServiceAvailabilityResponse } from './types';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<NavTab>('documents');
-  const [selectedExternalDoc, setSelectedExternalDoc] = useState<{
-    id: string;
-    title: string;
-    institution: string;
-    docType: string;
-    rawText: string;
-  } | null>(null);
-
-  // Client-side execution (highly optimized and memoized)
-  const initialResults = useMemo(() => {
-    return extractBankFieldsFromText(SAMPLE_DOCUMENTS[0].rawText);
-  }, []);
-
-  const matchCount = useMemo(() => {
-    return initialResults.filter((r) => r.status === 'matched').length;
-  }, [initialResults]);
+  const [activeTab, setActiveTab] = useState<NavTab>('identities');
 
   const [statusBar, setStatusBar] = useState({
     dgxWorkerAvailable: false,
@@ -75,56 +53,32 @@ export default function App() {
     };
   }, []);
 
-  const handleSelectDocument = (doc: {
-    id: string;
-    title: string;
-    institution: string;
-    docType: string;
-    rawText: string;
-  }) => {
-    setSelectedExternalDoc(doc);
-    setActiveTab('studio');
-  };
-
   return (
     <div className="min-h-screen bg-void text-slate-300 flex flex-col font-mono selection:bg-matrix-500 selection:text-black relative">
       <MatrixRain />
       <div className="relative z-10 flex flex-col min-h-screen">
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        matchCount={matchCount}
-        totalFields={BANK_FIELD_DEFINITIONS.length + CORE_IDENTIFIER_DEFINITIONS.length}
-      />
+        <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* Live Status Bar */}
-      <div className="bg-black/70 backdrop-blur-sm border-b border-matrix-500/15 py-1.5 px-4 text-[10px] font-mono tracking-widest uppercase">
-        <div className="max-w-screen-2xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-4 flex-wrap">
-            <span className={`flex items-center gap-1.5 font-bold ${statusBar.dgxWorkerAvailable ? 'text-matrix-400 text-glow-green' : 'text-amber-400'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full glow-pulse ${statusBar.dgxWorkerAvailable ? 'bg-matrix-500' : 'bg-amber-400'}`} />
-              DGX WORKER: {statusBar.dgxWorkerAvailable ? 'LIVE' : 'UNCONFIGURED'}
-            </span>
-          </div>
+        {/* Live Status Bar */}
+        <div className="bg-black/70 backdrop-blur-sm border-b border-matrix-500/15 py-1.5 px-4 text-[10px] font-mono tracking-widest uppercase">
+          <div className="max-w-screen-2xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-4 flex-wrap">
+              <span className={`flex items-center gap-1.5 font-bold ${statusBar.dgxWorkerAvailable ? 'text-matrix-400 text-glow-green' : 'text-amber-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full glow-pulse ${statusBar.dgxWorkerAvailable ? 'bg-matrix-500' : 'bg-amber-400'}`} />
+                DGX WORKER: {statusBar.dgxWorkerAvailable ? 'LIVE' : 'UNCONFIGURED'}
+              </span>
+            </div>
 
-          <div className="flex items-center gap-2 text-cyan-400 font-bold text-glow-cyan">
-            <span>{statusBar.documentCount} DOCUMENTS</span>
+            <div className="flex items-center gap-2 text-cyan-400 font-bold text-glow-cyan">
+              <span>{statusBar.documentCount} DOCUMENTS</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <main className="flex-1 max-w-screen-2xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'documents' && <DocumentsView onSelectDocumentForOcr={handleSelectDocument} />}
-        {activeTab === 'studio' && (
-          <MatcherStudio
-            initialDocument={selectedExternalDoc}
-            onNavigateToDocuments={() => setActiveTab('documents')}
-          />
-        )}
-        {activeTab === 'audit' && <AuditAndEngineView />}
-        {activeTab === 'regex' && <RegexDictionaryView />}
-        {activeTab === 'copilot' && <GeminiChatbot />}
-      </main>
+        <main className="flex-1 max-w-screen-2xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {activeTab === 'identities' && <IdentitiesView />}
+          {activeTab === 'copilot' && <GeminiChatbot />}
+        </main>
       </div>
     </div>
   );

@@ -9,7 +9,7 @@
     "dependencies": [
       {
         "name": "archiver",
-        "version": "8.0.0",
+        "version": "7.0.1",
         "ecosystem": "npm",
         "license": "MIT",
         "commercialUseAllowed": true,

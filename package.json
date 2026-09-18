@@ -21,7 +21,7 @@
     "@google/genai": "2.22.0",
     "@tailwindcss/vite": "4.3.3",
     "@vitejs/plugin-react": "5.2.0",
-    "archiver": "8.0.0",
+    "archiver": "7.0.1",
     "better-sqlite3": "13.0.3",
     "dotenv": "17.4.2",
     "express": "5.2.1",

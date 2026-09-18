@@ -4,9 +4,10 @@
  *
  * Real browser coverage of the reviewer flow, driving the installed Chrome
  * through Playwright against the real Express app, real SQLite and real
- * multer — upload a genuine native-text PDF, select it, open the review
- * panel, correct a value, approve it, and confirm the change persisted
- * server-side and survives a page reload.
+ * multer — upload a genuine native-text PDF with no name/DOB (so it lands in
+ * the Unassigned queue rather than an identity group), open it, open the
+ * review panel, correct a value, approve it, and confirm the change
+ * persisted server-side and survives a page reload.
  *
  * This exists because "typechecks and builds" is not evidence that a UI
  * works. It skips (rather than fails) when Playwright or Chrome is absent,
@@ -145,8 +146,10 @@ test('browser: reviewer can correct and approve a field, and it persists', async
     await page.locator('input[type="file"]').first().setInputFiles(pdfPath);
     await page.waitForTimeout(2500);
 
-    // Dismiss the upload queue so the only remaining occurrence of the
-    // filename is the clickable Document Queue row.
+    // This document has no given_names/family_name/date_of_birth, so it has
+    // nothing reliable to group by and lands in the Unassigned queue rather
+    // than an identity. Dismiss the upload queue widget first so the only
+    // remaining occurrence of the filename is the clickable Unassigned row.
     await page
       .locator('text=UPLOAD QUEUE')
       .first()
@@ -156,12 +159,13 @@ test('browser: reviewer can correct and approve a field, and it persists', async
       .click()
       .catch(() => {});
     await page.waitForTimeout(400);
+    await page.locator('text=Unassigned Queue').first().isVisible();
     await page.locator('text=review-flow.pdf').last().click();
     await page.waitForTimeout(1200);
 
     assert.ok(
       await page.locator('text=062-000').first().isVisible(),
-      'the extracted BSB should be rendered in the detail panel',
+      'the extracted BSB should be rendered in the document detail page',
     );
 
     await page.locator('button', { hasText: /Review & Approve/i }).first().click();
@@ -205,7 +209,7 @@ test('browser: reviewer can correct and approve a field, and it persists', async
     await page.reload({ waitUntil: 'networkidle' });
     await page.waitForTimeout(1200);
     await page.locator('text=review-flow.pdf').last().click();
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(1200);
     await page.locator('button', { hasText: /Review & Approve/i }).first().click();
     await page.waitForTimeout(1000);
     assert.ok(
