@@ -985,7 +985,22 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
         elif ext == ".docx":
             import docx
             doc = docx.Document(path)
-            raw_texts.append("\n".join([p.text for p in doc.paragraphs]))
+            # Same class of bug as the PDF per-page fix above, applied to
+            # docx's own natural sub-document unit (paragraphs): one
+            # paragraph with malformed run/style XML throwing out of
+            # `.text` used to fail the whole list comprehension, discarding
+            # every already-readable paragraph in an otherwise-fine
+            # document. rtf/txt/json/xml below have no equivalent sub-unit
+            # to isolate -- they're read as a single blob, so a read failure
+            # there is a genuine all-or-nothing PARSE_ERROR, not a case of
+            # this same bug.
+            good_paragraphs = []
+            for para_index, p in enumerate(doc.paragraphs):
+                try:
+                    good_paragraphs.append(p.text)
+                except Exception as e:
+                    logging.warning(f"[!] {fpath}: paragraph {para_index} failed to read, skipping it: {e}")
+            raw_texts.append("\n".join(good_paragraphs))
         elif ext == ".rtf":
             from striprtf.striprtf import rtf_to_text
             with open(path, "r", encoding="utf-8", errors="ignore") as f:

@@ -576,6 +576,38 @@ def test_native_text_keeps_high_confidence_even_when_other_images_are_ocrd(tmp_p
     )
 
 
+class _FakeGoodParagraph:
+    @property
+    def text(self) -> str:
+        return "Given Names: Jordan"
+
+
+class _FakeBrokenParagraph:
+    @property
+    def text(self) -> str:
+        raise RuntimeError("simulated corrupted paragraph run XML")
+
+
+class _FakeDocxDocument:
+    def __init__(self, _path):
+        self.paragraphs = [_FakeGoodParagraph(), _FakeBrokenParagraph(), _FakeGoodParagraph()]
+
+
+def test_one_corrupted_docx_paragraph_does_not_discard_the_rest(tmp_path, monkeypatch):
+    """Same class of bug as the PDF per-page fix, applied to docx's own
+    natural sub-document unit (paragraphs): one paragraph whose `.text`
+    throws must not discard the other, perfectly readable paragraphs."""
+    import docx
+    monkeypatch.setattr(docx, "Document", _FakeDocxDocument)
+    fake_docx = tmp_path / "form.docx"
+    fake_docx.write_bytes(b"not a real docx, replaced by the fake above")
+
+    status, _fpath, result = engine.process_single_file_for_pass((str(fake_docx), 1))
+
+    assert status == "SUCCESS", f"one bad paragraph should not fail the whole document, got: {result}"
+    assert result["raw_text"].count("Given Names: Jordan") == 2
+
+
 def test_one_corrupted_pdf_page_does_not_discard_the_rest(tmp_path, monkeypatch):
     monkeypatch.setattr(engine.pdfium, "PdfDocument", _FakePdfDocument)
     fake_pdf = tmp_path / "statement.pdf"
