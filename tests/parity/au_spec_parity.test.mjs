@@ -30,10 +30,15 @@ const tsField = (text, id) => {
 };
 
 let py = null;
+let lastError = '';
 for (const exe of ['python', 'python3']) {
   const r = spawnSync(exe, [path.join(project, 'scripts', 'parity_dump.py'), corpusPath], { encoding: 'utf8' });
+  if (r.error && r.error.code === 'ENOENT') continue; // interpreter not installed: the only legitimate skip
   if (r.status === 0) { py = JSON.parse(r.stdout.trim().split('\n').pop()); break; }
+  lastError = `${exe} exited ${r.status}: ${(r.stderr || '').split('\n').slice(-6).join('\n')}`;
 }
+// Python exists but the engine failed to run => a real failure, never a silent skip.
+if (!py && lastError) throw new Error(`Python parity dump failed. ${lastError}`);
 
 for (const c of corpus) {
   test(`parity: ${c.id}`, (t) => {

@@ -12,11 +12,14 @@ if (( avail_gb < NEED_GB )); then
   echo "ERROR: only ${avail_gb}G free in $MODELS_DIR, need ${NEED_GB}G" >&2
   exit 1
 fi
-command -v huggingface-cli >/dev/null 2>&1 || python3 -m pip install --user -q "huggingface_hub[cli]"
-HF="$(command -v huggingface-cli || echo "$HOME/.local/bin/huggingface-cli")"
+# huggingface_hub renamed its CLI (huggingface-cli -> hf) and PEP 668 blocks system-wide pip on modern Ubuntu,
+# so use a private venv and the Python API, which is stable across both.
+VENV="$MODELS_DIR/.venv"
+[[ -x "$VENV/bin/python" ]] || python3 -m venv "$VENV"
+"$VENV/bin/python" -m pip install --quiet --upgrade huggingface_hub
 for repo in Qwen/Qwen2.5-VL-7B-Instruct microsoft/Florence-2-large; do
   echo "==> $repo"
-  "$HF" download "$repo" --local-dir "$MODELS_DIR/${repo##*/}"
+  "$VENV/bin/python" -c "import sys; from huggingface_hub import snapshot_download as d; d(repo_id=sys.argv[1], local_dir=sys.argv[2])" "$repo" "$MODELS_DIR/${repo##*/}"
 done
 du -sh "$MODELS_DIR"/*
 echo "Set OCRDOCS_VLM_DIR=$MODELS_DIR and OCRDOCS_ENABLE_RESEARCH_ENGINES=true to enable."
