@@ -57,6 +57,52 @@ def test_timed_out_call_does_not_starve_a_later_call():
     assert elapsed < 2.0, f"second call took {elapsed:.1f}s after the first timed out -- looks starved, not independent"
 
 
+def test_dgx_worker_keeps_temp_file_on_timeout_but_deletes_it_on_success(tmp_path, monkeypatch):
+    """Regression test: process_claimed_job used to unlink the downloaded
+    temp file unconditionally in a `finally`, including after a
+    FutureTimeoutError -- but on a real timeout, the orphaned thread from
+    the abandoned call may still be genuinely reading that file (it's opened
+    directly by path inside process_document_multipass/pdfium/PIL). Deleting
+    it out from under that still-running read is a real race, not a
+    cleanup. The fix must skip deletion specifically on timeout, and still
+    delete normally on a real success/failure that isn't a timeout."""
+    import dgx_worker
+
+    def _make_claim(job_id: str, fname: str) -> dict:
+        return {"job": {"id": job_id}, "document": {"filename": fname}}
+
+    def _fake_download(job_id: str, filename: str) -> "Path":
+        p = tmp_path / f"{job_id}-{filename}"
+        p.write_bytes(b"fake document bytes")
+        return p
+
+    monkeypatch.setattr(dgx_worker, "download_job_file", _fake_download)
+    monkeypatch.setattr(dgx_worker, "post_result", lambda job_id, payload: None)
+    monkeypatch.setattr(dgx_worker, "JOB_TIMEOUT_SECONDS", 0.2)
+
+    # Timeout case: the file must survive, since an orphaned thread may
+    # still be reading it.
+    def _hang(path, max_passes):
+        time.sleep(5)
+
+    monkeypatch.setattr(dgx_worker, "process_document_multipass", _hang)
+    timeout_claim = _make_claim("job-timeout", "timeout.pdf")
+    dgx_worker.process_claimed_job(timeout_claim)
+    timeout_path = tmp_path / "job-timeout-timeout.pdf"
+    assert timeout_path.exists(), "temp file must NOT be deleted when the pipeline call timed out"
+
+    # Non-timeout success case: the file must still be cleaned up normally.
+    monkeypatch.setattr(
+        dgx_worker,
+        "process_document_multipass",
+        lambda path, max_passes: {"status": "SUCCESS", "rawText": "", "passes": [], "engineUsed": []},
+    )
+    success_claim = _make_claim("job-success", "ok.pdf")
+    dgx_worker.process_claimed_job(success_claim)
+    success_path = tmp_path / "job-success-ok.pdf"
+    assert not success_path.exists(), "temp file must be deleted on a normal (non-timeout) completion"
+
+
 def test_dgx_worker_has_no_shared_job_executor():
     """Regression guard: dgx_worker.py's job-level timeout had the identical
     bug (max_workers=1, so a single real timeout stalled the worker

@@ -111,10 +111,12 @@ def process_claimed_job(claim: Dict[str, Any]) -> None:
         return
 
     job_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-job")
+    timed_out = False
     try:
         future = job_executor.submit(process_document_multipass, str(local_path), max_passes=MAX_PASSES)
         result = future.result(timeout=JOB_TIMEOUT_SECONDS)
     except FutureTimeoutError:
+        timed_out = True
         logging.error(f"[-] Job {job_id}: pipeline exceeded {JOB_TIMEOUT_SECONDS}s job-level timeout, abandoning.")
         post_result(job_id, {"status": "FAILED", "error": f"Pipeline exceeded {JOB_TIMEOUT_SECONDS}s timeout"})
         return
@@ -128,12 +130,27 @@ def process_claimed_job(claim: Dict[str, Any]) -> None:
         # don't block this function's return on it, just let this whole
         # single-use executor be abandoned/orphaned rather than reused.
         job_executor.shutdown(wait=False)
-        try:
-            local_path.unlink(missing_ok=True)
-        except Exception as e:
-            # Not fatal to the job, but a failed delete on a long-running
-            # worker silently leaks disk over time if never logged.
-            logging.warning(f"[!] Job {job_id}: failed to remove temp file {local_path}: {e}")
+        if timed_out:
+            # The orphaned thread from the timeout above may still be
+            # genuinely reading local_path (process_document_multipass opens
+            # it directly by path, possibly mid-read inside pdfium/PIL).
+            # Deleting it here races that read: best case the orphaned call
+            # then fails with a spurious file-not-found instead of just
+            # finishing pointlessly; worst case (Windows, a still-open
+            # handle) the delete itself fails or corrupts the read. Leaking
+            # this one file is the safer failure mode -- it's a bounded,
+            # log-visible cost, not a silent data race.
+            logging.warning(
+                f"[!] Job {job_id}: leaving temp file {local_path} in place -- "
+                "an orphaned thread from the timeout above may still be reading it."
+            )
+        else:
+            try:
+                local_path.unlink(missing_ok=True)
+            except Exception as e:
+                # Not fatal to the job, but a failed delete on a long-running
+                # worker silently leaks disk over time if never logged.
+                logging.warning(f"[!] Job {job_id}: failed to remove temp file {local_path}: {e}")
 
     if result.get("status") != "SUCCESS":
         error = result.get("error", "Unknown pipeline failure")
