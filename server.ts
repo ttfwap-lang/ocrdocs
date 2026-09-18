@@ -31,11 +31,13 @@ import { createJobRepo } from "./server/db/repositories/jobRepo";
 import { createExtractionRepo } from "./server/db/repositories/extractionRepo";
 import type { ExtractedField, ValidationStatus } from "./server/db/contracts";
 import { upload } from "./server/middleware/upload";
+import { createIdentityService } from "./server/services/identityService";
 
 const db = initDb();
 const documentRepo = createDocumentRepo(db);
 const jobRepo = createJobRepo(db);
 const extractionRepo = createExtractionRepo(db);
+const identityService = createIdentityService(documentRepo, extractionRepo);
 
 // How long a claimed job may sit in 'processing' before its worker is presumed
 // dead, and how many times a job may be claimed before it is failed for good.
@@ -433,6 +435,100 @@ app.get("/api/documents/:id", (req, res) => {
     jobs,
     extractions: extractions.map((e) => extractionRepo.getFullResult(e.id)),
   });
+});
+
+// Serve a document's original bytes for inline preview (default) or download
+// (?download=1). Path + root are passed separately, not a bare absolute path
+// -- see the /api/jobs/:id/file handler below for why that matters on Windows.
+app.get("/api/documents/:id/file", (req: express.Request<{ id: string }>, res) => {
+  const document = documentRepo.getById(req.params.id);
+  if (!document) {
+    return res.status(404).json({ error: "Document not found" });
+  }
+  const absolutePath = path.resolve(document.original_path);
+  const disposition = req.query.download ? "attachment" : "inline";
+  const safeFilename = document.filename.replace(/"/g, "");
+  res.setHeader("Content-Disposition", `${disposition}; filename="${safeFilename}"`);
+  if (document.mime_type) {
+    res.setHeader("Content-Type", document.mime_type);
+  }
+  return res.sendFile(path.basename(absolutePath), { root: path.dirname(absolutePath) }, (err) => {
+    if (err && !res.headersSent) {
+      res.status(404).json({ error: "Original file is missing from storage" });
+    }
+  });
+});
+
+// Identities: documents grouped by their extracted given_names + family_name
+// + date_of_birth (see server/services/identityService.ts). No separate
+// identities table -- the grouping is derived live from real extraction
+// data, so it can never disagree with what the fields table actually says.
+app.get("/api/identities", (_req, res) => {
+  res.json({
+    identities: identityService.listIdentities(),
+    unassigned: identityService.listUnassigned(),
+  });
+});
+
+app.get("/api/identities/:identityId", (req: express.Request<{ identityId: string }>, res) => {
+  const identity = identityService.getIdentityDetail(req.params.identityId);
+  if (!identity) {
+    return res.status(404).json({ error: "Identity not found" });
+  }
+  return res.json(identity);
+});
+
+// One-click export: every original file plus a single readable text summary
+// of the consolidated field breakdown, zipped for the reviewer to hand off.
+app.get("/api/identities/:identityId/export.zip", async (req: express.Request<{ identityId: string }>, res) => {
+  const identity = identityService.getIdentityDetail(req.params.identityId);
+  if (!identity) {
+    return res.status(404).json({ error: "Identity not found" });
+  }
+
+  const { default: archiver } = await import("archiver");
+  const safeName = `${identity.givenNames}${identity.familyName}`.replace(/[^A-Za-z0-9]/g, "") || "Identity";
+
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="${safeName}_export.zip"`);
+
+  const archive = archiver("zip", { zlib: { level: 9 } });
+  archive.on("error", (err) => {
+    console.error("Zip export error:", err);
+    if (!res.headersSent) {
+      res.status(500);
+    }
+    res.end();
+  });
+  archive.pipe(res);
+
+  const lines: string[] = [
+    identity.fullName,
+    `Date of Birth: ${identity.dob}`,
+    `Documents: ${identity.documentCount} (extracted ${identity.extractedCount}, pending ${identity.pendingCount}, failed ${identity.failedCount})`,
+    "",
+    "=== Consolidated Field Breakdown ===",
+  ];
+  for (const f of identity.fieldBreakdown) {
+    lines.push(
+      `${f.name}: ${f.value}  [confidence ${Math.round(f.confidence * 100)}%, ${f.approved ? "approved" : "unapproved"}, source: ${f.documentFilename}]`,
+    );
+  }
+  lines.push("", "=== Source Documents ===");
+  for (const { document } of identity.documents) {
+    lines.push(`- ${document.filename} (status: ${document.status}, uploaded: ${document.uploaded_at})`);
+  }
+  archive.append(lines.join("\n"), { name: `${safeName}parseddata.txt` });
+
+  for (const { document } of identity.documents) {
+    const absolutePath = path.resolve(document.original_path);
+    // Prefix with a short id slice: two source documents can share a filename
+    // (e.g. two "scan.pdf" from different folders), which would otherwise
+    // silently collide inside the zip's originals/ directory.
+    archive.file(absolutePath, { name: `originals/${document.id.slice(0, 8)}_${document.filename}` });
+  }
+
+  await archive.finalize();
 });
 
 /**

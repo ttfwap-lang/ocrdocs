@@ -10,7 +10,7 @@
     "lint": "tsc --noEmit",
     "test": "node --test --test-timeout=30000 tests/*.test.mjs",
     "test:unit": "node --test --test-timeout=30000 tests/australianValidation.test.mjs tests/ocrEngine.test.mjs tests/bankFields.test.mjs tests/stage3Architecture.test.mjs tests/stage4DemoSeparation.test.mjs tests/stage5Dependencies.test.mjs tests/stage6Startup.test.mjs",
-    "test:integration": "node --test --test-timeout=30000 tests/dgxJobEndpoints.test.mjs",
+    "test:integration": "node --test --test-timeout=30000 tests/dgxJobEndpoints.test.mjs tests/identities.test.mjs",
     "test:worker": "node --test --test-timeout=30000 tests/stage7TestIntegrity.test.mjs",
     "test:browser": "node --test --test-timeout=30000 tests/browser/suiteContract.test.mjs",
     "test:deployment": "node --test --test-timeout=30000 tests/deployment/suiteContract.test.mjs",
@@ -21,6 +21,7 @@
     "@google/genai": "2.22.0",
     "@tailwindcss/vite": "4.3.3",
     "@vitejs/plugin-react": "5.2.0",
+    "archiver": "8.0.0",
     "better-sqlite3": "13.0.3",
     "dotenv": "17.4.2",
     "express": "5.2.1",
@@ -34,6 +35,7 @@
     "vite": "6.4.3"
   },
   "devDependencies": {
+    "@types/archiver": "6.0.3",
     "@types/better-sqlite3": "9.6.0",
     "@types/express": "5.0.6",
     "@types/jsonwebtoken": "9.0.10",

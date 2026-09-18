@@ -8,6 +8,15 @@
     "targetVersion": "24.19.0",
     "dependencies": [
       {
+        "name": "archiver",
+        "version": "8.0.0",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Streaming zip creation for per-identity document export."
+      },
+      {
         "name": "@google/genai",
         "version": "2.22.0",
         "ecosystem": "npm",
@@ -135,6 +144,14 @@
       }
     ],
     "devDependencies": [
+      {
+        "name": "@types/archiver",
+        "version": "6.0.3",
+        "ecosystem": "npm",
+        "license": "MIT",
+        "commercialUseAllowed": true,
+        "copyleft": false
+      },
       {
         "name": "@types/better-sqlite3",
         "version": "9.6.0",
@@ -383,8 +400,8 @@
     ]
   },
   "licenseSummary": {
-    "totalProductionDependencies": 27,
-    "commercialPermissiveCount": 27,
+    "totalProductionDependencies": 28,
+    "commercialPermissiveCount": 28,
     "copyleftCountInProduction": 0,
     "screenedConditionalCount": 3
   }

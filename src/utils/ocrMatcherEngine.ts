@@ -106,6 +106,19 @@ function analyzeDocumentContext(text: string): DocumentContext {
   return { lines, sections };
 }
 
+/**
+ * Every field's `maxToleranceRegex` alternates on `[_-]?`/`[_-]*` to join
+ * label words (e.g. `given[_-]?names?`), documented as tolerating "spaced"
+ * variants -- but a literal space isn't `_` or `-`, so a real label like
+ * "First Name" or "Family Name" (the overwhelmingly common real-world case)
+ * never actually matched; only "FirstName"/"First-Name"/"First_Name" did.
+ * Widening the class to `[\s_-]` at the point each pattern is compiled fixes
+ * every field's label matching at once, without hand-editing ~99 entries.
+ */
+function spaceTolerantLabel(pattern: string): string {
+  return pattern.replace(/\[_-\]/g, '[\\s_-]');
+}
+
 function getSectionForIndex(docContext: DocumentContext, lineIndex: number): string {
   const match = docContext.sections.find(s => lineIndex >= s.startLine && lineIndex <= s.endLine);
   return match ? match.name : 'GENERAL';
@@ -251,7 +264,8 @@ function extractSingleFieldWithContext(
     }
 
     // Dynamic Key-Value extraction with Contextual Proximity Disambiguation
-    const anchorRegex = new RegExp(`(?:^|[^a-zA-Z0-9_])${field.maxToleranceRegex}(?:\\s*[:=\\-]\\s*|\\s+)([^\\n\\r]{2,95})`, 'gi');
+    const labelPattern = spaceTolerantLabel(field.maxToleranceRegex);
+    const anchorRegex = new RegExp(`(?:^|[^a-zA-Z0-9_])${labelPattern}(?:\\s*[:=\\-]\\s*|\\s+)([^\\n\\r]{2,95})`, 'gi');
     const matches = Array.from(text.matchAll(anchorRegex));
 
     if (matches.length > 0) {
@@ -315,7 +329,7 @@ function extractSingleFieldWithContext(
     }
 
     // Fallback: Check if the anchor simply occurs in text (for boolean/status fields like de facto, single, married)
-    const simpleRegex = new RegExp(`\\b${field.maxToleranceRegex}\\b`, 'i');
+    const simpleRegex = new RegExp(`\\b${labelPattern}\\b`, 'i');
     const simpleMatch = text.match(simpleRegex);
     if (simpleMatch) {
       return {
