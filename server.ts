@@ -32,6 +32,7 @@ import { createExtractionRepo } from "./server/db/repositories/extractionRepo";
 import type { ExtractedField, ValidationStatus } from "./server/db/contracts";
 import { upload } from "./server/middleware/upload";
 import { createIdentityService } from "./server/services/identityService";
+import { createImportService, type PreparseShell, type UploadedFile } from "./server/services/importService";
 
 const db = initDb();
 const documentRepo = createDocumentRepo(db);
@@ -49,6 +50,40 @@ const MAX_JOB_ATTEMPTS = Number(process.env.OCRDOCS_MAX_JOB_ATTEMPTS || 3);
 // text is untrusted (it comes out of an uploaded file, or back from a worker),
 // so it is capped before matching rather than trusted to be a sane size.
 const MAX_EXTRACTION_TEXT_CHARS = Number(process.env.OCRDOCS_MAX_EXTRACTION_TEXT_CHARS || 2_000_000);
+
+// — Batch import (`ocr.local`) configuration. Read at module scope to mirror the
+// other operational flags above (WORKER_LEASE_SECONDS etc.). env.ts is
+// intentionally NOT modified for import flags — see docs/GX10_DEPLOYMENT.md.
+const IMPORT_ROOT = process.env.OCRDOCS_IMPORT_ROOT || "C:\\NVIDIA-Workbench\\ocr";
+const QUEUED_DIR = process.env.OCRDOCS_QUEUED_DIR || path.join(IMPORT_ROOT, "queued");
+const PARSED_DIR = process.env.OCRDOCS_PARSED_DIR || path.join(IMPORT_ROOT, "parsed");
+const PREPARSE_SCRIPT_PATH =
+  process.env.OCRDOCS_PREPARSE_SCRIPT || path.join(process.cwd(), "scripts", "pre-parse.sh");
+const PREPARSE_SHELL: PreparseShell =
+  process.env.OCRDOCS_PREPARSE_SHELL === "node"
+    ? "node"
+    : process.env.OCRDOCS_PREPARSE_SHELL === "wsl"
+      ? "wsl"
+      : process.env.OCRDOCS_PREPARSE_SHELL === "bash"
+        ? "bash"
+        : process.platform === "win32"
+          ? "wsl"
+          : "bash";
+const IMPORT_MAX_FILES = Number(process.env.OCRDOCS_IMPORT_MAX_FILES) || 500;
+const IMPORT_MAX_TOTAL_MB = Number(process.env.OCRDOCS_IMPORT_MAX_TOTAL_MB) || 500;
+
+// Side-effect-free at construction (mkdirs are deferred to stageImport), so
+// instantiating at module scope is safe for every test that imports server.ts.
+const importService = createImportService({
+  documentRepo,
+  jobRepo,
+  queuedDir: QUEUED_DIR,
+  parsedDir: PARSED_DIR,
+  preparseScript: PREPARSE_SCRIPT_PATH,
+  preparseShell: PREPARSE_SHELL,
+  maxFiles: IMPORT_MAX_FILES,
+  maxTotalMb: IMPORT_MAX_TOTAL_MB,
+});
 
 /**
  * Quote a CSV cell, neutralising spreadsheet formula injection.
@@ -89,6 +124,30 @@ const requireWorkerAuth: express.RequestHandler = (req, res, next) => {
   const token = process.env.DGX_WORKER_TOKEN;
   if (!token) {
     res.status(503).json({ error: "DGX worker endpoints are not configured (DGX_WORKER_TOKEN unset)." });
+    return;
+  }
+  const header = req.headers.authorization || "";
+  const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!provided || !constantTimeEquals(provided, token)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+};
+
+/**
+ * Batch-import bearer guard for the `ocr.local` workflow. Mirrors
+ * requireWorkerAuth: fails closed when OCRDOCS_IMPORT_ENABLED != true or when
+ * OCRDOCS_IMPORT_TOKEN is unset, then constant-time-compares the bearer token.
+ */
+const requireImportAuth: express.RequestHandler = (req, res, next) => {
+  if (process.env.OCRDOCS_IMPORT_ENABLED !== "true") {
+    res.status(503).json({ error: "Batch import is disabled (OCRDOCS_IMPORT_ENABLED != true)." });
+    return;
+  }
+  const token = process.env.OCRDOCS_IMPORT_TOKEN || "";
+  if (!token) {
+    res.status(503).json({ error: "Import token not configured (OCRDOCS_IMPORT_TOKEN unset)." });
     return;
   }
   const header = req.headers.authorization || "";
@@ -457,6 +516,70 @@ app.get("/api/documents/:id/file", (req: express.Request<{ id: string }>, res) =
       res.status(404).json({ error: "Original file is missing from storage" });
     }
   });
+});
+
+// — Batch import (`ocr.local`) endpoints. Full pipeline lives in
+// server/services/importService.ts: stage → run pre-parse script (TARGET_DIR=$1)
+// → finalize (rename staged→parsed/<ts>, content-hash dedup, enqueue one OCR
+// job per surviving file, identical to POST /api/documents). Auth mirrors
+// requireWorkerAuth (fail-closed + constant-time).
+app.post(
+  "/api/imports",
+  requireImportAuth,
+  upload.array("files", IMPORT_MAX_FILES),
+  async (req, res) => {
+    try {
+      if (req.body && req.body.source === "folder" && req.body.path) {
+        const manifest = await importService.stageImport({ folder: String(req.body.path) });
+        return res.status(202).json(manifest);
+      }
+      const files = Array.isArray(req.files) ? (req.files as UploadedFile[]) : [];
+      if (files.length === 0) {
+        return res
+          .status(400)
+          .json({ error: "No files provided. POST multipart 'files' or {source:'folder',path}." });
+      }
+      const manifest = await importService.stageImport({ files });
+      return res.status(202).json(manifest);
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message || "Failed to stage import" });
+    }
+  },
+);
+
+app.post("/api/imports/:id/run", requireImportAuth, async (req: express.Request<{ id: string }>, res) => {
+  try {
+    const record = importService.getRecord(req.params.id);
+    if (record.status !== "staged") {
+      return res.status(404).json({ error: "Import not found" });
+    }
+    const run = await importService.runPreParse(req.params.id);
+    if (!run.ok) {
+      importService.failImport(req.params.id, run.stderr, run.code);
+      return res
+        .status(500)
+        .json({ importId: req.params.id, status: "failed", stdout: run.stdout, stderr: run.stderr, code: run.code });
+    }
+    const { parsedDir, jobIds } = importService.finalize(req.params.id);
+    return res.status(200).json({
+      importId: req.params.id,
+      status: "parsed",
+      parsedDir,
+      jobIds,
+      stdout: run.stdout,
+      stderr: run.stderr,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Failed to run import" });
+  }
+});
+
+app.get("/api/imports/:id", requireImportAuth, (req: express.Request<{ id: string }>, res) => {
+  return res.json(importService.getRecord(req.params.id));
+});
+
+app.get("/api/imports", requireImportAuth, (_req, res) => {
+  return res.json({ imports: importService.listRecords() });
 });
 
 // Identities: documents grouped by their extracted given_names + family_name

@@ -128,4 +128,11 @@ export function getFilePath(filename: string): string {
   return join(STORAGE_ROOT, filename);
 }
 
+/**
+ * The same accept/reject decision used by `upload` (multer). Reused by the
+ * batch-import service (server/services/importService.ts) so there is one
+ * source of truth for which file types are OCR-able.
+ */
+export { fileFilter as uploadFilter };
+
 export { STORAGE_ROOT, ALLOWED_MIME_TYPES, SUPPORTED_EXTENSIONS, DEFAULT_FILE_SIZE_LIMIT };
