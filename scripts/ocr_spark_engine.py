@@ -842,6 +842,21 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
         data["email_address"] = emails[0]
         confidences["email_address"] = 0.98
 
+    # Fields whose line-scan value gets format-validated before it's allowed
+    # to overwrite an existing match. Without this, a bare label match (e.g.
+    # "BSB: TBC" or a line containing "date of birth" near unrelated digits)
+    # would overwrite an already-validated, correct value purely because its
+    # line confidence (0.75-0.95) is higher than the deliberately-lowered
+    # unlabeled-sweep confidence above (0.60 BSB / 0.85 DOB) -- garbage text
+    # clobbering a real match just by sitting on a higher-confidence line.
+    # A genuinely correct label match still passes (it's real data, so it
+    # validates) and legitimately overrides the lower unlabeled-sweep value,
+    # exactly as intended; only invalid/garbage line-scan text is blocked.
+    line_scan_validators = {
+        "bsb": validate_australian_bsb,
+        "date_of_birth": validate_australian_dob,
+    }
+
     # Contextual line scanning for the 60 fields
     for line in lines:
         cleaned_line = line.strip()
@@ -862,6 +877,9 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
                 parts = re.split(r"[:\t\-\=]", cleaned_line, maxsplit=1)
                 if len(parts) > 1 and len(parts[1].strip()) > 1:
                     val = parts[1].strip()
+                    validator = line_scan_validators.get(field)
+                    if validator is not None and not validator(val):
+                        continue
                     if not data[field] or confidences[field] < line_conf:
                         data[field] = val
                         confidences[field] = line_conf

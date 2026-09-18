@@ -397,6 +397,29 @@ def test_format_only_validated_fields_get_reduced_confidence():
         assert result["confidences"]["date_of_birth"] <= 0.85
 
 
+def test_line_scan_cannot_overwrite_a_valid_bsb_with_garbage():
+    """Regression test for the follow-on bug the confidence-lowering above
+    created: BSB/DOB's unlabeled-sweep confidence was deliberately lowered
+    (0.60/0.85) so a REAL label match could legitimately override it -- but
+    the line-scan path never validated its own extracted value, so a label
+    line with garbage after it (e.g. "BSB: TBC", higher line confidence than
+    0.60) would clobber an already-correct, validated match with junk. Line
+    order matters here: the valid BSB is found by the whole-text sweep
+    first, then the garbage-labelled line must fail to overwrite it."""
+    text = "Account details 062-000 held with the bank.\nBSB: TBC pending confirmation"
+    result = engine.extract_australian_banking_fields(text)
+    assert result["fields"]["bsb"] == "062-000", (
+        "an unvalidated line-scan value overwrote a genuinely valid BSB match"
+    )
+
+
+def test_line_scan_still_accepts_a_genuinely_correct_labelled_bsb():
+    """The fix must not block legitimate label matches -- only garbage."""
+    text = "Reference 999-999 archived.\nBSB: 062-000"
+    result = engine.extract_australian_banking_fields(text)
+    assert result["fields"]["bsb"] == "062-000"
+
+
 # ---------------------------------------------------------------------------
 # One corrupted PDF page must not discard the rest of the document.
 #
