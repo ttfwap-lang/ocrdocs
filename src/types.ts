@@ -76,39 +76,11 @@ export interface ExtractionResult {
   disambiguation?: ContextualDisambiguationMeta;
 }
 
-export interface SampleDocument {
-  id: string;
-  title: string;
-  institution: string;
-  docType: string;
-  description: string;
-  rawText: string;
-}
-
 export interface ChatMessage {
   id: string;
   role: 'user' | 'model';
   content: string;
   timestamp: string;
-}
-
-/**
- * An entry in the engineering issue register shown in the Audit view.
- *
- * `status` is mandatory and drives the UI badge so an unresolved problem can
- * never be presented as solved. Anything not demonstrably fixed in this
- * repository is 'open' — describe the real current behaviour in `currentStatus`
- * rather than the behaviour we would like to have.
- */
-export interface ScriptAuditSection {
-  id: string;
-  title: string;
-  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'RECOMMENDATION';
-  status: 'addressed' | 'mitigated' | 'open';
-  problem: string;
-  currentStatus: string;
-  /** Real files a reader can open to check the claim for themselves. */
-  evidence: string[];
 }
 
 export interface ServiceAvailabilityResponse {
@@ -137,6 +109,83 @@ export interface LocalJob {
   started_at: string | null;
   completed_at: string | null;
   error: string | null;
+}
+
+export interface DocumentPreview {
+  id: string;
+  filename: string;
+  mimeType: string | null;
+  status: string;
+}
+
+/** A person, as grouped by GET /api/identities from documents sharing given_names + family_name + date_of_birth. */
+export interface IdentitySummary {
+  identityId: string;
+  givenNames: string;
+  familyName: string;
+  fullName: string;
+  dob: string;
+  documentCount: number;
+  extractedCount: number;
+  pendingCount: number;
+  failedCount: number;
+  previewDocuments: DocumentPreview[];
+}
+
+/** A queued/extracted document that has no reliable family_name + date_of_birth to group by yet. */
+export interface UnassignedDocument {
+  id: string;
+  filename: string;
+  mimeType: string | null;
+  status: string;
+  uploadedAt: string;
+}
+
+export interface IdentityFieldEntry {
+  name: string;
+  value: string;
+  confidence: number;
+  approved: boolean;
+  documentId: string;
+  documentFilename: string;
+}
+
+export interface IdentityDocumentDetail {
+  document: LocalDocument;
+  extraction: {
+    id: string;
+    version: number;
+    documentId: string;
+    rawText: string | null;
+    fields: Array<{
+      name: string;
+      value: string | null;
+      confidence: number;
+      sourceSection: string | null;
+      validated: boolean;
+      validationStatus: 'valid' | 'invalid' | 'warning' | 'pending';
+      correctedValue: string | null;
+      approved: boolean;
+      category?: FieldCategory;
+    }>;
+    metadata: { extractionVersion: number; createdAt: string; engineUsed?: string; passes?: unknown[] };
+  } | null;
+}
+
+export interface IdentityDetail extends IdentitySummary {
+  documents: IdentityDocumentDetail[];
+  fieldBreakdown: IdentityFieldEntry[];
+}
+
+/** Raw `fields` row shape, as returned by GET /api/extractions/:id/fields. */
+export interface ReviewField {
+  id: string;
+  field_name: string;
+  field_value: string | null;
+  confidence: number;
+  validation_status: string;
+  corrected_value: string | null;
+  approved: number;
 }
 
 export interface PinnedDependency {

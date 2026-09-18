@@ -19,7 +19,15 @@ export const GeminiChatbot: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages, isLoading]);
+  useEffect(() => {
+    // A bare-expression arrow body returns scrollIntoView()'s own result to
+    // React as the effect's return value. It's normally undefined, but a
+    // useEffect callback must return only undefined or a cleanup function --
+    // anything else throws "destroy is not a function" the moment React
+    // unmounts it (e.g. during StrictMode's dev double-invoke), which had no
+    // error boundary above it and blanked the entire app.
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
 
   const handleSendMessage = async (textToSend?: string) => {
     const msg = (textToSend || input).trim();
