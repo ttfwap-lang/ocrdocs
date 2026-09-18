@@ -1,0 +1,11 @@
+[
+  {"id": "clean_abn_bsb", "text": "Invoice 120. ABN 51 824 753 556. Please pay BSB 062-000 Acct 12345678",
+   "expect": {"abn": "51824753556", "bsb": "062000"}},
+  {"id": "abn_phone_collision", "text": "Our ABN is 51 824 753 556. Ph: 0412 345 678. BSB: 234-567",
+   "expect": {"abn": "51824753556", "bsb": "234567", "mobile_number": "0412345678"}},
+  {"id": "abn_alone_no_bsb", "text": "Employer ABN: 51 824 753 556", "expect": {"abn": "51824753556", "bsb": ""}},
+  {"id": "phone_alone_no_bsb", "text": "Mobile: 0412 345 678", "expect": {"bsb": "", "mobile_number": "0412345678"}},
+  {"id": "card_not_abn", "text": "Card Number 4564 1234 1234 1234", "expect": {"abn": ""}},
+  {"id": "invalid_abn_rejected", "text": "ABN 51 824 753 557", "expect": {"abn": ""}},
+  {"id": "dob_labelled", "text": "Statement Date: 12/10/2025. D.O.B: 05/08/1990", "expect": {"date_of_birth": "05/08/1990"}}
+]
