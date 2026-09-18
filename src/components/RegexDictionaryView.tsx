@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Search, Copy, Check } from 'lucide-react';
 import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../data/bankFields';
 import { FieldCategory } from '../types';
@@ -32,13 +32,16 @@ export const RegexDictionaryView: React.FC = () => {
     setTimeout(() => setCopiedId(null), 1800);
   };
 
-  const categories = [
-    { id: 'all', label: 'ALL FIELDS' },
-    { id: 'identity', label: 'IDENTITY (1-8, 15-16)' },
-    { id: 'income', label: 'INCOME (21-23)' },
-    { id: 'assets_liabilities', label: 'LIABILITIES (26-28)' },
-    { id: 'facility', label: 'FACILITY (29-30, BSB)' },
-  ];
+  const categories = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const f of allFields) {
+      counts[f.category] = (counts[f.category] || 0) + 1;
+    }
+    const dynamic = Object.keys(counts)
+      .sort()
+      .map((cat) => ({ id: cat, label: `${cat.toUpperCase()} (${counts[cat]})` }));
+    return [{ id: 'all', label: 'ALL FIELDS' }, ...dynamic];
+  }, [allFields]);
 
   return (
     <div className="space-y-4">

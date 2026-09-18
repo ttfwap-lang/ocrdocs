@@ -33,3 +33,15 @@ tools:
             - env
             - sed *
             - /mnt/c/Program\ Files/GitHub\ CLI/gh.exe auth *
+            - Set-ExecutionPolicy *
+            - python *
+            - Remove-Item *
+            - Write-Output *
+            - '? { $_ *'
+            - '% { "  $_" *'
+            - Select-Object *
+            - Write-Output "(end importers)"
+mcp_servers:
+    poolside__agent__idea:
+        allow:
+            - read_file

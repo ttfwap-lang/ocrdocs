@@ -56,7 +56,7 @@ export const AUDIT_SECTIONS: ScriptAuditSection[] = [
   },
   {
     id: 'field-dictionary-divergence',
-    title: 'Two field dictionaries (99 TypeScript fields vs 30 Python fields)',
+    title: 'Two field dictionaries (99 TypeScript fields vs 60 Python fields)',
     severity: 'MEDIUM',
     status: 'mitigated',
     problem:

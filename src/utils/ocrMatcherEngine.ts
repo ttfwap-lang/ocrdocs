@@ -166,7 +166,7 @@ function extractSingleFieldWithContext(
 
     // BSB Specialized Extraction & APRA Bank Directory Lookup
     if (field.id === 'bsb') {
-      const bsbMatches = Array.from(text.matchAll(/\b\d{3}[- ]?\d{3}\b/g));
+      const bsbMatches = Array.from(text.matchAll(/\b\d{3}[- ]\d{3}\b/g));
       if (bsbMatches.length > 0) {
         // Filter out non-BSB numbers by looking for "bsb" anchor nearby
         let bestBsb = bsbMatches[0];

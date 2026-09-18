@@ -139,7 +139,7 @@ app.get("/api/health", (_req, res) => {
   const dgxWorkerConfigured = Boolean(process.env.DGX_WORKER_TOKEN);
   res.json({
     status: "ok",
-    service: "ngx-spark-banking-ocr-engine",
+    service: "ocrdocs-banking-ocr",
     timestamp: new Date().toISOString(),
     services: {
       ocr_worker: { available: true, mode: "live" },
@@ -284,8 +284,8 @@ app.post("/api/chat", async (req, res) => {
     }));
 
     const defaultSystemInstruction =
-      "You are the Senior NGX Spark & Australian Banking OCR Systems Architect. " +
-      "You specialize in enterprise OCR pipelines, PySpark on NVIDIA DGX/NGX GPU clusters, " +
+      "You are a Senior Australian Banking OCR Systems Architect. " +
+      "You specialize in enterprise OCR pipelines, a multi-pass Tesseract/PaddleOCR/EasyOCR/Surya ensemble running on NVIDIA DGX (Grace Blackwell) GPU clusters, " +
       "VRAM throttling, CUDA stream concurrency, DuckDB integration, APRA banking regulatory formats, " +
       "and ultra-high recall typo-tolerant regex extraction across Australian mortgage, credit card, " +
       "and KYC banking application forms. Give clear, production-grade technical guidance with code snippets.";
@@ -736,7 +736,7 @@ async function startServer(options?: {
     config = loadAndValidateEnv(envSource);
   } catch (err) {
     if (err instanceof EnvValidationError) {
-      console.error(`[NGX-CORE] ${err.message}`);
+      console.error(`[OCRD] ${err.message}`);
       exitFn(err.exitCode);
       throw err;
     }
@@ -793,7 +793,7 @@ async function startServer(options?: {
   }
 
   console.log(
-    `[NGX-CORE] High-Throughput Server running on ${config.host}:${config.port} (env=${config.nodeEnv})`,
+    `[OCRD] High-Throughput Server running on ${config.host}:${config.port} (env=${config.nodeEnv})`,
   );
 
   return { config, httpServer };

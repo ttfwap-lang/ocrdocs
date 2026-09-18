@@ -12,13 +12,11 @@
 set -euo pipefail
 
 readonly SPARK_USER="${SPARK_USER:-flak3dd}"
-readonly SPARK_IP="${SPARK_IP:-gx10-d0e7.local}"
+readonly SPARK_IP="${SPARK_IP:-gx10.local}"
 readonly REMOTE_BASE="/mnt/nvme/ocr_pipeline"
 readonly OCRDOCS_SERVER_URL="${OCRDOCS_SERVER_URL:-}"
 readonly DGX_WORKER_TOKEN="${DGX_WORKER_TOKEN:-}"
 
-# Optional local directory fallback if offline
-readonly LOCAL_FALLBACK_DIR="${LOCAL_DIR:-/d/Recovered_C/_Raw_Data_and_Databases}"
 
 readonly SSH_OPTS=(
     "-o" "StrictHostKeyChecking=no"
@@ -28,7 +26,7 @@ readonly SSH_OPTS=(
 )
 
 echo "=============================================================================="
-echo " [NGX-ORCHESTRATOR] Australian Banking Multi-Pass OCR Deployment Pipeline"
+echo " [OCRD-DEPLOY] Australian Banking Multi-Pass OCR Deployment Pipeline"
 echo " Target DGX Host: ${SPARK_USER}@${SPARK_IP}:${REMOTE_BASE}"
 echo " App Server URL: ${OCRDOCS_SERVER_URL:-not required when local engine exists}"
 echo " Optimization Passes: Max 10 with Monotonic Regression Verification"

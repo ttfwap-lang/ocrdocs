@@ -48,26 +48,26 @@ export function formatListenError(
 ): string {
   if (err.code === 'EADDRINUSE') {
     return (
-      `[NGX-CORE] FATAL EADDRINUSE: port ${port} on ${host} is already in use. ` +
+      `[OCRD] FATAL EADDRINUSE: port ${port} on ${host} is already in use. ` +
       `Stop the conflicting process (e.g. netstat/Get-NetTCPConnection) or set PORT to a free port. ` +
       `Exiting with code 1.`
     );
   }
   if (err.code === 'EACCES') {
     return (
-      `[NGX-CORE] FATAL EACCES: permission denied binding ${host}:${port}. ` +
+      `[OCRD] FATAL EACCES: permission denied binding ${host}:${port}. ` +
       `Choose a port >= 1024 or elevate privileges. Exiting with code 1.`
     );
   }
   if (err.code === 'EADDRNOTAVAIL') {
     return (
-      `[NGX-CORE] FATAL EADDRNOTAVAIL: host ${host} is not available on this machine. ` +
+      `[OCRD] FATAL EADDRNOTAVAIL: host ${host} is not available on this machine. ` +
       `Check HOST setting. Exiting with code 1.`
     );
   }
   const code = err.code || 'LISTEN_ERROR';
   return (
-    `[NGX-CORE] FATAL ${code}: failed to bind ${host}:${port} — ${err.message}. ` +
+    `[OCRD] FATAL ${code}: failed to bind ${host}:${port} — ${err.message}. ` +
     `Exiting with code 1.`
   );
 }
@@ -133,14 +133,14 @@ export function createShutdownManager(
   };
 
   const onUncaughtException = (err: Error) => {
-    log(`[NGX-CORE] uncaughtException: ${err.stack || err.message}`);
+    log(`[OCRD] uncaughtException: ${err.stack || err.message}`);
     void shutdown('uncaughtException').then(() => exitFn(1));
   };
 
   const onUnhandledRejection = (reason: unknown) => {
     const message =
       reason instanceof Error ? reason.stack || reason.message : String(reason);
-    log(`[NGX-CORE] unhandledRejection: ${message}`);
+    log(`[OCRD] unhandledRejection: ${message}`);
     void shutdown('unhandledRejection').then(() => exitFn(1));
   };
 
@@ -156,7 +156,7 @@ export function createShutdownManager(
     let exitCode = 0;
 
     shutdownPromise = (async () => {
-      log(`[NGX-CORE] Shutdown initiated (reason=${reason}); draining connections…`);
+      log(`[OCRD] Shutdown initiated (reason=${reason}); draining connections…`);
 
       try {
         await config.onShutdown();
@@ -164,7 +164,7 @@ export function createShutdownManager(
         clean = false;
         exitCode = 1;
         log(
-          `[NGX-CORE] onShutdown hook failed: ${err instanceof Error ? err.message : String(err)}`,
+          `[OCRD] onShutdown hook failed: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
 
@@ -173,7 +173,7 @@ export function createShutdownManager(
           if (closeErr) {
             clean = false;
             exitCode = 1;
-            log(`[NGX-CORE] server.close error: ${closeErr.message}`);
+            log(`[OCRD] server.close error: ${closeErr.message}`);
           }
           resolve();
         });
@@ -198,7 +198,7 @@ export function createShutdownManager(
         exitCode = 1;
         drainedConnections = sockets.size;
         log(
-          `[NGX-CORE] Shutdown timeout after ${timeoutMs}ms — forcing ${sockets.size} socket destroy(s)`,
+          `[OCRD] Shutdown timeout after ${timeoutMs}ms — forcing ${sockets.size} socket destroy(s)`,
         );
         if (config.drainSockets) {
           destroySockets();
@@ -224,7 +224,7 @@ export function createShutdownManager(
       };
 
       log(
-        `[NGX-CORE] Shutdown complete clean=${clean} exitCode=${exitCode} durationMs=${result.durationMs}`,
+        `[OCRD] Shutdown complete clean=${clean} exitCode=${exitCode} durationMs=${result.durationMs}`,
       );
       return result;
     })();

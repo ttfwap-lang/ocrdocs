@@ -1,6 +1,6 @@
 {
   "name": "Remix NGX Spark Australian Banking OCR Engine",
-  "description": "Enterprise OCR pipeline custom-fitted for DGX worker processing, local document intake, 10-pass progressive optimization with regression verification and early-stop convergence, and 30 Australian banking field matchers.",
+  "description": "Enterprise OCR pipeline custom-fitted for DGX worker processing, local document intake, 10-pass progressive optimization with regression verification and early-stop convergence, and 60 Australian banking field matchers.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

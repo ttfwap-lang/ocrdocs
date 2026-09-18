@@ -11,7 +11,7 @@ export const GeminiChatbot: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([{
     id: 'init-1',
     role: 'model',
-    content: "Connection established. Secure PySpark AI Architect is online. Awaiting inquiry regarding DGX/NGX configuration, Regex parsing, or NLP implementation.",
+    content: "Connection established. Secure OCR AI Architect is online. Awaiting inquiry regarding DGX configuration, Regex parsing, or NLP implementation.",
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   }]);
   const [input, setInput] = useState<string>('');
@@ -37,7 +37,7 @@ export const GeminiChatbot: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
-          systemInstruction: 'You are the Senior NGX Spark & Australian Banking OCR Systems Architect operating inside a secure, classified terminal. Be highly technical, concise, and provide production-grade PySpark/Regex code snippets.',
+          systemInstruction: 'You are the Senior Australian Banking OCR Systems Architect operating inside a secure, classified terminal. Be highly technical, concise, and provide production-grade Regex/OCR code snippets.',
         }),
       });
 

@@ -33,7 +33,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex flex-col justify-center">
               <div className="flex items-center gap-2">
                 <span className="glitch-heading font-bold text-matrix-400 text-xs sm:text-sm">
-                  NGX_SPARK // OCR
+                  OCRD // OCR
                 </span>
                 <span className="bg-matrix-900/60 text-matrix-400 border border-matrix-500/40 text-[10px] font-mono tracking-wider px-2 py-0.5 uppercase hidden sm:inline">
                   DGX Cluster

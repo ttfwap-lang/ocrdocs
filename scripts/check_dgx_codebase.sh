@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Script 4: DGX End-to-End Codebase & Environment Inspector
-# Execution Context: Run directly on DGX host (flak3dd@gx10-d0e7) or from any remote
+# Execution Context: Run directly on DGX host (flak3dd@gx10.local) or from any remote
 # Purpose:
 #   1. Scans existing files, git repo, and scripts in /mnt/nvme/ocr_pipeline and $HOME
 #   2. Checks Python virtualenv, CUDA / PyTorch, GPU architecture, and DuckDB

@@ -193,7 +193,7 @@ export const AuditAndEngineView: React.FC = () => {
               <span className="text-[10px] px-1.5 py-0.5 bg-cyan-950/50 text-cyan-300 rounded font-mono border border-cyan-500/30">Python 3</span>
             </div>
             <p className="text-[11px] text-slate-500 mt-1 font-mono">
-              10-pass progressive loop, 30 Australian banking fields, regression verification, early stop.
+              10-pass progressive loop, 60 Australian banking fields, regression verification, early stop.
             </p>
           </div>
 

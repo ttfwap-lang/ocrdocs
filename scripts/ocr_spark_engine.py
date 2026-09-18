@@ -4,7 +4,7 @@
 # Execution Context: Deployed and executed on DGX NVMe (/mnt/nvme/ocr_pipeline)
 # Features:
 #   - Local file and DGX worker document processing
-#   - 30 Typo-Tolerant Australian Banking Field Matchers + APRA Validations
+#   - 60 Typo-Tolerant Australian Banking Field Matchers + APRA Validations
 #   - 10-Pass Progressive Optimization Loop with Regression Verification
 #   - Monotonic Quality Invariant (No high-confidence field degradation)
 #   - Early-Stop Convergence Detection
@@ -144,7 +144,7 @@ logging.basicConfig(
 )
 
 # ==============================================================================
-# 30 AUSTRALIAN BANKING FIELDS REGEX DICTIONARY (Typo-Tolerant & APRA Aligned)
+# 60 AUSTRALIAN BANKING FIELDS REGEX DICTIONARY (Typo-Tolerant & APRA Aligned)
 # ==============================================================================
 BANK_FIELD_PATTERNS: Dict[str, re.Pattern] = {
     "title_salutation": re.compile(
@@ -702,7 +702,7 @@ def _run_trocr(image: Image.Image) -> str:
     return _trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
 def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
-    """Extracts and validates all 30 Australian banking application fields.
+    """Extracts and validates all 60 Australian banking application fields.
 
     line_confidences (optional): maps a raw OCR'd line of text to the real
     per-engine confidence that produced it (see run_pass_ocr). When supplied,
@@ -771,7 +771,7 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
         data["email_address"] = emails[0]
         confidences["email_address"] = 0.98
 
-    # Contextual line scanning for the 30 fields
+    # Contextual line scanning for the 60 fields
     for line in lines:
         cleaned_line = line.strip()
         if not cleaned_line:
@@ -1074,7 +1074,7 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
 def init_duckdb():
     with duckdb.connect(str(DB_PATH)) as con:
         con.execute("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=15000;")
-        # Master table with 30 fields + audit metadata
+        # Master table with 60 fields + audit metadata
         cols = ", ".join([f"{k} VARCHAR" for k in BANK_FIELD_PATTERNS.keys()])
         con.execute(f"""
             CREATE TABLE IF NOT EXISTS identities (
@@ -1188,7 +1188,7 @@ def execute_pass_and_verify(pass_num: int, files: List[str]) -> Dict[str, Any]:
         valid_abns = int(df_all["abn_valid"].sum()) if "abn_valid" in df_all else 0
         valid_bsbs = int(df_all["bsb_valid"].sum()) if "bsb_valid" in df_all else 0
         
-        # Count non-empty fields across all 30 columns
+        # Count non-empty fields across all 60 columns
         field_cols = list(BANK_FIELD_PATTERNS.keys())
         total_filled_fields = int(df_all[field_cols].apply(lambda s: s.str.len() > 0).sum().sum())
 
@@ -1227,7 +1227,7 @@ def execute_pass_and_verify(pass_num: int, files: List[str]) -> Dict[str, Any]:
 # MAIN MULTI-PASS CONTROLLER LOOP (MAX 10 PASSES)
 # ==============================================================================
 def main():
-    parser = argparse.ArgumentParser(description="NGX Spark Multi-Pass OCR & Regression Engine")
+    parser = argparse.ArgumentParser(description="Multi-Pass OCR & Regression Engine")
     parser.add_argument("--pass-num", type=int, default=None, help="Execute specific pass number (1-10)")
     parser.add_argument("--max-passes", type=int, default=10, help="Maximum number of passes in loop (default: 10)")
     args = parser.parse_args()

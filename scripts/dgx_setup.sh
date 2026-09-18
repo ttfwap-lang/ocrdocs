@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Script 1: DGX Spark ARM64 Environment & ML Bootstrap (Hardened Production)
-# Execution Context: Run directly on DGX terminal (flak3dd@gx10-d0e7)
-# Supports: Multi-Pass OCR (10 passes), 30 Australian Banking Fields,
+# Execution Context: Run directly on DGX terminal (flak3dd@gx10.local)
+# Supports: Multi-Pass OCR (10 passes), 60 Australian Banking Fields,
 #           CUDA 12.4 ARM64, and DuckDB WAL.
 # ==============================================================================
 

@@ -12,7 +12,7 @@ export const CONTACT_EXTENDED_FIELDS: BankFieldDefinition[] = [
     name: 'Home Phone / Landline',
     label: 'home_phone',
     category: 'contact',
-    maxToleranceRegex: '(h[o0]me[_-]?ph[o0]ne|[l1]and[l1]ine|fixed[_-]?[l1]ine|residentia[l1][_-]?ph[o0]ne|h[o0]me[_-]?te[l1]eph[o0]ne|private[_-]?ph[o0]ne|fixed[_-]?ph[o0]ne|h[o0]me[_-]?te[l1])',
+    maxToleranceRegex: '(h[o0]me[_-]?ph[o0]ne|[l1]and[l1]ine|fixed[_-]?[l1]ine|residentia[l1][_-]?ph[o0]ne|h[o0]me[_-]?te[l1]eph[o0]ne|private[_-]?ph[o0]ne|fixed[_-]?ph[o0]ne)',
     description: 'Matches Australian residential fixed-line numbers including 02, 03, 07, or 08 area codes.',
     targetDataType: 'phone',
     exampleLabels: ['Home Phone', 'Landline', 'Fixed Line', 'Home Telephone'],

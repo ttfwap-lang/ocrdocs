@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../data/bankFields';
 import {
   FileText,
   AlertCircle,
@@ -228,17 +229,17 @@ export const MatcherStudio: React.FC<MatcherStudioProps> = ({
     }
   };
 
-  const categories = [
-    { id: 'all', label: 'ALL FIELDS' },
-    { id: 'identity', label: 'IDENTITY (1-8, 15-16)' },
-    { id: 'residential', label: 'RESIDENTIAL (9-12)' },
-    { id: 'contact', label: 'CONTACT (13-14)' },
-    { id: 'employment', label: 'EMPLOYMENT (17-20)' },
-    { id: 'income', label: 'INCOME (21-23)' },
-    { id: 'expenses', label: 'EXPENSES (24)' },
-    { id: 'assets_liabilities', label: 'ASSETS/LIAB (25-28)' },
-    { id: 'facility', label: 'FACILITY (29-30)' },
-  ];
+  const allFields = useMemo(() => [...BANK_FIELD_DEFINITIONS, ...CORE_IDENTIFIER_DEFINITIONS], []);
+  const categories = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const f of allFields) {
+      counts[f.category] = (counts[f.category] || 0) + 1;
+    }
+    const dynamic = Object.keys(counts)
+      .sort()
+      .map((cat) => ({ id: cat, label: `${cat.toUpperCase()} (${counts[cat]})` }));
+    return [{ id: 'all', label: 'ALL FIELDS' }, ...dynamic];
+  }, [allFields]);
 
   return (
     <div className="space-y-4">
@@ -257,7 +258,7 @@ export const MatcherStudio: React.FC<MatcherStudioProps> = ({
           <div className="border border-slate-800 bg-black p-3">
             <span className="text-[10px] text-slate-500 block uppercase tracking-widest mb-1">Data Hits</span>
             <span className="text-2xl font-bold text-cyan-400">{matchedFields.length}</span>
-            <span className="text-xs text-slate-600"> / 33</span>
+            <span className="text-xs text-slate-600"> / {extractionResults.length || 99}</span>
           </div>
           <div className="border border-slate-800 bg-black p-3">
             <span className="text-[10px] text-slate-500 block uppercase tracking-widest mb-1">Confidence</span>
