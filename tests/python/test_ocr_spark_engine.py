@@ -466,6 +466,22 @@ def test_line_scan_still_accepts_a_genuinely_correct_labelled_bsb():
     assert result["fields"]["bsb"] == "062-000"
 
 
+def test_one_line_populates_at_most_one_field():
+    """Regression test for a real overlap in BANK_FIELD_PATTERNS:
+    salary_frequency's bare "annual" alternative also matches inside
+    "Gross Annual Income:", so this single line used to populate BOTH
+    fields with the dollar value -- salary_frequency ending up set to
+    "$85,000" instead of an actual frequency like "Fortnightly"."""
+    text = "Gross Annual Income: $85,000"
+    result = engine.extract_australian_banking_fields(text)
+    assert result["fields"]["gross_annual_income"] == "$85,000"
+    assert result["fields"]["salary_frequency"] == "", (
+        "salary_frequency should not be populated by a line that labels "
+        "gross_annual_income -- got "
+        f"{result['fields']['salary_frequency']!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # One corrupted PDF page must not discard the rest of the document.
 #

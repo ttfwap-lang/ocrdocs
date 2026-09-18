@@ -883,6 +883,18 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
                     if not data[field] or confidences[field] < line_conf:
                         data[field] = val
                         confidences[field] = line_conf
+                    # A handful of BANK_FIELD_PATTERNS alternatives overlap
+                    # by design (e.g. salary_frequency's bare "annual"
+                    # keyword also matches inside "Gross Annual Income:") --
+                    # without this break, a single "Label: value" line would
+                    # assign the SAME value to every field whose pattern
+                    # happens to match somewhere in that line, not just the
+                    # one it's actually labelling. One line labels at most
+                    # one field; stop scanning further fields once one is
+                    # accepted (dict iteration order picks the first,
+                    # most-specific match -- gross_annual_income before the
+                    # looser salary_frequency, per the example above).
+                    break
 
     # Currency bindings for income/expense fields
     if currencies:
