@@ -471,6 +471,65 @@ class _FakePdfDocument:
         pass
 
 
+class _FakeDobTextpage:
+    def get_text_bounded(self) -> str:
+        return "Marital Status: Married"
+
+
+class _FakeDobPage:
+    def get_textpage(self) -> _FakeDobTextpage:
+        return _FakeDobTextpage()
+
+    def render(self, scale: float) -> _FakeBitmap:
+        return _FakeBitmap()
+
+
+class _FakeDobPdfDocument:
+    def __init__(self, _path):
+        self._pages = [_FakeDobPage()]
+
+    def __iter__(self):
+        return iter(self._pages)
+
+    def close(self):
+        pass
+
+
+def test_native_text_keeps_high_confidence_even_when_other_images_are_ocrd(tmp_path, monkeypatch):
+    """Regression test: on pass_num > 1, every PDF page is rasterized and
+    OCR'd regardless of already having native text (see the rasterize
+    condition in process_single_file_for_pass). That made
+    ocr_line_confidences non-empty even for a page whose text came from the
+    native layer, so extract_australian_banking_fields's per-line .get()
+    fell through to the conservative 0.75 OCR-guess default for the native
+    line -- silently downgrading exact text to a guess confidence purely
+    because some OTHER image on the same pass happened to need OCR too.
+    Native lines must keep their 0.95 confidence regardless. Uses a field
+    (marital_status) with no whole-text regex sweep of its own, so its
+    confidence can only come from the per-line contextual scan -- an
+    unambiguous signal of which code path actually set it."""
+    monkeypatch.setattr(engine.pdfium, "PdfDocument", _FakeDobPdfDocument)
+    monkeypatch.setattr(
+        engine,
+        "run_pass_ocr",
+        lambda img, pass_num: ("unrelated ocr noise", ["Tesseract"], {"unrelated ocr noise": 0.3}),
+    )
+    fake_pdf = tmp_path / "statement.pdf"
+    fake_pdf.write_bytes(b"%PDF-1.4 not a real pdf, replaced by the fake above")
+
+    # pass_num=2 forces rasterization (and thus OCR) of every page, even the
+    # ones that already yielded native text.
+    status, _fpath, result = engine.process_single_file_for_pass((str(fake_pdf), 2))
+
+    assert status == "SUCCESS"
+    assert result["fields"]["marital_status"] == "Married"
+    assert result["confidences"]["marital_status"] == 0.95, (
+        "a native-text field's confidence must stay at the high fixed value "
+        "even when other images on the same pass were OCR'd, got "
+        f"{result['confidences']['marital_status']}"
+    )
+
+
 def test_one_corrupted_pdf_page_does_not_discard_the_rest(tmp_path, monkeypatch):
     monkeypatch.setattr(engine.pdfium, "PdfDocument", _FakePdfDocument)
     fake_pdf = tmp_path / "statement.pdf"

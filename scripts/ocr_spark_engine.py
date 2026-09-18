@@ -1014,6 +1014,23 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     if not combined_text.strip():
         return "NOOCR", fpath, {}
 
+    # Pre-seed each native-text line's own confidence at the high fixed
+    # value, rather than relying on `line_confidences is None` to mean "this
+    # whole pass is native". That only held for a pass with ZERO images. On
+    # pass_num > 1, every PDF page is ALSO rasterized and OCR'd regardless of
+    # already having native text (see the rasterize condition above), so
+    # ocr_line_confidences is non-empty even for a page whose text came from
+    # the native layer. Without this, a native line's exact text falls
+    # through extract_australian_banking_fields's per-line .get(default)
+    # to the conservative 0.75 OCR-guess default -- silently downgrading
+    # exact text to a guess confidence purely because some OTHER image on
+    # the same pass happened to need OCR too.
+    for txt in raw_texts:
+        for line in txt.splitlines():
+            cleaned = line.strip()
+            if cleaned and cleaned not in ocr_line_confidences:
+                ocr_line_confidences[cleaned] = 0.95
+
     # Only pass real confidences when at least one line actually went through
     # an OCR engine this pass — a native-text-only document (no images at
     # all) should get the "exact text" confidence path, not an empty dict
