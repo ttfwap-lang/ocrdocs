@@ -42,6 +42,8 @@ export interface BankFieldDefinition {
   label: string;
   category: FieldCategory;
   maxToleranceRegex: string;
+  /** When set, maxToleranceRegex is a VALUE pattern and this is the LABEL pattern that must precede it. */
+  labelRegex?: string;
   description: string;
   targetDataType: 'text' | 'date' | 'currency' | 'number' | 'email' | 'phone' | 'identifier';
   exampleLabels: string[];
@@ -49,7 +51,7 @@ export interface BankFieldDefinition {
 }
 
 export interface AustralianValidationDetail {
-  ruleCode: 'AU_DOB_FORMAT' | 'AU_POSTCODE_4DIGIT' | 'AU_ABN_MOD89' | 'AU_BSB_FORMAT' | 'AU_PHONE_FORMAT' | 'AU_GENERAL';
+  ruleCode: 'AU_DOB_FORMAT' | 'AU_POSTCODE_4DIGIT' | 'AU_ABN_MOD89' | 'AU_BSB_FORMAT' | 'AU_PHONE_FORMAT' | 'AU_TFN_MOD11' | 'AU_ACN_MOD10' | 'AU_MEDICARE_MOD10' | 'AU_CARD_LUHN' | 'AU_GENERAL';
   ruleName: string;
   isValid: boolean;
   message: string;

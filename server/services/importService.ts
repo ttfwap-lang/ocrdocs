@@ -23,6 +23,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { spawn } from "node:child_process";
 import {
   copyFileSync,
@@ -35,7 +36,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { extname, join } from "node:path";
+import { basename, extname, join } from "node:path";
 import type { DocumentRepo } from "../db/repositories/documentRepo";
 import type { JobRepo } from "../db/repositories/jobRepo";
 import { DEFAULT_FILE_SIZE_LIMIT, SUPPORTED_EXTENSIONS } from "../middleware/upload";
@@ -131,6 +132,8 @@ export function isAccepted(originalname: string, size: number): boolean {
   return true;
 }
 
+const IMPORT_ID_RE = /^[a-z0-9]+-[a-z0-9]{6}$/;
+
 function newImportId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -145,6 +148,9 @@ export function createImportService(cfg: ImportConfig) {
   }
 
   function recordPath(importId: string): string {
+    if (!IMPORT_ID_RE.test(importId)) {
+      throw new Error("invalid import id");
+    }
     return join(registryDir, `${importId}.json`);
   }
 
@@ -219,7 +225,7 @@ export function createImportService(cfg: ImportConfig) {
   function getRecord(importId: string): ImportRecord {
     const p = recordPath(importId);
     if (!existsSync(p)) {
-      return { importId, stagedDir: "", status: "staged" };
+      return { importId, stagedDir: "", status: "failed" };
     }
     return JSON.parse(readFileSync(p, "utf-8")) as ImportRecord;
   }
@@ -270,7 +276,18 @@ export function createImportService(cfg: ImportConfig) {
     });
   }
 
-  function finalize(importId: string): FinalizeResult {
+  /** Streaming sha256: never holds a whole (up to 50 MB) file in memory. */
+  function hashFile(path: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const h = createHash("sha256");
+      createReadStream(path)
+        .on("data", (d) => h.update(d))
+        .on("error", reject)
+        .on("end", () => resolve(h.digest("hex")));
+    });
+  }
+
+  async function finalize(importId: string): Promise<FinalizeResult> {
     const manifest = getRecord(importId);
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const parsedDir = join(cfg.parsedDir, ts);
@@ -280,6 +297,8 @@ export function createImportService(cfg: ImportConfig) {
     // (already ensured by stageImport's ensureDirs), and renaming onto an
     // existing dir throws EEXIST on Windows.
     renameSync(manifest.stagedDir, parsedDir);
+    // Record the move immediately so a crash mid-enqueue never orphans the dir.
+    writeRecord({ importId, stagedDir: parsedDir, status: "parsed", parsedDir, jobIds: [] });
 
     const jobIds: string[] = [];
     for (const entry of readdirSync(parsedDir)) {
@@ -289,12 +308,18 @@ export function createImportService(cfg: ImportConfig) {
       }
       // Re-apply the accept filter: pre-parse output may contain files the
       // engine can't OCR (e.g. extracted binaries) or empty leftovers.
-      if (!isAccepted(entry, 0)) {
+      if (!isAccepted(entry, statSync(full).size)) {
         continue;
       }
       // Content-hash dedup mirrors POST /api/documents: identical bytes must
       // not create a second document row or a second OCR job.
-      const hash = createHash("sha256").update(readFileSync(full)).digest("hex");
+      // Awaiting a stream read yields to the event loop between files, so a 30k-file batch cannot freeze the server.
+      let hash: string;
+      try {
+        hash = await hashFile(full);
+      } catch {
+        continue; // unreadable file: skip it, don't fail the whole batch
+      }
       const existing = cfg.documentRepo.getByContentHash(hash);
       if (existing) {
         continue;
@@ -341,7 +366,40 @@ export function createImportService(cfg: ImportConfig) {
       .sort((a, b) => b.stagedDir.localeCompare(a.stagedDir));
   }
 
-  return { stageImport, runPreParse, finalize, failImport, getRecord, listRecords };
+  /**
+   * 24/7 queue drain: move everything loose in the queued root (any file type,
+   * archives included) into a fresh staged dir, so pre-parse can clean it.
+   * Skips in-flight API stages, the registry, and files still being written.
+   */
+  function stageQueuedRoot(settleMs = 10_000): string | null {
+    if (!existsSync(cfg.queuedDir)) {
+      return null;
+    }
+    ensureDirs();
+    const now = Date.now();
+    const pick: string[] = [];
+    for (const entry of readdirSync(cfg.queuedDir, { withFileTypes: true })) {
+      if (entry.name.startsWith(".") || (entry.isDirectory() && IMPORT_ID_RE.test(entry.name))) {
+        continue;
+      }
+      const full = join(cfg.queuedDir, entry.name);
+      if (now - statSync(full).mtimeMs < settleMs) {
+        continue;
+      }
+      pick.push(full);
+    }
+    if (pick.length === 0) {
+      return null;
+    }
+    const importId = newImportId();
+    const stagedDir = join(cfg.queuedDir, importId);
+    mkdirSync(stagedDir, { recursive: true });
+    pick.forEach((src, i) => renameSync(src, join(stagedDir, `${i}_${basename(src)}`)));
+    writeRecord({ importId, stagedDir, status: "staged" });
+    return importId;
+  }
+
+  return { stageQueuedRoot, stageImport, runPreParse, finalize, failImport, getRecord, listRecords };
 }
 
 export { EXT_TO_MIME };

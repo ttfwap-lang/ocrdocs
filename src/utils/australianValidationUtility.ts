@@ -14,6 +14,8 @@ export interface DobValidationOutput {
   day?: number;
   month?: number;
   year?: number;
+  /** Day and month are both <= 12 and differ, so DD/MM vs MM/DD cannot be told apart from the text alone. */
+  ambiguousOrder?: boolean;
 }
 
 export interface PostcodeValidationOutput {
@@ -91,6 +93,39 @@ const MONTH_ABBR = [
  * Enforces standard Australian DD/MM/YYYY formatting, calendar validity,
  * realistic age bounds, and non-future verification.
  */
+const MAX_APPLICANT_AGE = 120;
+
+function minApplicantAge(): number {
+  const raw = typeof process !== 'undefined' ? Number(process.env?.OCRDOCS_MIN_APPLICANT_AGE) : NaN;
+  return Number.isFinite(raw) && raw >= 0 ? raw : 16;
+}
+
+/** Current calendar date in Australia/Sydney as a local-midnight Date (time-of-day zeroed). */
+function australianToday(): Date {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date()).split('-').map(Number);
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  } catch {
+    return new Date();
+  }
+}
+
+const OCR_DIGIT_FIXES: Record<string, string> = {
+  O: '0', o: '0', Q: '0', I: '1', l: '1', '|': '1', i: '1', S: '5', B: '8',
+};
+
+/**
+ * Repairs OCR letter/digit confusables inside a digit-only identifier candidate.
+ * Returns null when nothing needed repair. The caller MUST re-validate (checksum/format) and only
+ * accept the repaired value if that passes -- repair alone is never evidence.
+ */
+export function repairOcrDigits(candidate: string): string | null {
+  const repaired = candidate.replace(/[OoQIli|SB]/g, (c) => OCR_DIGIT_FIXES[c]);
+  return repaired === candidate ? null : repaired;
+}
+
 export function validateAustralianDob(rawDob: string): DobValidationOutput {
   if (!rawDob || !rawDob.trim()) {
     return {
@@ -172,8 +207,9 @@ export function validateAustralianDob(rawDob: string): DobValidationOutput {
     };
   }
 
-  // Year & Future Date Verification
-  const today = new Date();
+  // "Today" is evaluated in Australian civil time (Sydney), not the server's zone, so a 23:00 UTC
+  // request on the birthday's eve is not a day off. Falls back to local time if Intl lacks the zone.
+  const today = australianToday();
   const currentYear = today.getFullYear();
   const birthDate = new Date(year, month - 1, day);
 
@@ -201,11 +237,29 @@ export function validateAustralianDob(rawDob: string): DobValidationOutput {
     age -= 1;
   }
 
+  if (age > MAX_APPLICANT_AGE) {
+    return {
+      isValid: false,
+      errorCode: 'OUT_OF_RANGE',
+      message: `Age ${age} exceeds the plausible maximum of ${MAX_APPLICANT_AGE}.`,
+    };
+  }
+  const minAge = minApplicantAge();
+  if (age < minAge) {
+    return {
+      isValid: false,
+      errorCode: 'UNDERAGE',
+      message: `Age ${age} is below the minimum applicant age of ${minAge}; needs review.`,
+      age,
+    };
+  }
+
   const paddedDay = day.toString().padStart(2, '0');
   const paddedMonth = month.toString().padStart(2, '0');
   const canonicalDate = `${paddedDay}/${paddedMonth}/${year}`;
 
   return {
+    ambiguousOrder: day <= 12 && month <= 12 && day !== month,
     isValid: true,
     message: `Valid Australian DOB: ${canonicalDate} (Age: ${age})`,
     canonicalDate,
@@ -296,6 +350,65 @@ export function validateAustralianPostcode(
     allocatedState,
     isStateCoherent,
   };
+}
+
+export interface ChecksumIdOutput {
+  isValid: boolean;
+  canonical?: string;
+  message: string;
+}
+
+const weightedSum = (digits: number[], weights: number[]): number =>
+  digits.reduce((acc, d, i) => acc + d * weights[i], 0);
+
+/** ATO TFN: 9 digits (weights 1,4,3,7,5,8,6,9,10) or legacy 8 digits (10,7,8,4,6,3,5,1), sum mod 11 === 0. */
+export function validateAustralianTfn(raw: string): ChecksumIdOutput {
+  const digits = (raw || '').replace(/[\s-]/g, '');
+  if (!/^\d{8,9}$/.test(digits)) return { isValid: false, message: 'TFN must be 8 or 9 digits.' };
+  const d = digits.split('').map(Number);
+  const sum = weightedSum(d, d.length === 9 ? [1, 4, 3, 7, 5, 8, 6, 9, 10] : [10, 7, 8, 4, 6, 3, 5, 1]);
+  return sum % 11 === 0
+    ? { isValid: true, canonical: digits, message: 'TFN checksum verified (mod 11).' }
+    : { isValid: false, message: 'TFN checksum failed.' };
+}
+
+/** ASIC ACN: 9 digits, weights 8..1 over the first 8, check digit = (10 - sum mod 10) mod 10. */
+export function validateAustralianAcn(raw: string): ChecksumIdOutput {
+  const digits = (raw || '').replace(/[\s-]/g, '');
+  if (!/^\d{9}$/.test(digits)) return { isValid: false, message: 'ACN must be 9 digits.' };
+  const d = digits.split('').map(Number);
+  const check = (10 - (weightedSum(d.slice(0, 8), [8, 7, 6, 5, 4, 3, 2, 1]) % 10)) % 10;
+  return check === d[8]
+    ? { isValid: true, canonical: digits, message: 'ACN checksum verified (mod 10).' }
+    : { isValid: false, message: 'ACN checksum failed.' };
+}
+
+/** Medicare: 10 digits, first 2-6, weights 1,3,7,9,1,3,7,9 over the first 8 must equal digit 9 (mod 10); digit 10 is the issue number. */
+export function validateAustralianMedicare(raw: string): ChecksumIdOutput {
+  const digits = (raw || '').replace(/[^\d]/g, '');
+  if (!/^[2-6]\d{9,10}$/.test(digits)) return { isValid: false, message: 'Medicare must be 10 digits starting 2-6 (optional IRN).' };
+  const d = digits.split('').map(Number);
+  if (weightedSum(d.slice(0, 8), [1, 3, 7, 9, 1, 3, 7, 9]) % 10 !== d[8]) {
+    return { isValid: false, message: 'Medicare checksum failed.' };
+  }
+  if (d[9] === 0) return { isValid: false, message: 'Medicare issue number cannot be 0.' };
+  return { isValid: true, canonical: digits, message: 'Medicare checksum verified.' };
+}
+
+/** Luhn check for full (unmasked) 13-19 digit card numbers. Masked values pass through as format-only. */
+export function validateCardLuhn(raw: string): ChecksumIdOutput {
+  if (/[*xX]/.test(raw || '')) return { isValid: true, message: 'Masked card number (checksum not applicable).' };
+  const digits = (raw || '').replace(/[\s-]/g, '');
+  if (!/^\d{13,19}$/.test(digits)) return { isValid: false, message: 'Card number must be 13-19 digits.' };
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let n = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) { n *= 2; if (n > 9) n -= 9; }
+    sum += n;
+  }
+  return sum % 10 === 0
+    ? { isValid: true, canonical: digits, message: 'Card number Luhn check verified.' }
+    : { isValid: false, message: 'Card number Luhn check failed.' };
 }
 
 /**
@@ -561,6 +674,46 @@ export function validateAustralianField(
           message: res.message,
           canonicalValue: res.canonicalPhone,
         },
+      };
+    }
+
+    case 'tfn': {
+      const res = validateAustralianTfn(value);
+      return {
+        isValid: res.isValid,
+        validationMessage: res.message,
+        canonicalValue: res.canonical,
+        validationDetails: { ruleCode: 'AU_TFN_MOD11', ruleName: 'ATO TFN Modulo-11 Checksum', isValid: res.isValid, message: res.message, canonicalValue: res.canonical },
+      };
+    }
+
+    case 'acn': {
+      const res = validateAustralianAcn(value);
+      return {
+        isValid: res.isValid,
+        validationMessage: res.message,
+        canonicalValue: res.canonical,
+        validationDetails: { ruleCode: 'AU_ACN_MOD10', ruleName: 'ASIC ACN Modulo-10 Checksum', isValid: res.isValid, message: res.message, canonicalValue: res.canonical },
+      };
+    }
+
+    case 'medicare_number': {
+      const res = validateAustralianMedicare(value);
+      return {
+        isValid: res.isValid,
+        validationMessage: res.message,
+        canonicalValue: res.canonical,
+        validationDetails: { ruleCode: 'AU_MEDICARE_MOD10', ruleName: 'Medicare Card Checksum', isValid: res.isValid, message: res.message, canonicalValue: res.canonical },
+      };
+    }
+
+    case 'card_number_masked': {
+      const res = validateCardLuhn(value);
+      return {
+        isValid: res.isValid,
+        validationMessage: res.message,
+        canonicalValue: res.canonical,
+        validationDetails: { ruleCode: 'AU_CARD_LUHN', ruleName: 'Card Number Luhn Check', isValid: res.isValid, message: res.message, canonicalValue: res.canonical },
       };
     }
 

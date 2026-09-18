@@ -367,10 +367,17 @@ def test_dob_validation_uses_current_year_not_a_hardcoded_one():
     the following year. Computes the expected boundary from the real clock
     instead of a literal, so this test itself never goes stale."""
     current_year = datetime.now(timezone.utc).year
-    exactly_105_year = current_year - 105
-    just_over_105_year = current_year - 106
-    assert engine.validate_australian_dob(f"01/01/{exactly_105_year}") is True
-    assert engine.validate_australian_dob(f"01/01/{just_over_105_year}") is False
+    exactly_120_year = current_year - 120
+    just_over_120_year = current_year - 121
+    assert engine.validate_australian_dob(f"01/01/{exactly_120_year}") is True
+    assert engine.validate_australian_dob(f"01/01/{just_over_120_year}") is False
+
+
+def test_dob_minimum_age_and_future_dates():
+    current_year = datetime.now(timezone.utc).year
+    assert engine.validate_australian_dob(f"01/01/{current_year - 10}") is False  # under 16
+    assert engine.validate_australian_dob(f"01/01/{current_year - 30}") is True
+    assert engine.validate_australian_dob("31/12/2099") is False  # regex range or future
 
 
 def test_abn_checksum_validation():
@@ -403,22 +410,43 @@ def test_bsb_regex_requires_an_explicit_separator():
     assert result["fields"]["bsb"] == ""
 
 
-def test_bsb_regex_still_false_positives_on_a_spaced_abn():
-    """Honest limitation, verified directly rather than assumed fixed: the
-    mandatory-separator change above does NOT fix the false positive
-    documented in the issue register, because an ABN's own digit-group
-    spacing ("51 824 753 556") already contains a real space -- exactly the
-    separator character the regex requires. This still misreads part of the
-    ABN as a BSB. This test exists so nobody mistakes the narrower fix above
-    for a complete one; a real fix needs label-context anchoring, not just a
-    mandatory separator."""
-    text = "ABN: 51 824 753 556"
+def test_spaced_abn_is_no_longer_misread_as_a_bsb():
+    """Fixed: digits owned by a checksum-valid ABN are 'claimed', so the
+    "824 753" inside "51 824 753 556" is never re-read as a BSB. (Previously
+    pinned here as a known false positive.)"""
+    result = engine.extract_australian_banking_fields("ABN: 51 824 753 556")
+    assert result["fields"]["bsb"] == ""
+    assert result["fields"]["abn"] == "51 824 753 556"
+
+
+def test_phone_tail_is_not_read_as_a_bsb():
+    result = engine.extract_australian_banking_fields("Call 0412 345 678 anytime")
+    assert result["fields"]["bsb"] == ""
+
+
+def test_anchored_bsb_survives_next_to_an_abn_and_phone():
+    text = "ABN 51 824 753 556 and 0412 345 678 and BSB 062-000"
     result = engine.extract_australian_banking_fields(text)
-    assert result["fields"]["bsb"] != "", (
-        "if this now passes, the false positive has actually been fixed -- "
-        "update this test (and the issue register) to say so instead of "
-        "deleting it"
-    )
+    assert result["fields"]["bsb"] == "062-000"
+    assert result["confidences"]["bsb"] >= 0.9
+
+
+def test_unanchored_bsb_is_low_confidence():
+    result = engine.extract_australian_banking_fields("Routing 062-000 noted")
+    assert result["fields"]["bsb"] == "062-000"
+    assert result["confidences"]["bsb"] < 0.7
+
+
+def test_card_number_groups_are_not_an_abn():
+    result = engine.extract_australian_banking_fields("Card 4564 1234 1234 1234")
+    assert result["fields"]["abn"] == ""
+
+
+def test_abn_needs_full_digit_boundaries():
+    # 16 contiguous digits: the first 11 must not be tested as an ABN
+    result = engine.extract_australian_banking_fields("Ref 5182475355612345")
+    assert result["fields"]["abn"] == ""
+
 
 
 def test_format_only_validated_fields_get_reduced_confidence():

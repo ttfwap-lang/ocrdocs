@@ -182,3 +182,36 @@ test("ocr.local batch import: stage -> pre-parse -> parsed -> jobs", async (t) =
     assert.ok(list.imports.length >= 1);
   });
 });
+
+test("queue drain: stageQueuedRoot moves loose files (archives too), skips fresh/hidden/staged; ids validated", async () => {
+  const dir = path.join(tempDir, "drain");
+  fs.rmSync(dir, { recursive: true, force: true });
+  const queued = path.join(dir, "queued");
+  fs.mkdirSync(path.join(queued, "sub"), { recursive: true });
+  fs.mkdirSync(path.join(queued, "abc123-xyz789"), { recursive: true });
+  fs.writeFileSync(path.join(queued, "a.pdf"), "x");
+  fs.writeFileSync(path.join(queued, "b.zip"), "x");
+  fs.writeFileSync(path.join(queued, "sub", "c.png"), "x");
+  const old = new Date(Date.now() - 60_000);
+  for (const p of ["a.pdf", "b.zip", "sub"]) fs.utimesSync(path.join(queued, p), old, old);
+  fs.writeFileSync(path.join(queued, "fresh.pdf"), "x");
+
+  const out = path.join(dir, "svc.mjs");
+  await esbuild.build({
+    entryPoints: [path.join(project, "server/services/importService.ts")],
+    bundle: true, outfile: out, format: "esm", platform: "node", packages: "external",
+  });
+  const { createImportService } = await import(pathToFileURL(out).href);
+  const svc = createImportService({
+    documentRepo: {}, jobRepo: {}, queuedDir: queued, parsedDir: path.join(dir, "parsed"),
+    preparseScript: "x", preparseShell: "node", maxFiles: 10, maxTotalMb: 10,
+  });
+  const id = svc.stageQueuedRoot();
+  assert.ok(id);
+  const staged = fs.readdirSync(path.join(queued, id)).sort();
+  assert.deepEqual(staged.map((n) => n.replace(/^\d+_/, "")), ["a.pdf", "b.zip", "sub"]);
+  assert.ok(fs.existsSync(path.join(queued, "fresh.pdf")));
+  assert.ok(fs.existsSync(path.join(queued, "abc123-xyz789")));
+  assert.equal(svc.stageQueuedRoot(), null);
+  assert.throws(() => svc.getRecord("../../etc/passwd"), /invalid import id/);
+});

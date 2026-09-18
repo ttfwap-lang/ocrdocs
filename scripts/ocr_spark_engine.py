@@ -22,7 +22,7 @@ import logging
 
 import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -197,7 +197,7 @@ logging.basicConfig(
 # ==============================================================================
 BANK_FIELD_PATTERNS: Dict[str, re.Pattern] = {
     "title_salutation": re.compile(
-        r"(tit[l1]e|sa[l1]utation|honorific|prefix|mr|mrs|ms|miss|dr|prof|rev)\b", re.I
+        r"\b(tit[l1]e|sa[l1]utation|honorific|prefix|mr|mrs|ms|miss|dr|prof|rev)\b", re.I
     ),
     "given_names": re.compile(
         r"(given[\s_-]?names?|first[\s_-]?name|forename|christian[\s_-]?name|primary[\s_-]?name|1st[\s_-]?name)\b", re.I
@@ -209,7 +209,7 @@ BANK_FIELD_PATTERNS: Dict[str, re.Pattern] = {
         r"(family[\s_-]?names?|surname|last[\s_-]?name|maiden[\s_-]?name)\b", re.I
     ),
     "date_of_birth": re.compile(
-        r"(dob|date[\s_-]?of[\s_-]?birth|birth[\s_-]?date|born[\s_-]?on|b[\s_-]?day)\b", re.I
+        r"\b(dob|d\.?o\.?b|date[\s_-]?of[\s_-]?birth|birth[\s_-]?date|born(?:[\s_-]?on)?|b[\s_-]?day)\b", re.I
     ),
     "residency_status": re.compile(
         r"(residency[\s_-]?status|citizenship|permanent[\s_-]?resident|visa[\s_-]?holder|australian[\s_-]?citizen|pr[\s_-]?status)\b", re.I
@@ -233,16 +233,16 @@ BANK_FIELD_PATTERNS: Dict[str, re.Pattern] = {
         r"(housing[\s_-]?situation|residential[\s_-]?status|renting|mortgaged|owned[\s_-]?outright|boarding|living[\s_-]?with[\s_-]?parents)\b", re.I
     ),
     "mobile_number": re.compile(
-        r"(mobile[\s_-]?number|contact[\s_-]?number|cell[\s_-]?phone|phone|tel)\b", re.I
+        r"\b(mobile[\s_-]?number|mobile|contact[\s_-]?number|cell[\s_-]?phone|phone|tel|ph)\b", re.I
     ),
     "email_address": re.compile(
         r"(email[\s_-]?address|contact[\s_-]?email|electronic[\s_-]?mail)\b", re.I
     ),
     "drivers_licence": re.compile(
-        r"(driver[s\']?[\s_-]?licen[sc]e|licen[sc]e[\s_-]?number|card[\s_-]?number|dl[\s_-]?no)\b", re.I
+        r"\b(driver[s\']?[\s_-]?licen[sc]e|licen[sc]e[\s_-]?(?:number|no)|dl[\s_-]?(?:no|number))\b", re.I
     ),
     "passport_details": re.compile(
-        r"(passport[\s_-]?number|travel[\s_-]?document|passport[\s_-]?no|issuing[\s_-]?country)\b", re.I
+        r"\b(passport[\s_-]?number|travel[\s_-]?document|passport[\s_-]?no|issuing[\s_-]?country)\b", re.I
     ),
     "employment_status": re.compile(
         r"(employment[\s_-]?status|full[\s_-]?time|part[\s_-]?time|casual|contractor|self[\s_-]?employed|unemployed)\b", re.I
@@ -381,6 +381,18 @@ BANK_FIELD_PATTERNS: Dict[str, re.Pattern] = {
 # ==============================================================================
 # AUSTRALIAN REGULATORY VALIDATION UTILITIES
 # ==============================================================================
+def _australian_today() -> date:
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Australia/Sydney")).date()
+    except Exception:  # tzdata missing (e.g. bare Windows): AEST fixed offset is at most 1h off AEDT
+        return datetime.now(timezone(timedelta(hours=10))).date()
+
+
+def _overlaps(span: Tuple[int, int], spans: List[Tuple[int, int]]) -> bool:
+    return any(span[0] < b and span[1] > a for a, b in spans)
+
+
 def validate_australian_abn(abn_str: str) -> bool:
     """Validates Australian Business Number using ATO Modulo 89 checksum algorithm."""
     clean = re.sub(r"[^\d]", "", str(abn_str))
@@ -402,13 +414,25 @@ def validate_australian_bsb(bsb_str: str) -> bool:
     return 1 <= first_two <= 99
 
 def validate_australian_dob(dob_str: str) -> bool:
-    """Ensures applicant DOB represents plausible lending age (18 to 105)."""
+    """Plausible applicant DOB: a real calendar date, not in the future, age MIN..120 in Australian
+    civil time (mirrors validateAustralianDob in src/utils; MIN = OCRDOCS_MIN_APPLICANT_AGE, default 16)."""
     m = re.search(r"\b(0[1-9]|[12][0-9]|3[01])[-/.](0[1-9]|1[012])[-/.](19\d\d|20[0-2]\d)\b", str(dob_str))
     if not m:
         return False
-    year = int(m.group(3))
-    age = datetime.now(timezone.utc).year - year
-    return 18 <= age <= 105
+    day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    try:
+        born = date(year, month, day)
+    except ValueError:
+        return False
+    today = _australian_today()
+    if born > today:
+        return False
+    age = today.year - year - ((today.month, today.day) < (month, day))
+    try:
+        min_age = int(os.environ.get("OCRDOCS_MIN_APPLICANT_AGE", "16"))
+    except ValueError:
+        min_age = 16
+    return min_age <= age <= 120
 
 def validate_australian_phone(phone_str: str) -> bool:
     """Validates Australian landline or mobile (+61 4xx or 04xx)."""
@@ -792,10 +816,34 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
 
     # Generic Regex Patterns
     emails = re.findall(r"\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\b", text)
-    phones = re.findall(r"(?:\+?61\s?|0)[2-478](?:[ -]?[0-9]){8}\b", text)
-    dobs = re.findall(r"\b(0[1-9]|[12][0-9]|3[01])[-/.](0[1-9]|1[012])[-/.]((?:19|20)\d\d)\b", text)
-    abns = re.findall(r"\b(\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3})\b", text)
-    bsbs = re.findall(r"\b(\d{3}[- ]\d{3})\b", text)
+    phone_matches = list(re.finditer(r"(?<!\d)(?:\+?61\s?|0)[2-478](?:[ -]?[0-9]){8}(?!\d)", text))
+    phones = [m.group(0) for m in phone_matches]
+    # A date is only a DOB when a DOB/birth label sits right before it: statement, issue and expiry dates
+    # in the same document must never be promoted just because they parse as a plausible age.
+    dobs = [
+        m.groups() for m in re.finditer(r"\b(0[1-9]|[12][0-9]|3[01])[-/.](0[1-9]|1[012])[-/.]((?:19|20)\d\d)\b", text)
+        if re.search(r"(?:dob|d\.?o\.?b|birth|born)\W{0,12}$", text[max(0, m.start() - 24):m.start()], re.IGNORECASE)
+    ]
+    # A 16-digit card number written as 4-4-4-4 groups contains ABN-shaped slices; never read those as ABNs.
+    card_spans = [m.span() for m in re.finditer(r"(?<!\d)\d{4}[ -]\d{4}[ -]\d{4}[ -]\d{4}(?!\d)", text)]
+    abn_matches = [
+        m for m in re.finditer(r"(?<!\d)(\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3})(?!\d)", text)
+        if not _overlaps(m.span(), card_spans)
+    ]
+    abns = [m.group(1) for m in abn_matches]
+    # Spans already owned by a stronger identifier (valid ABN, AU phone): a BSB must not be read out of them
+    # (the "824 753" inside ABN "51 824 753 556", the "345 678" inside "0412 345 678").
+    claimed_spans = [
+        m.span() for m in abn_matches
+        if validate_australian_abn(m.group(1))
+        or re.search(r"\b(?:abn|a\.b\.n)\b\W{0,3}$", text[max(0, m.start() - 12):m.start()], re.IGNORECASE)
+    ]
+    claimed_spans += [m.span() for m in phone_matches]
+    bsb_matches = [
+        m for m in re.finditer(r"(?<!\d)(\d{3}[- ]\d{3})(?!\d)", text)
+        if not _overlaps(m.span(), claimed_spans) and not _overlaps(m.span(), card_spans)
+    ]
+    bsbs = [m.group(1) for m in bsb_matches]
     postcodes = re.findall(r"\b(0[2-9]\d{2}|[1-9]\d{3})\b", text)
     currencies = re.findall(r"\$\s?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|\b[0-9]{4,7}\b)", text)
 
@@ -822,10 +870,15 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
             confidences["abn"] = 1.0
             break
 
-    for bsb in bsbs:
-        if validate_australian_bsb(bsb):
-            data["bsb"] = bsb
-            confidences["bsb"] = 0.60
+    # Anchored ("BSB"/"branch" within 30 chars before) beats unanchored; unanchored stays low-confidence.
+    anchored_bsbs = [
+        m for m in bsb_matches
+        if re.search(r"\b(?:bsb|branch)\b", text[max(0, m.start() - 30):m.start()], re.IGNORECASE)
+    ]
+    for m in anchored_bsbs + [m for m in bsb_matches if m not in anchored_bsbs]:
+        if validate_australian_bsb(m.group(1)):
+            data["bsb"] = m.group(1)
+            confidences["bsb"] = 0.95 if m in anchored_bsbs else 0.55
             break
 
     for dob in dobs:
@@ -856,6 +909,9 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
     line_scan_validators = {
         "bsb": validate_australian_bsb,
         "date_of_birth": validate_australian_dob,
+        "abn": validate_australian_abn,
+        "mobile_number": validate_australian_phone,
+        "postcode": validate_australian_postcode,
     }
 
     # Contextual line scanning for the 60 fields
@@ -880,7 +936,9 @@ def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict
                     val = parts[1].strip()
                     validator = line_scan_validators.get(field)
                     if validator is not None and not validator(val):
-                        continue
+                        # A labelled line whose value fails validation is contaminated: stop here so a
+                        # later, looser field pattern cannot claim the same garbage value.
+                        break
                     if not data[field] or confidences[field] < line_conf:
                         data[field] = val
                         confidences[field] = line_conf

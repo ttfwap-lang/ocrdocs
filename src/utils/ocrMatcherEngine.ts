@@ -10,6 +10,7 @@ import {
   validateAustralianPostcode,
   validateAustralianAbn,
   validateAustralianBsb,
+  repairOcrDigits,
 } from './australianValidationUtility';
 import { BankFieldDefinition, ExtractionResult, AustralianAddressStructure, ContextualDisambiguationMeta } from '../types';
 import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../data/bankFields';
@@ -119,6 +120,30 @@ function spaceTolerantLabel(pattern: string): string {
   return pattern.replace(/\[_-\]/g, '[\\s_-]');
 }
 
+/**
+ * Spans of text already owned by a stronger identifier (checksum-valid ABN,
+ * AU phone number). Weaker digit sweeps (BSB, postcode) must not re-read
+ * fragments of these -- e.g. the "824 753" inside ABN "51 824 753 556".
+ */
+function findClaimedSpans(text: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  for (const m of text.matchAll(/(?<!\d)\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3}(?!\d)/g)) {
+    const idx = m.index ?? 0;
+    // Valid ABN, or an ABN-labelled run even when its checksum fails, owns its digits.
+    if (validateField('abn', m[0]).isValid || /\b(?:abn|a\.b\.n)\b\W{0,3}$/i.test(text.substring(Math.max(0, idx - 12), idx))) {
+      spans.push([idx, idx + m[0].length]);
+    }
+  }
+  for (const m of text.matchAll(/(?<!\d)(?:\+?61[ ]?|0)[2-478](?:[ -]?\d){8}(?!\d)/g)) {
+    spans.push([m.index ?? 0, (m.index ?? 0) + m[0].length]);
+  }
+  return spans;
+}
+
+function overlapsSpan(start: number, end: number, spans: Array<[number, number]>): boolean {
+  return spans.some(([a, b]) => start < b && end > a);
+}
+
 function getSectionForIndex(docContext: DocumentContext, lineIndex: number): string {
   const match = docContext.sections.find(s => lineIndex >= s.startLine && lineIndex <= s.endLine);
   return match ? match.name : 'GENERAL';
@@ -132,17 +157,50 @@ function extractSingleFieldWithContext(
   try {
     // ABN Specialized Extraction & ATO Modulo-89 Checksum
     if (field.id === 'abn') {
-      const abnMatches = Array.from(text.matchAll(/\b\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3}\b/g));
+      // OCR repair: only when no plain ABN checksum-validates. A confusable-laden 11-digit run
+      // (e.g. "5l 824 753 55B") is accepted solely if the REPAIRED digits pass the ATO checksum.
+      const plainValid = Array.from(text.matchAll(/(?<!\d)\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3}(?!\d)/g))
+        .some(m => validateField(field.id, m[0]).isValid);
+      if (!plainValid) {
+        for (const m of text.matchAll(/(?<![0-9A-Za-z])[0-9OoQIl|SB]{2}[ ]?[0-9OoQIl|SB]{3}[ ]?[0-9OoQIl|SB]{3}[ ]?[0-9OoQIl|SB]{3}(?![0-9A-Za-z])/g)) {
+          const fixed = repairOcrDigits(m[0]);
+          if (!fixed || (m[0].match(/\d/g) || []).length < 6) continue;
+          if (!validateField(field.id, fixed).isValid) continue;
+          const idx = m.index ?? 0;
+          return {
+            fieldId: field.id,
+            fieldName: field.name,
+            category: field.category,
+            matchedAnchor: 'ABN [ATO Modulo-89 Validated, OCR-repaired]',
+            extractedValue: fixed,
+            confidence: 80,
+            matchIndex: idx,
+            regexPattern: field.maxToleranceRegex,
+            status: 'matched',
+            contextSnippet: getSnippet(text, idx, m[0].length),
+            isValid: true,
+            validationMessage: `ABN checksum verified after OCR repair (raw "${m[0]}").`,
+            disambiguation: {
+              disambiguationStrategy: 'REGEX_EXACT',
+              nlpResolved: false,
+              notes: `ocr_repaired: true; raw="${m[0]}"`,
+            },
+          };
+        }
+      }
+      const abnMatches = Array.from(text.matchAll(/(?<!\d)\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3}(?!\d)/g));
       if (abnMatches.length > 0) {
         // Pick the ABN that is closest to employer/business context
         let bestAbnMatch = abnMatches[0];
-        let bestScore = 0;
+        let bestScore = -1;
 
         for (const match of abnMatches) {
           const matchIdx = match.index ?? 0;
           const preWindow = text.substring(Math.max(0, matchIdx - 50), matchIdx).toLowerCase();
           let score = 10;
-          if (preWindow.includes('abn') || preWindow.includes('workplace') || preWindow.includes('business')) score += 50;
+          // Checksum validity dominates: a keyword must never promote an invalid ABN over a valid one.
+          if (validateField(field.id, match[0]).isValid) score += 100;
+          if (/\b(?:abn|workplace|business)\b/.test(preWindow)) score += 50;
           if (score > bestScore) {
             bestScore = score;
             bestAbnMatch = match;
@@ -160,10 +218,10 @@ function extractSingleFieldWithContext(
           category: field.category,
           matchedAnchor: 'ABN [ATO Modulo-89 Validated]',
           extractedValue: val,
-          confidence: isValid ? 98 : 82,
+          confidence: isValid ? 98 : 40,
           matchIndex: matchIdx,
           regexPattern: field.maxToleranceRegex,
-          status: 'matched',
+          status: isValid ? 'matched' : 'ambiguous',
           contextSnippet: getSnippet(text, matchIdx, bestAbnMatch[0].length),
           isValid,
           validationMessage,
@@ -179,23 +237,20 @@ function extractSingleFieldWithContext(
 
     // BSB Specialized Extraction & APRA Bank Directory Lookup
     if (field.id === 'bsb') {
-      const bsbMatches = Array.from(text.matchAll(/\b\d{3}[- ]\d{3}\b/g));
-      if (bsbMatches.length > 0) {
-        // Filter out non-BSB numbers by looking for "bsb" anchor nearby
-        let bestBsb = bsbMatches[0];
-        for (const m of bsbMatches) {
+      const claimed = findClaimedSpans(text);
+      const candidates = Array.from(text.matchAll(/(?<!\d)\d{3}[- ]\d{3}(?!\d)/g))
+        .filter(m => !overlapsSpan(m.index ?? 0, (m.index ?? 0) + m[0].length, claimed))
+        .map(m => {
           const mIdx = m.index ?? 0;
-          const preWindow = text.substring(Math.max(0, mIdx - 30), mIdx).toLowerCase();
-          if (preWindow.includes('bsb') || preWindow.includes('branch')) {
-            bestBsb = m;
-            break;
-          }
-        }
-
-        const val = bestBsb[0].trim();
+          const pre = text.substring(Math.max(0, mIdx - 30), mIdx).toLowerCase();
+          return { m, anchored: /\b(?:bsb|branch)\b/.test(pre) };
+        });
+      const bestBsb = candidates.find(c => c.anchored) ?? candidates[0];
+      if (bestBsb) {
+        const val = bestBsb.m[0].trim();
         const { isValid, validationMessage } = validateField(field.id, val);
         const institutionName = getApraBankNameFromBsb(val);
-        const matchIdx = bestBsb.index ?? 0;
+        const matchIdx = bestBsb.m.index ?? 0;
         const lineIdx = text.substring(0, matchIdx).split('\n').length - 1;
 
         return {
@@ -204,68 +259,72 @@ function extractSingleFieldWithContext(
           category: field.category,
           matchedAnchor: `BSB [${institutionName}]`,
           extractedValue: val,
-          confidence: 99,
+          // Format-only validation: only an explicit "BSB"/"branch" label earns high confidence.
+          confidence: !isValid ? 30 : bestBsb.anchored ? 95 : 55,
           matchIndex: matchIdx,
           regexPattern: field.maxToleranceRegex,
-          status: 'matched',
-          contextSnippet: getSnippet(text, matchIdx, bestBsb[0].length),
+          status: bestBsb.anchored || !isValid ? 'matched' : 'ambiguous',
+          contextSnippet: getSnippet(text, matchIdx, bestBsb.m[0].length),
           isValid,
           validationMessage: isValid ? `APRA Registered: ${institutionName}` : validationMessage,
           disambiguation: {
             disambiguationStrategy: 'KEYWORD_PROXIMITY_HEURISTIC',
             sectionContext: getSectionForIndex(docContext, lineIdx),
             nlpResolved: false,
-            notes: `Resolved to ${institutionName} via APRA 6-digit routing matrix.`
+            notes: bestBsb.anchored
+              ? `Anchored to a BSB label; resolved to ${institutionName} via APRA routing matrix.`
+              : 'Unanchored 3-3 digit group outside any ABN/phone number; needs review.'
           }
         };
       }
     }
 
-    // Postcode Specialized Extraction
+    // Postcode Specialized Extraction (only when anchored by a state token or a postcode label)
     if (field.id === 'postcode') {
-      const pcMatches = Array.from(text.matchAll(/\b(?:0[2-9]|[1-9][0-9])\d{2}\b/g));
-      if (pcMatches.length > 0) {
-        // Prioritize postcode that sits inside an address line
-        let bestPc = pcMatches[0];
-        for (const m of pcMatches) {
+      const claimed = findClaimedSpans(text);
+      const STATE_RE = /\b(?:nsw|vic|qld|wa|sa|tas|act|nt)\b/i;
+      const found = Array.from(text.matchAll(/(?<![\d$.,\/-])(?:0[2-9]|[1-9][0-9])\d{2}(?![\d.,\/-])/g))
+        .filter(m => !overlapsSpan(m.index ?? 0, (m.index ?? 0) + 4, claimed))
+        .map(m => {
           const idx = m.index ?? 0;
-          const pre = text.substring(Math.max(0, idx - 40), idx);
-          if (/(?:nsw|vic|qld|wa|sa|tas|act|nt)/i.test(pre)) {
-            bestPc = m;
-            break;
-          }
-        }
-
-        const val = bestPc[0].trim();
+          const afterState = STATE_RE.test(text.substring(Math.max(0, idx - 12), idx));
+          const labelled = /post\s?code/i.test(text.substring(Math.max(0, idx - 20), idx));
+          return { m, idx, ok: afterState || labelled };
+        })
+        .filter(c => c.ok);
+      const best = found[0];
+      if (best) {
+        const val = best.m[0].trim();
         const { isValid, validationMessage } = validateField(field.id, val);
-        const matchIdx = bestPc.index ?? 0;
-
         return {
           fieldId: field.id,
           fieldName: field.name,
           category: field.category,
           matchedAnchor: 'AU Postcode Pattern',
           extractedValue: val,
-          confidence: 94,
-          matchIndex: matchIdx,
+          confidence: isValid ? 90 : 40,
+          matchIndex: best.idx,
           regexPattern: field.maxToleranceRegex,
           status: 'matched',
-          contextSnippet: getSnippet(text, matchIdx, bestPc[0].length),
+          contextSnippet: getSnippet(text, best.idx, 4),
           isValid,
           validationMessage,
           disambiguation: {
             disambiguationStrategy: 'REGEX_EXACT',
-            sectionContext: 'RESIDENTIAL_CONTACT',
-            nlpResolved: true,
-            notes: 'Geocoded Australia Post 4-digit routing zone.'
+            nlpResolved: false,
+            notes: 'Four-digit code anchored by a state abbreviation or postcode label.'
           }
         };
       }
     }
 
     // Dynamic Key-Value extraction with Contextual Proximity Disambiguation
-    const labelPattern = spaceTolerantLabel(field.maxToleranceRegex);
-    const anchorRegex = new RegExp(`(?:^|[^a-zA-Z0-9_])${labelPattern}(?:\\s*[:=\\-]\\s*|\\s+)([^\\n\\r]{2,95})`, 'gi');
+    const hasLabelRegex = Boolean(field.labelRegex);
+    const labelPattern = spaceTolerantLabel(hasLabelRegex ? field.labelRegex! : field.maxToleranceRegex);
+    const anchorRegex = hasLabelRegex
+      // Value-typed fields: label, optional "no."/"number"/"#" filler, separator, then the VALUE pattern itself.
+      ? new RegExp(`(?:^|[^a-zA-Z0-9_])${labelPattern}(?:\\s*(?:no\\.?|num(?:ber)?|#)?\\s*[:=#\\-]?\\s*)${field.maxToleranceRegex}`, 'gi')
+      : new RegExp(`(?:^|[^a-zA-Z0-9_])${labelPattern}(?:\\s*[:=\\-]\\s*|\\s+)([^\\n\\r]{2,95})`, 'gi');
     const matches = Array.from(text.matchAll(anchorRegex));
 
     if (matches.length > 0) {
@@ -330,7 +389,8 @@ function extractSingleFieldWithContext(
 
     // Fallback: Check if the anchor simply occurs in text (for boolean/status fields like de facto, single, married)
     const simpleRegex = new RegExp(`\\b${labelPattern}\\b`, 'i');
-    const simpleMatch = text.match(simpleRegex);
+    // A bare label with no value is not a detection for value-typed identifier fields.
+    const simpleMatch = hasLabelRegex ? null : text.match(simpleRegex);
     if (simpleMatch) {
       return {
         fieldId: field.id,

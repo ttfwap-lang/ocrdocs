@@ -78,7 +78,7 @@ test('validateAustralianDob: 2-digit year conversion (>30 → 1900s, ≤30 → 2
 });
 
 test('validateAustralianDob: leap-year Feb 29 accepted on leap years, rejected on non-leap', () => {
-  assert.equal(mod.validateAustralianDob('29/02/2020').isValid, true);
+  assert.equal(mod.validateAustralianDob('29/02/2000').isValid, true);
   assert.equal(mod.validateAustralianDob('29/02/2021').isValid, false);
 });
 
@@ -388,4 +388,14 @@ test('enforceAustralianFormattingRules: idempotency — calling twice yields sam
   const second = mod.enforceAustralianFormattingRules(first);
   assert.equal(second.length, first.length);
   assert.equal(second[0].isValid, first[0].isValid);
+});
+
+test('validateAustralianDob: under minimum age is rejected as UNDERAGE; over 120 rejected; ambiguity flagged', () => {
+  const y = new Date().getFullYear();
+  const young = mod.validateAustralianDob(`01/01/${y - 5}`);
+  assert.equal(young.isValid, false);
+  assert.equal(young.errorCode, 'UNDERAGE');
+  assert.equal(mod.validateAustralianDob(`01/01/${y - 121}`).isValid, false);
+  assert.equal(mod.validateAustralianDob('05/08/1990').ambiguousOrder, true);
+  assert.equal(mod.validateAustralianDob('25/08/1990').ambiguousOrder, false);
 });

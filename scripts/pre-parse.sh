@@ -1,6 +1,13 @@
 # The staged directory is passed as $1 by server/services/importService.ts.
 # Fall back to a placeholder so the script is still runnable ad-hoc.
-TARGET_DIR="${1:-/path/to/queued/folder}"
+TARGET_DIR="${1:-}"
+if [[ -z "$TARGET_DIR" || ! -d "$TARGET_DIR" ]]; then
+    echo "usage: pre-parse.sh <existing-target-dir>" >&2
+    exit 2
+fi
+# Archive tool: 7z (p7zip) or 7zz. Missing tool = archives are left in place, loudly.
+SEVENZ="$(command -v 7z || command -v 7zz || true)"
+export SEVENZ
 
 # --- FUNCTION: FLATTEN FOLDER ---
 flatten_directory() {
@@ -40,13 +47,17 @@ process_files() {
         # Targets: Executables (PE32/PE32+), DLLs, Sys Drivers, Installers (MSI, CAB, MSP), 
         # Registry files, Compiled HTML Help, Cursors/Icons, Object files, and Shortcuts.
         if [[ "$mime" =~ application/(x-dosexec|x-msdownload|vnd\.ms-cab-compressed|x-msi|x-ms-installer|x-ms-shortcut) ]] || \
-           [[ "$ext_guess" =~ ^(dll|sys|scr|lnk|cpl|cab|msi|msp|inf|reg|chm|hlp|bat|cmd|vbs|vbe|wsf|wsc|cur|ani|ico|obj|lib|pdb)$ ]]; then
+           [[ "$ext_guess" =~ ^(exe|com|dll|sys|scr|lnk|cpl|cab|msi|msp|inf|reg|chm|hlp|bat|cmd|vbs|vbe|wsf|wsc|cur|ani|ico|obj|lib|pdb)$ ]]; then
             rm -f "$filepath"; exit 0
         fi
         
         # Skip if file type is entirely unidentifiable
         [[ "$ext_guess" == "???" || -z "$ext_guess" ]] && exit 0
         new_ext="${ext_guess%%/*}"
+        # Guard against a non-standard `file` build emitting words instead of extensions.
+        if [[ ! "$new_ext" =~ ^[a-z0-9]{2,5}$ ]]; then
+            exit 0
+        fi
         
         # 2. HASH, DEDUPLICATE, AND RENAME
         file_hash=$(md5sum "$filepath" | cut -d" " -f1)
@@ -78,25 +89,40 @@ extract_archives() {
             temp_out="${filepath%/*}/_ext_${filepath##*/}"
             mkdir -p "$temp_out"
             
-            7z x -mmt=1 -y -o"$temp_out" "$filepath" >/dev/null 2>&1
+            if [[ -z "$SEVENZ" ]]; then
+                echo "WARNING: no 7z/7zz installed; leaving archive ${filepath##*/} unextracted" >&2
+                rmdir "$temp_out" 2>/dev/null
+                exit 0
+            fi
+            "$SEVENZ" x -mmt=1 -y -o"$temp_out" "$filepath" >/dev/null 2>&1
             [[ $? -eq 0 ]] && rm -f "$filepath"
         fi
     ' _ {}
 }
 
+# --- FUNCTION: COUNT REMAINING ARCHIVES ---
+count_archives() {
+    find "$TARGET_DIR" -maxdepth 1 -type f -print0 | xargs -0 -r file -b --mime-type 2>/dev/null         | grep -Ecs 'application/(zip|x-rar|x-7z-compressed|gzip|x-tar|x-bzip2|x-xz|vnd\.rar)' || true
+}
+
 # --- MAIN EXECUTION PIPELINE ---
-echo "=== Phase 1/4: Initial Flattening ==="
+echo "=== Phase 1/3: Initial Flattening ==="
 flatten_directory
 
-echo "=== Phase 2/4: Initial Process & Rename ==="
+echo "=== Phase 2/3: Initial Process & Rename ==="
 process_files
 
-echo "=== Phase 3/4: Extracting Archives ==="
-extract_archives
-
-echo "=== Phase 4/4: Final Flattening & Processing ==="
-# This second flatten pulls all the newly extracted files out of the "_ext_" temp folders from Phase 3
-flatten_directory
-process_files
+echo "=== Phase 3/3: Extracting Archives (repeats for nested archives, e.g. tar.gz, zip-in-zip) ==="
+for round in 1 2 3 4 5 6; do
+    remaining=$(count_archives)
+    [[ "${remaining:-0}" -eq 0 ]] && break
+    echo "--> round $round: $remaining archive(s)"
+    extract_archives
+    # Pull extracted files out of the "_ext_" temp folders, then clean/rename/dedup them.
+    flatten_directory
+    process_files
+done
+remaining=$(count_archives)
+[[ "${remaining:-0}" -gt 0 ]] && echo "WARNING: $remaining archive(s) could not be extracted" >&2
 
 echo "Operation Complete. Folder is flattened, cleaned, and simplified."

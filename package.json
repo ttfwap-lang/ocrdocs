@@ -8,7 +8,7 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit",
-    "test": "node --test --test-timeout=30000 tests/*.test.mjs",
+    "test": "node --test --test-timeout=30000 tests/*.test.mjs tests/parity/*.test.mjs",
     "test:unit": "node --test --test-timeout=30000 tests/australianValidation.test.mjs tests/ocrEngine.test.mjs tests/bankFields.test.mjs tests/stage3Architecture.test.mjs tests/stage4DemoSeparation.test.mjs tests/stage5Dependencies.test.mjs tests/stage6Startup.test.mjs",
     "test:integration": "node --test --test-timeout=30000 tests/dgxJobEndpoints.test.mjs tests/identities.test.mjs",
     "test:worker": "node --test --test-timeout=30000 tests/stage7TestIntegrity.test.mjs",

@@ -54,7 +54,8 @@ const MAX_EXTRACTION_TEXT_CHARS = Number(process.env.OCRDOCS_MAX_EXTRACTION_TEXT
 // — Batch import (`ocr.local`) configuration. Read at module scope to mirror the
 // other operational flags above (WORKER_LEASE_SECONDS etc.). env.ts is
 // intentionally NOT modified for import flags — see docs/GX10_DEPLOYMENT.md.
-const IMPORT_ROOT = process.env.OCRDOCS_IMPORT_ROOT || "C:\\NVIDIA-Workbench\\ocr";
+const IMPORT_ROOT = process.env.OCRDOCS_IMPORT_ROOT ||
+  (process.platform === "win32" ? "C:\\NVIDIA-Workbench\\ocr" : path.join(process.cwd(), "storage", "ocr"));
 const QUEUED_DIR = process.env.OCRDOCS_QUEUED_DIR || path.join(IMPORT_ROOT, "queued");
 const PARSED_DIR = process.env.OCRDOCS_PARSED_DIR || path.join(IMPORT_ROOT, "parsed");
 const PREPARSE_SCRIPT_PATH =
@@ -560,7 +561,7 @@ app.post("/api/imports/:id/run", requireImportAuth, async (req: express.Request<
         .status(500)
         .json({ importId: req.params.id, status: "failed", stdout: run.stdout, stderr: run.stderr, code: run.code });
     }
-    const { parsedDir, jobIds } = importService.finalize(req.params.id);
+    const { parsedDir, jobIds } = await importService.finalize(req.params.id);
     return res.status(200).json({
       importId: req.params.id,
       status: "parsed",
@@ -575,7 +576,11 @@ app.post("/api/imports/:id/run", requireImportAuth, async (req: express.Request<
 });
 
 app.get("/api/imports/:id", requireImportAuth, (req: express.Request<{ id: string }>, res) => {
-  return res.json(importService.getRecord(req.params.id));
+  try {
+    return res.json(importService.getRecord(req.params.id));
+  } catch {
+    return res.status(404).json({ error: "Import not found" });
+  }
 });
 
 app.get("/api/imports", requireImportAuth, (_req, res) => {
@@ -984,12 +989,42 @@ async function startServer(options?: {
     });
   }
 
+  // 24/7 drain: every OCRDOCS_QUEUE_POLL_SECONDS, clean + import whatever sits in the queued root.
+  let queueTimer: NodeJS.Timeout | undefined;
+  if (process.env.OCRDOCS_QUEUE_WATCH === "true") {
+    let draining = false;
+    const pollMs = (Number(process.env.OCRDOCS_QUEUE_POLL_SECONDS) || 30) * 1000;
+    const drain = async () => {
+      if (draining) return;
+      draining = true;
+      try {
+        const id = importService.stageQueuedRoot();
+        if (!id) return;
+        const run = await importService.runPreParse(id);
+        if (!run.ok) {
+          importService.failImport(id, run.stderr, run.code);
+          console.error(`[OCRD] queue import ${id} failed: ${run.stderr.slice(0, 500)}`);
+          return;
+        }
+        const { jobIds } = await importService.finalize(id);
+        console.log(`[OCRD] queue import ${id}: ${jobIds.length} job(s) enqueued`);
+      } catch (err) {
+        console.error("[OCRD] queue drain error:", err);
+      } finally {
+        draining = false;
+      }
+    };
+    queueTimer = setInterval(drain, pollMs);
+    queueTimer.unref();
+  }
+
   const shutdownManager = createShutdownManager(
     httpServer,
     {
       shutdownTimeoutMs: config.shutdownTimeoutMs,
       drainSockets: true,
       onShutdown: async () => {
+        if (queueTimer) clearInterval(queueTimer);
         closeDb();
       },
     },

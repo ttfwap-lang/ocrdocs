@@ -145,9 +145,9 @@ test('extractBankFieldsFromText: invalid ABN (bad checksum) is flagged as invali
   const results = engine.extractBankFieldsFromText(textWithBadAbn);
   const abn = results.find(r => r.fieldId === 'abn');
   assert.ok(abn);
-  assert.equal(abn.status, 'matched');
+  assert.equal(abn.status, 'ambiguous', 'a checksum-failed ABN must never be a confident match');
   assert.equal(abn.isValid, false, 'Invalid ABN checksum should fail validation');
-  assert.equal(abn.confidence, 57, 'Invalid ABN: 82 base - 25 enforce penalty = 57');
+  assert.ok(abn.confidence <= 40, `Invalid ABN confidence should be low, got ${abn.confidence}`);
 });
 
 /* ── Specialized extraction: BSB ──────────────────────────────── */
@@ -159,7 +159,7 @@ test('extractBankFieldsFromText: BSB is matched and resolved to APRA institution
   assert.ok(bsb.extractedValue, 'BSB should have a value');
   assert.match(bsb.matchedAnchor, /BSB \[/);
   assert.match(bsb.validationMessage, /APRA (Verified|Registered)/);
-  assert.equal(bsb.confidence, 99);
+  assert.ok(bsb.confidence >= 95 && bsb.confidence < 99, `anchored BSB confidence, got ${bsb.confidence}`);
 });
 
 test('extractBankFieldsFromText: BSB without nearby anchor still matched from first match', () => {
@@ -168,8 +168,9 @@ test('extractBankFieldsFromText: BSB without nearby anchor still matched from fi
   const results = engine.extractBankFieldsFromText(text);
   const bsb = results.find(r => r.fieldId === 'bsb');
   assert.ok(bsb);
-  assert.equal(bsb.status, 'matched');
+  assert.equal(bsb.status, 'ambiguous', 'unanchored BSB-shaped digits need review');
   assert.ok(bsb.extractedValue);
+  assert.ok(bsb.confidence < 70, `unanchored BSB confidence should be low, got ${bsb.confidence}`);
 });
 
 /* ── Specialized extraction: Postcode ─────────────────────────── */
@@ -180,7 +181,7 @@ test('extractBankFieldsFromText: postcode is matched with state context', () => 
   assert.equal(pc.status, 'matched');
   assert.ok(pc.extractedValue, 'Postcode should have a value');
   assert.match(pc.matchedAnchor, /AU Postcode Pattern/i);
-  assert.equal(pc.confidence, 97, "Postcode: 94 base + 3 enforce boost = 97");
+  assert.equal(pc.extractedValue, "2601", "postcode after the ACT token, not the later NSW 2000");
 });
 
 /* ── Specialized extraction: DOB ──────────────────────────────── */
