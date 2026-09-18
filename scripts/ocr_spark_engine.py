@@ -19,6 +19,7 @@ import json
 import time
 import argparse
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime, timezone
 from pathlib import Path
@@ -126,6 +127,53 @@ def _run_with_timeout(fn, *args, timeout: float = ENGINE_TIMEOUT_SECONDS, **kwar
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-engine")
     try:
         future = executor.submit(fn, *args, **kwargs)
+        return future.result(timeout=timeout)
+    finally:
+        executor.shutdown(wait=False)
+
+
+class EngineBusyError(Exception):
+    """A shared engine singleton is still occupied by an orphaned call from a
+    previous timeout; the caller should skip this engine for the pass rather
+    than invoke it concurrently against a non-thread-safe model."""
+
+
+def _run_engine_call(lock: threading.Lock, fn, *args, timeout: float = ENGINE_TIMEOUT_SECONDS, **kwargs):
+    """Like _run_with_timeout, but serializes access to a shared engine
+    singleton (PaddleOCR/EasyOCR/Surya/TrOCR) via `lock`.
+
+    _run_with_timeout's fresh-executor-per-call fix (above) solves the pool
+    deadlock, but each of those engines is a single global model object
+    reused across calls. A call that times out leaves its thread running
+    against that same object; without serialization here, the NEXT call to
+    the same engine would invoke it concurrently from a second thread --
+    these models are not documented as thread-safe, so that's a real race
+    (corrupted internal state, or a native crash) on top of a hang. If the
+    lock is still held, the abandoned call is still genuinely running:
+    skip this engine for this pass instead of blocking indefinitely or
+    racing it. The lock is released by whichever thread actually finishes
+    the call, whether or not our own wrapper gave up waiting on it, so this
+    stays correct without needing to know when an abandoned thread ends.
+    """
+    if not lock.acquire(timeout=0.1):
+        raise EngineBusyError("engine singleton still occupied by a previous orphaned call")
+    # The lock must be released by whichever thread actually RUNS fn, not by
+    # this calling thread when it stops waiting -- those are different
+    # events. If we released it here (in a try/finally around
+    # _run_with_timeout), a timeout would free the lock immediately while
+    # the orphaned worker thread is still actually executing fn, and the
+    # very next call would acquire the "free" lock and run concurrently
+    # against the same singleton -- exactly the race this function exists
+    # to prevent. So the release is pushed into the submitted call itself.
+    def _locked_call():
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            lock.release()
+
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-engine")
+    try:
+        future = executor.submit(_locked_call)
         return future.result(timeout=timeout)
     finally:
         executor.shutdown(wait=False)
@@ -388,6 +436,13 @@ _trocr_processor = None
 _trocr_model = None
 _worker_initialized = False
 
+# One lock per shared engine singleton -- see EngineBusyError / _run_engine_call
+# above for why these exist (serializing access around orphaned-timeout races).
+_paddle_lock = threading.Lock()
+_easy_lock = threading.Lock()
+_surya_lock = threading.Lock()
+_trocr_lock = threading.Lock()
+
 def init_worker():
     """Loads every OCR/NLP engine once and caches it in module globals.
 
@@ -400,6 +455,13 @@ def init_worker():
     global _nlp, _trocr_processor, _trocr_model, _worker_initialized
     if _worker_initialized:
         return
+    # Set in `finally`, not just on the success path: if one optional engine
+    # fails to load (e.g. a missing model file), the exception handler below
+    # logs it and leaves that engine's global None, which every call site
+    # already treats as "skip this engine" -- the intended degrade-gracefully
+    # behavior. Only setting this flag on full success meant that same
+    # failure would instead force a full re-init attempt (and re-fail) on
+    # EVERY subsequent job for the life of the worker process.
     try:
         gpu_available = torch.cuda.is_available()
         if PaddleOCR is not None:
@@ -433,11 +495,12 @@ def init_worker():
             )
         if spacy is not None:
             _nlp = spacy.load("en_core_web_sm")
-        _worker_initialized = True
     except Exception as e:
         logging.exception(f"[-] Worker init failed: {e}")
         with open(ERROR_LOG, "a", encoding="utf-8") as f:
             f.write(f"Worker Init Exception: {e}\n")
+    finally:
+        _worker_initialized = True
 
 # ==============================================================================
 # PASS-AWARE PROGRESSIVE DOCUMENT EXTRACTION (10 PASSES)
@@ -623,7 +686,7 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
     # Pass 3, 7-10: PaddleOCR with Angle Classification
     if _paddle is not None and pass_num in [3, 7, 8, 9, 10]:
         try:
-            p_res = _run_with_timeout(_paddle.ocr, cv_img, cls=True)
+            p_res = _run_engine_call(_paddle_lock, _paddle.ocr, cv_img, cls=True)
             if p_res:
                 for block in p_res:
                     if block:
@@ -634,18 +697,22 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
             engines_used.append("PaddleOCR")
         except FutureTimeoutError:
             logging.warning(f"[!] PaddleOCR timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
+        except EngineBusyError:
+            logging.warning(f"[!] PaddleOCR still busy with an orphaned call on pass {pass_num}, skipping.")
         except Exception as e:
             logging.warning(f"[!] PaddleOCR failed on pass {pass_num}: {e}")
 
     # Pass 4, 8, 10: EasyOCR deep convolutional model
     if _easy is not None and pass_num in [4, 8, 10]:
         try:
-            results = _run_with_timeout(_easy.readtext, cv_img, detail=1)
+            results = _run_engine_call(_easy_lock, _easy.readtext, cv_img, detail=1)
             for _, text, conf in results:
                 _merge(text, float(conf))
             engines_used.append("EasyOCR")
         except FutureTimeoutError:
             logging.warning(f"[!] EasyOCR timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
+        except EngineBusyError:
+            logging.warning(f"[!] EasyOCR still busy with an orphaned call on pass {pass_num}, skipping.")
         except Exception as e:
             logging.warning(f"[!] EasyOCR failed on pass {pass_num}: {e}")
 
@@ -653,8 +720,8 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
     # RESEARCH_ENGINES_ENABLED; _surya_rec stays None unless explicitly opted in)
     if _surya_rec is not None and pass_num in [5, 9, 10]:
         try:
-            preds = _run_with_timeout(
-                run_ocr, [enhanced_img], [_surya_det], [_surya_det_proc], [_surya_rec], [_surya_rec_proc]
+            preds = _run_engine_call(
+                _surya_lock, run_ocr, [enhanced_img], [_surya_det], [_surya_det_proc], [_surya_rec], [_surya_rec_proc]
             )
             for page in preds:
                 for line in page.text_lines:
@@ -665,6 +732,8 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
             engines_used.append("Surya")
         except FutureTimeoutError:
             logging.warning(f"[!] Surya timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
+        except EngineBusyError:
+            logging.warning(f"[!] Surya still busy with an orphaned call on pass {pass_num}, skipping.")
         except Exception as e:
             logging.warning(f"[!] Surya failed on pass {pass_num}: {e}")
 
@@ -675,12 +744,14 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
     # rather than a fabricated precise-looking number.
     if _trocr_model is not None and pass_num in [6, 7, 8, 9, 10]:
         try:
-            gen_text = _run_with_timeout(_run_trocr, enhanced_img)
+            gen_text = _run_engine_call(_trocr_lock, _run_trocr, enhanced_img)
             for line in gen_text.splitlines():
                 _merge(line, 0.70)
             engines_used.append("TrOCR-Handwriting")
         except FutureTimeoutError:
             logging.warning(f"[!] TrOCR timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
+        except EngineBusyError:
+            logging.warning(f"[!] TrOCR still busy with an orphaned call on pass {pass_num}, skipping.")
         except Exception as e:
             logging.warning(f"[!] TrOCR failed on pass {pass_num}: {e}")
 

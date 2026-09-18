@@ -74,6 +74,74 @@ def test_dgx_worker_has_no_shared_job_executor():
 
 
 # ---------------------------------------------------------------------------
+# _run_engine_call -- the follow-on race the fresh-executor-per-call fix
+# above introduced: an orphaned thread from a timeout keeps running against
+# the SAME shared engine singleton (PaddleOCR/EasyOCR/Surya/TrOCR are each a
+# single global model object). Without serializing access, a later call to
+# the same engine would invoke that non-thread-safe object concurrently.
+# ---------------------------------------------------------------------------
+
+def test_run_engine_call_raises_busy_when_lock_is_held():
+    lock = engine.threading.Lock()
+    lock.acquire()
+    try:
+        with pytest.raises(engine.EngineBusyError):
+            engine._run_engine_call(lock, lambda: "should not run", timeout=1.0)
+    finally:
+        lock.release()
+
+
+def test_run_engine_call_serializes_a_real_orphaned_hang():
+    """The actual regression test: start a call that hangs past our timeout
+    (leaving its thread orphaned and still holding the lock), then
+    immediately try a second call against the same lock. It must be
+    rejected as busy, not run concurrently against the "same" engine."""
+    lock = engine.threading.Lock()
+
+    def hang():
+        time.sleep(5)
+
+    with pytest.raises(engine.FutureTimeoutError):
+        engine._run_engine_call(lock, hang, timeout=0.2)
+
+    # The orphaned thread from the call above is still running (and still
+    # holding `lock`) well past our 0.2s timeout -- a second call right now
+    # must see the engine as busy, not race it.
+    with pytest.raises(engine.EngineBusyError):
+        engine._run_engine_call(lock, lambda: "fast", timeout=1.0)
+
+
+def test_run_engine_call_succeeds_once_the_lock_is_free():
+    lock = engine.threading.Lock()
+    result = engine._run_engine_call(lock, lambda: "fast", timeout=1.0)
+    assert result == "fast"
+    assert lock.acquire(blocking=False), "lock must be released after a successful call"
+    lock.release()
+
+
+# ---------------------------------------------------------------------------
+# init_worker -- idempotency flag must be set even when an optional engine
+# fails to load, or every subsequent job on a long-running worker re-attempts
+# (and re-fails) full initialization instead of just skipping that engine.
+# ---------------------------------------------------------------------------
+
+def test_init_worker_marks_initialized_even_on_partial_failure(monkeypatch):
+    monkeypatch.setattr(engine, "_worker_initialized", False)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("simulated engine load failure")
+
+    monkeypatch.setattr(engine, "spacy", type("Bad", (), {"load": staticmethod(boom)}))
+    engine.init_worker()
+    assert engine._worker_initialized is True, (
+        "a failure partway through init_worker() must still mark the worker "
+        "initialized -- otherwise every future job re-attempts (and "
+        "re-fails) full init instead of just treating the failed engine as "
+        "unavailable, the way every call site already handles a None engine."
+    )
+
+
+# ---------------------------------------------------------------------------
 # merge_pass_fields -- the de-duplicated monotonic quality invariant
 # ---------------------------------------------------------------------------
 
