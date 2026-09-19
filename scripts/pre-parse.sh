@@ -51,13 +51,27 @@ process_files() {
             rm -f "$filepath"; exit 0
         fi
         
-        # Skip if file type is entirely unidentifiable
-        [[ "$ext_guess" == "???" || -z "$ext_guess" ]] && exit 0
-        new_ext="${ext_guess%%/*}"
-        # Guard against a non-standard `file` build emitting words instead of extensions.
-        if [[ ! "$new_ext" =~ ^[a-z0-9]{2,5}$ ]]; then
-            exit 0
-        fi
+        # Name by TRUE content type. `file --extension` says "???" for plain text and returns oddities
+        # ("text", "image", "jpe") that the OCR pipeline does not accept, which silently lost thousands of files.
+        case "$mime" in
+            image/bmp|image/x-ms-bmp) new_ext=bmp;;
+            image/jpeg) new_ext=jpg;;
+            image/png) new_ext=png;;
+            image/tiff) new_ext=tif;;
+            image/webp) new_ext=webp;;
+            application/pdf) new_ext=pdf;;
+            text/plain) new_ext=txt;;
+            text/xml|application/xml) new_ext=xml;;
+            application/json) new_ext=json;;
+            application/rtf|text/rtf) new_ext=rtf;;
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document) new_ext=docx;;
+            *)
+                # Unknown mime: fall back to file'"'"'s own extension guess, if it looks like a real extension.
+                [[ "$ext_guess" == "???" || -z "$ext_guess" ]] && exit 0
+                new_ext="${ext_guess%%/*}"
+                [[ "$new_ext" =~ ^[a-z0-9]{2,5}$ ]] || exit 0
+                ;;
+        esac
         
         # 2. HASH, DEDUPLICATE, AND RENAME
         file_hash=$(md5sum "$filepath" | cut -d" " -f1)
@@ -83,6 +97,10 @@ extract_archives() {
         filepath="$1"
         [[ ! -f "$filepath" ]] && exit 0
         
+        # Zip-based containers that are NOT archives of documents: extracting a .jar/.apk explodes into 100k+
+        # class/resource files, and Office/EPUB files must stay intact for their own parsers.
+        name_lower=$(basename "$filepath" | tr "[:upper:]" "[:lower:]")
+        [[ "$name_lower" =~ \.(jar|apk|aar|war|ear|xpi|crx|vsix|odt|ods|odp|epub|docx|xlsx|pptx)$ ]] && exit 0
         mime=$(file -b --mime-type "$filepath")
         if [[ "$mime" =~ application/(zip|x-rar|x-7z-compressed|gzip|x-tar|x-bzip2|x-xz|vnd\.rar) ]]; then
             # Extract to a temp folder named after the archive to avoid filename collisions during extraction
@@ -95,7 +113,10 @@ extract_archives() {
                 exit 0
             fi
             "$SEVENZ" x -mmt=1 -y -o"$temp_out" "$filepath" >/dev/null 2>&1
-            [[ $? -eq 0 ]] && rm -f "$filepath"
+            rc=$?
+            # Archive members can carry mode 000 dirs/files; make them traversable or flatten/find cannot read them.
+            chmod -R u+rwX "$temp_out" 2>/dev/null
+            [[ $rc -eq 0 ]] && rm -f "$filepath"
         fi
     ' _ {}
 }
@@ -124,5 +145,12 @@ for round in 1 2 3 4 5 6; do
 done
 remaining=$(count_archives)
 [[ "${remaining:-0}" -gt 0 ]] && echo "WARNING: $remaining archive(s) could not be extracted" >&2
+
+# --- QUARANTINE: set aside (never delete) everything the OCR pipeline cannot read ---
+# Accepted set mirrors server/middleware/upload.ts SUPPORTED_EXTENSIONS.
+UNSUPPORTED_DIR="${TARGET_DIR%/}.unsupported"
+mkdir -p "$UNSUPPORTED_DIR"
+find "$TARGET_DIR" -maxdepth 1 -type f -not -iregex '.*\.\(pdf\|jpe?g\|png\|tiff?\|bmp\|webp\|docx\|rtf\|xml\|txt\|json\)$'     -exec mv --backup=t -t "$UNSUPPORTED_DIR" {} +
+echo "--> unsupported types set aside in $UNSUPPORTED_DIR ($(find "$UNSUPPORTED_DIR" -type f | wc -l) files)"
 
 echo "Operation Complete. Folder is flattened, cleaned, and simplified."
