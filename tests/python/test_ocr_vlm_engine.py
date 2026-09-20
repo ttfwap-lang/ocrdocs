@@ -5,6 +5,7 @@ Paddle-VL, Qwen and the hybrid reader are replaced with fakes; nothing here need
 import pytest
 from PIL import Image
 
+import ocr_doc_pipeline
 import ocr_hybrid
 import ocr_paddle_vl
 import ocr_qwen_merge as qm
@@ -133,7 +134,7 @@ def test_single_file_pass_reports_pages_and_fields_only_in_vlm_mode(stack, monke
     (["loan_application", "loan_application", "payslip"], "loan_application"),
 ])
 def test_document_type_is_the_page_majority_ignoring_other(types, expected):
-    assert engine.majority_document_type(types) == expected
+    assert ocr_doc_pipeline.majority_document_type(types) == expected
 
 
 def test_page_document_type_flows_from_the_merge_into_the_file_result(stack, monkeypatch, tmp_path):

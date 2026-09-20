@@ -58,9 +58,12 @@ except ImportError:  # pragma: no cover
 try:
     import ocr_paddle_vl  # sibling module: PaddleOCR-VL over HTTP (vlm_v2 pipeline)
     import ocr_qwen_merge  # sibling module: Qwen3-VL page classifier and field merger (vlm_v2 pipeline)
+    import ocr_chandra  # sibling module: Chandra OCR 2 second reader (vlm_v2, flagged pages only)
+    import ocr_gates  # sibling module: S1 low-res probe / orientation and S2 regex clear
+    import ocr_doc_pipeline  # sibling module: document-level orchestration of the vlm_v2 stages
+    import ocr_agent_verify  # sibling module: S5 agent verifier
 except ImportError:  # pragma: no cover
-    ocr_paddle_vl = None
-    ocr_qwen_merge = None
+    ocr_paddle_vl = ocr_qwen_merge = ocr_chandra = ocr_gates = ocr_doc_pipeline = ocr_agent_verify = None
 
 
 # ==============================================================================
@@ -691,21 +694,29 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
 
     return "\n".join(collected.keys()), engines_used, collected
 
-def run_page_vlm(image: Image.Image) -> Dict[str, Any]:
-    """vlm_v2 page read. Returns {kind, text, engines, line_confs, fields, degraded}.
+def classify_page_safe(image: Image.Image) -> Tuple[str, bool]:
+    """(kind, degraded). Qwen being unreachable means "read it with everything", never a failed page."""
+    try:
+        return ocr_qwen_merge.classify_page(image), False
+    except ocr_qwen_merge.QwenUnavailable as e:
+        logging.warning(f"[!] Page classification unavailable, treating page as 'both': {e}")
+        return "both", True
+
+
+def run_page_vlm(image: Image.Image, kind: Optional[str] = None) -> Dict[str, Any]:
+    """vlm_v2 page read. Returns {kind, text, paddle_text, engines, line_confs, fields, degraded, document_type}.
+    kind is given when the caller already classified the page (the document pipeline does); otherwise Qwen is asked.
 
     Qwen classifies the page; printed pages go to PaddleOCR-VL, handwritten ones to the Tesseract+TrOCR hybrid (only
     the lines TrOCR read are handed to the merge as handwriting); Qwen then merges both readings into typed fields.
     Any service being down degrades that page to the legacy Tesseract+TrOCR read instead of failing it.
     """
     degraded = False
-    try:
-        kind = ocr_qwen_merge.classify_page(image)
-    except ocr_qwen_merge.QwenUnavailable as e:
-        logging.warning(f"[!] Page classification unavailable, treating page as 'both': {e}")
-        kind, degraded = "both", True
+    if kind is None:
+        kind, degraded = classify_page_safe(image)
     if kind in ("blank", "photo"):
-        return {"kind": kind, "text": "", "engines": [], "line_confs": {}, "fields": [], "degraded": degraded}
+        return {"kind": kind, "text": "", "paddle_text": "", "engines": [], "line_confs": {}, "fields": [],
+                "degraded": degraded, "document_type": "other"}
 
     engines: List[str] = []
     confs: Dict[str, float] = {}
@@ -720,7 +731,8 @@ def run_page_vlm(image: Image.Image) -> Dict[str, Any]:
         except ocr_paddle_vl.PaddleUnavailable as e:
             logging.warning(f"[!] Paddle-VL unavailable, falling back to Tesseract for this page: {e}")
             text, eng, lc = run_pass_ocr(image, 1)
-            return {"kind": kind, "text": text, "engines": eng, "line_confs": lc, "fields": [], "degraded": True}
+            return {"kind": kind, "text": text, "paddle_text": "", "engines": eng, "line_confs": lc, "fields": [],
+                    "degraded": True, "document_type": "other"}
 
     trocr_lines: List[Tuple[str, float]] = []
     if kind in ("handwritten", "both") and ocr_hybrid is not None and pytesseract is not None:
@@ -751,23 +763,37 @@ def run_page_vlm(image: Image.Image) -> Dict[str, Any]:
             logging.warning(f"[!] Qwen merge unavailable, regex extraction only for this page: {e}")
             degraded = True
     text = "\n".join(t for t in [paddle_text] + [t for t, _ in trocr_lines] if t)
-    return {"kind": kind, "text": text, "engines": engines, "line_confs": confs, "fields": fields, "degraded": degraded,
-            "document_type": document_type}
+    return {"kind": kind, "text": text, "paddle_text": paddle_text, "engines": engines, "line_confs": confs,
+            "fields": fields, "degraded": degraded, "document_type": document_type}
 
 
-def majority_document_type(types: List[str]) -> str:
-    """One type for the whole document: the most common page type, ignoring "other" unless nothing else was seen.
-    Two different specific types tied for first (a statement stapled to a payslip) is "mixed"."""
-    counts: Dict[str, int] = {}
-    for t in types:
-        if t and t != "other":
-            counts[t] = counts.get(t, 0) + 1
-    if not counts:
-        return "other"
-    ranked = sorted(counts.items(), key=lambda kv: -kv[1])
-    if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
-        return "mixed"
-    return ranked[0][0]
+def build_pipeline_deps() -> "ocr_doc_pipeline.Deps":
+    """Wire the vlm_v2 stages to this engine's readers, validators and services (each optional stage per its flag)."""
+    validators = {
+        "abn": validate_australian_abn, "bsb": validate_australian_bsb,
+        "date_of_birth": validate_australian_dob, "mobile_number": validate_australian_phone,
+    }
+
+    def trocr_crop(im: Image.Image) -> str:
+        if _trocr_reader is None:
+            raise RuntimeError("TrOCR is not loaded")
+        with _trocr_lock:
+            return _trocr_reader.recognize([im])[0][0]
+
+    agent = None
+    if AGENT_ENABLED:
+        readers = {"trocr": trocr_crop, "paddle": ocr_paddle_vl.read_page, "chandra": lambda im: ocr_chandra.read_page(im).text}
+        agent = ocr_agent_verify.AgentVerifier(ocr_agent_verify.qwen_chat(AGENT_URL, AGENT_MODEL), readers, validators)
+    return ocr_doc_pipeline.Deps(
+        classify=classify_page_safe,
+        read_page=run_page_vlm,
+        probe=ocr_gates.probe_page if (GATES_ENABLED and pytesseract is not None) else None,
+        label_patterns=BANK_FIELD_PATTERNS,
+        validators=validators,
+        second_reader=(lambda im: ocr_chandra.read_page(im).text) if CHANDRA_ENABLED else None,
+        agent=agent,
+    )
+
 
 
 def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
@@ -976,6 +1002,17 @@ MAX_HYBRID_PASSES = int(os.environ.get("OCRDOCS_MAX_HYBRID_PASSES", "2"))
 # "legacy": multi-pass Tesseract+TrOCR over the whole document. "vlm_v2": per page, Qwen classifies, PaddleOCR-VL reads
 # print, TrOCR reads handwriting, Qwen merges into fields (single pass). Falls back per page if a service is down.
 PIPELINE_MODE = os.environ.get("OCRDOCS_PIPELINE", "legacy").strip().lower()
+# Optional vlm_v2 stages, each off until measured on real pages: S1/S2 cheap gates (may park files as no_match), the
+# Chandra second reader on flagged printed pages, and the S5 agent verifier on flagged files.
+def _flag(name: str) -> bool:
+    return os.environ.get(name, "false").strip().lower() == "true"
+
+
+GATES_ENABLED = _flag("OCRDOCS_GATES")
+CHANDRA_ENABLED = _flag("OCRDOCS_CHANDRA")
+AGENT_ENABLED = _flag("OCRDOCS_AGENT")
+AGENT_URL = os.environ.get("OCRDOCS_AGENT_URL", os.environ.get("OCRDOCS_QWEN_URL", "http://localhost:8200"))
+AGENT_MODEL = os.environ.get("OCRDOCS_AGENT_MODEL", os.environ.get("OCRDOCS_QWEN_MODEL", "qwen-vl"))
 
 
 def _page_needs_visual(page, native_chars: int) -> bool:
@@ -1101,24 +1138,21 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     ocr_line_confidences: Dict[str, float] = {}
     if used_native_text:
         engines_used.append("Native PDF Text Layer")
-    pages_info: List[Dict[str, Any]] = []
-    vlm_fields: List[Dict[str, Any]] = []
-    use_vlm = PIPELINE_MODE == "vlm_v2" and ocr_paddle_vl is not None and ocr_qwen_merge is not None
-    for image_index, img in enumerate(images):
-        if use_vlm:
-            page = run_page_vlm(img)
-            txt, engines, line_confs = page["text"], page["engines"], page["line_confs"]
-            pages_info.append({"imageIndex": image_index, "kind": page["kind"], "engines": engines,
-                               "degraded": page["degraded"], "fieldCount": len(page["fields"]),
-                               "documentType": page.get("document_type", "other")})
-            vlm_fields.extend({**vars(f), "imageIndex": image_index} for f in page["fields"])
-        else:
+    doc: Optional[Dict[str, Any]] = None
+    use_vlm = PIPELINE_MODE == "vlm_v2" and ocr_doc_pipeline is not None and ocr_qwen_merge is not None
+    if use_vlm and images:
+        doc = ocr_doc_pipeline.run_document(images, build_pipeline_deps(), audit_sample=ocr_gates.audit_sample(path.name))
+        ocr_texts.append(doc["text"])
+        ocr_line_confidences.update(doc["line_confs"])
+        engines_used.extend(e for e in doc["engines"] if e not in engines_used)
+    else:
+        for img in images:
             txt, engines, line_confs = run_pass_ocr(img, pass_num)
-        ocr_texts.append(txt)
-        ocr_line_confidences.update(line_confs)
-        for e in engines:
-            if e not in engines_used:
-                engines_used.append(e)
+            ocr_texts.append(txt)
+            ocr_line_confidences.update(line_confs)
+            for e in engines:
+                if e not in engines_used:
+                    engines_used.append(e)
 
     combined_text = "\n".join(raw_texts + ocr_texts)
     if not combined_text.strip():
@@ -1150,10 +1184,13 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     )
     result["raw_text"] = combined_text
     result["engines_used"] = engines_used
-    if use_vlm:
-        result["pages"] = pages_info
-        result["vlm_fields"] = vlm_fields
-        result["document_type"] = majority_document_type([p["documentType"] for p in pages_info])
+    if doc is not None:
+        result["pages"] = doc["pages"]
+        result["vlm_fields"] = doc["fields"]
+        result["document_type"] = doc["document_type"]
+        result["flags"] = doc["flags"]
+        result["verdicts"] = doc["verdicts"]
+        result["s2"] = {"cleared": doc["cleared"], "reason": doc["cleared_reason"], "auditSampled": doc["audit_sampled"]}
     return "SUCCESS", fpath, result
 
 # ==============================================================================
@@ -1224,6 +1261,7 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
     page_kinds: List[Dict[str, Any]] = []
     vlm_fields: List[Dict[str, Any]] = []
     document_type = "other"
+    review: Dict[str, Any] = {}
     passes: List[Dict[str, Any]] = []
     consecutive_zero_delta = 0
     field_keys = list(BANK_FIELD_PATTERNS.keys())
@@ -1255,6 +1293,7 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
         if "pages" in result:
             page_kinds, vlm_fields = result["pages"], result.get("vlm_fields", [])
             document_type = result.get("document_type", "other")
+            review = {"flags": result.get("flags", []), "verdicts": result.get("verdicts", []), "s2": result.get("s2")}
         if result.get("raw_text"):
             latest_raw_text = result["raw_text"]
 
@@ -1320,6 +1359,7 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
         "pages": page_kinds,
         "vlmFields": vlm_fields,
         "documentType": document_type,
+        "review": review,
         "engineUsed": ",".join(
             sorted({e for p in passes for e in p.get("enginesUsed", [])})
         ) or "multipass-ensemble",
