@@ -1,1 +1,0 @@
-﻿cd C:/Users/lnxzf/Desktop/projects/ocrdocs/queued;  =  Test document content with ABN: 51 824 753 556 and BSB: 062-000 * 50; Set-Content test1.txt ; Set-Content dup.txt ;  = Another document with DOB: 01/01/1990 and Phone: 0412 345 678 * 50; Set-Content sub/test2.txt ;  = Unique content for testing * 50; Set-Content sub/deep/test3.txt 
