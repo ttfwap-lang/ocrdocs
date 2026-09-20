@@ -178,11 +178,15 @@ export function createExtractionRepo(db: DatabaseType) {
       const fields = this.getFieldsAsContract(extractionId);
       let engineUsed: string | undefined;
       let passes: Array<Record<string, unknown>> | undefined;
+      let pages: Array<Record<string, unknown>> | undefined;
+      let vlmFieldCount: number | undefined;
       if (extraction.extraction_json) {
         try {
           const parsed = JSON.parse(extraction.extraction_json);
           engineUsed = typeof parsed.engineUsed === 'string' ? parsed.engineUsed : undefined;
           passes = Array.isArray(parsed.passes) ? parsed.passes : undefined;
+          pages = Array.isArray(parsed.pages) && parsed.pages.length ? parsed.pages : undefined;
+          vlmFieldCount = typeof parsed.vlmFieldCount === 'number' ? parsed.vlmFieldCount : undefined;
         } catch {
           // Malformed JSON must not break result retrieval.
         }
@@ -198,6 +202,8 @@ export function createExtractionRepo(db: DatabaseType) {
           createdAt: extraction.created_at,
           engineUsed,
           passes,
+          ...(pages ? { pages } : {}),
+          ...(vlmFieldCount !== undefined ? { vlmFieldCount } : {}),
         },
       };
     },

@@ -50,6 +50,9 @@ export interface PersistedExtractionResult {
     createdAt: string;
     engineUsed?: string;
     passes?: Array<Record<string, unknown>>;
+    /** vlm_v2 only: per-page kind (printed/handwritten/both/...), engines used, and whether the page degraded. */
+    pages?: Array<Record<string, unknown>>;
+    vlmFieldCount?: number;
   };
 }
 

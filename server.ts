@@ -24,6 +24,7 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 
 import { extractBankFieldsFromText } from "./src/utils/ocrMatcherEngine";
+import { mergeVlmFields, parseVlmFields } from "./server/services/vlmFieldMerge";
 import { ServiceAvailabilityResponse, ExtractionResult } from "./src/types";
 import { initDb, closeDb } from "./server/db/database";
 import { createDocumentRepo } from "./server/db/repositories/documentRepo";
@@ -235,7 +236,10 @@ app.get("/api/services/status", (_req, res) => {
 // Serve the Production DGX Scripts for download or curl
 app.get("/api/scripts/:scriptName", requireWorkerAuth, async (req: express.Request<{ scriptName: string }>, res) => {
   const { scriptName } = req.params;
-  const allowed = ["dgx_setup.sh", "ocr_spark_engine.py", "deploy.sh", "check_dgx_codebase.sh"];
+  const allowed = [
+    "dgx_setup.sh", "ocr_spark_engine.py", "ocr_hybrid.py", "ocr_paddle_vl.py", "ocr_qwen_merge.py", "deploy.sh",
+    "check_dgx_codebase.sh",
+  ];
   if (!allowed.includes(scriptName)) {
     return res.status(404).json({ error: "Script not found. Valid: " + allowed.join(", ") });
   }
@@ -906,7 +910,10 @@ app.post("/api/jobs/:id/result", requireWorkerAuth, (req: express.Request<{ id: 
         `[EXTRACT] Job ${job.id} worker text truncated to ${MAX_EXTRACTION_TEXT_CHARS} chars for matching`,
       );
     }
-    const fields = extractBankFieldsFromText(capped.text).map(toExtractedField);
+    const regexResults = extractBankFieldsFromText(capped.text);
+    // vlm_v2 workers also send the fields Qwen merged from the Paddle-VL and TrOCR readings; regex validates them.
+    const vlmFields = parseVlmFields(body.vlmFields);
+    const fields = vlmFields.length ? mergeVlmFields(regexResults, vlmFields, toExtractedField) : regexResults.map(toExtractedField);
     const extraction = extractionRepo.createExtraction({
       documentId: job.document_id,
       rawText: capped.text,
@@ -914,6 +921,8 @@ app.post("/api/jobs/:id/result", requireWorkerAuth, (req: express.Request<{ id: 
       extractionJson: JSON.stringify({
         engineUsed: typeof body.engineUsed === "string" ? body.engineUsed.slice(0, 128) : "dgx-multipass",
         passes: Array.isArray(body.passes) ? body.passes.slice(0, 50) : [],
+        pages: Array.isArray(body.pages) ? body.pages.slice(0, 200) : [],
+        vlmFieldCount: vlmFields.length,
         textTruncated: capped.truncated,
       }),
     });

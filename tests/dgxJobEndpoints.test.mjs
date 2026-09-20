@@ -190,6 +190,36 @@ test('Stage/Phase 2 — DGX job-queue endpoint contract', async (t) => {
     assert.equal(docBody.jobs[0].status, 'completed');
   });
 
+  await t.test('vlm_v2 result: Qwen-merged fields and page kinds are persisted; regex still validates', async () => {
+    const upload = await uploadPng(baseUrl, 'vlm-scan.png');
+    assert.equal(upload.status, 202);
+    const claim = await (await fetch(`${baseUrl}/api/jobs/claim`, { headers: authHeaders(WORKER_TOKEN) })).json();
+    const resultRes = await fetch(`${baseUrl}/api/jobs/${claim.job.id}/result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(WORKER_TOKEN) },
+      body: JSON.stringify({
+        status: 'SUCCESS',
+        rawText: 'BSB: 062-000' + String.fromCharCode(10) + 'Family name: (handwritten)',
+        engineUsed: 'PaddleOCR-VL,TrOCR,Qwen3-VL',
+        passes: [{ passNumber: 1 }],
+        pages: [{ imageIndex: 0, kind: 'both', engines: ['PaddleOCR-VL', 'TrOCR', 'Qwen3-VL'], degraded: false, fieldCount: 3 }],
+        vlmFields: [
+          { name: 'family_name', value: 'Nguyen', source: 'handwriting', confidence: 0.85, digits_verified: null, evidence: 'line 2' },
+          { name: 'bsb', value: '062-999', source: 'print', confidence: 0.35, digits_verified: false, evidence: '' },
+          { name: 'account_number', value: '12345678', source: 'handwriting', confidence: 0.85, digits_verified: true, evidence: '' },
+        ],
+      }),
+    });
+    assert.equal(resultRes.status, 201);
+    const body = await resultRes.json();
+    const fields = body.extraction.fields;
+    assert.equal(fields.find((f) => f.name === 'Family Name')?.value ?? fields.find((f) => /family/i.test(f.name))?.value, 'Nguyen');
+    assert.equal(fields.find((f) => f.name === 'Bank State Branch (BSB)').value, '062-000', 'unverified Qwen digits must not override the regex reading');
+    assert.equal(fields.find((f) => f.name === 'Account Number').value, '12345678');
+    assert.equal(body.extraction.metadata.vlmFieldCount, 3);
+    assert.equal(body.extraction.metadata.pages[0].kind, 'both');
+  });
+
   await t.test('result for an unknown job id returns 404', async () => {
     const res = await fetch(`${baseUrl}/api/jobs/00000000-0000-0000-0000-000000000000/result`, {
       method: 'POST',
