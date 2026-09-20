@@ -39,7 +39,3 @@ protobuf==7.36.2
 
 # --- DGX Worker Networking (Production Scope: Permissive) ---
 requests==2.34.2
-
-# --- Screened Evaluation Engines (Subject to Commercial / Licensing Screening) ---
-# Surya OCR: GPL-3.0 (Evaluation / Research mode only; excluded from default production builds)
-surya-ocr==0.4.14

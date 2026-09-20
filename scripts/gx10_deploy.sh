@@ -65,7 +65,7 @@ Group=flak3dd
 WorkingDirectory=$APP/scripts
 EnvironmentFile=$APP/.env.worker
 # env(1) in ExecStart wins over EnvironmentFile, so research engines stay off regardless of .env.worker.
-ExecStart=/usr/bin/env OCRDOCS_ENABLE_RESEARCH_ENGINES=false OCRDOCS_ENABLE_HANDWRITING_ENGINE=false /mnt/nvme/ocr_pipeline/venv/bin/python3 -u dgx_worker.py
+ExecStart=/usr/bin/env OCRDOCS_ENABLE_HANDWRITING_ENGINE=false /mnt/nvme/ocr_pipeline/venv/bin/python3 -u dgx_worker.py
 Restart=always
 RestartSec=5
 MemoryMax=8G
@@ -104,7 +104,7 @@ print('engine import ok | hybrid', e.ocr_hybrid is not None, '| cuda', e.torch.c
 [Service]
 ExecStart=
 # env(1) beats EnvironmentFile: force the new stack regardless of .env.worker.
-ExecStart=/usr/bin/env OCRDOCS_ENABLE_RESEARCH_ENGINES=false OCRDOCS_ENABLE_HANDWRITING_ENGINE=true HF_HOME=$RUNTIME/hf HF_HUB_OFFLINE=1 $RUNTIME/venv/bin/python3 -u dgx_worker.py
+ExecStart=/usr/bin/env OCRDOCS_ENABLE_HANDWRITING_ENGINE=true HF_HOME=$RUNTIME/hf HF_HUB_OFFLINE=1 $RUNTIME/venv/bin/python3 -u dgx_worker.py
 CONF
 fi
 systemctl daemon-reload

@@ -22,4 +22,4 @@ for repo in Qwen/Qwen2.5-VL-7B-Instruct microsoft/Florence-2-large; do
   "$VENV/bin/python" -c "import sys; from huggingface_hub import snapshot_download as d; d(repo_id=sys.argv[1], local_dir=sys.argv[2])" "$repo" "$MODELS_DIR/${repo##*/}"
 done
 du -sh "$MODELS_DIR"/*
-echo "Set OCRDOCS_VLM_DIR=$MODELS_DIR and OCRDOCS_ENABLE_RESEARCH_ENGINES=true to enable."
+echo "Models are in $MODELS_DIR."

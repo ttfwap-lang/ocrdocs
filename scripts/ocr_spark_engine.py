@@ -62,13 +62,6 @@ except ImportError:  # pragma: no cover
     ocr_paddle_vl = None
     ocr_qwen_merge = None
 
-try:
-    from surya.ocr import run_ocr
-    from surya.model.recognition.model import load_model as load_rec_model, load_processor as load_rec_processor
-    from surya.model.detection.model import load_model as load_det_model, load_processor as load_det_processor
-except ImportError:
-    run_ocr = None
-
 
 # ==============================================================================
 # CONFIGURATION & NVME PATHING
@@ -82,11 +75,6 @@ OUTPUT_PARQUET = OUTPUT_DIR / "ocr_consolidated_identities.parquet"
 NOOCR_DIR = NVME_DIR / "noocr"
 LOGS_DIR = NVME_DIR / "logs"
 ERROR_LOG = LOGS_DIR / "pipeline_errors.log"
-
-# Surya OCR is GPL-3.0. docs/stage5/license-manifest.json documents it as
-# "restricted to local research/evaluation mode; excluded from production
-# deployment." It must never load by default in the commercial pipeline.
-RESEARCH_ENGINES_ENABLED = os.environ.get("OCRDOCS_ENABLE_RESEARCH_ENGINES", "false").strip().lower() == "true"
 
 # Handwriting engine (TrOCR, line-level, MIT/Apache): ON by default. Measured on real IAM handwriting it reads
 # 93% of words vs 21% for Tesseract; it is only invoked for lines Tesseract is unsure about, so cost stays small.
@@ -137,7 +125,7 @@ class EngineBusyError(Exception):
 
 def _run_engine_call(lock: threading.Lock, fn, *args, timeout: float = ENGINE_TIMEOUT_SECONDS, **kwargs):
     """Like _run_with_timeout, but serializes access to a shared engine
-    singleton (Surya/TrOCR) via `lock`.
+    singleton (TrOCR) via `lock`.
 
     _run_with_timeout's fresh-executor-per-call fix (above) solves the pool
     deadlock, but each of those engines is a single global model object
@@ -446,10 +434,6 @@ def validate_australian_postcode(postcode_str: str) -> bool:
 # ==============================================================================
 # MULTI-ENGINE WORKER INITIALIZATION (Lazy & VRAM-Pinned)
 # ==============================================================================
-_surya_det = None
-_surya_det_proc = None
-_surya_rec = None
-_surya_rec_proc = None
 _nlp = None
 _trocr_reader = None
 # A native PDF text layer at least this long is exact: stop after pass 1 instead of re-OCRing the same pages.
@@ -460,7 +444,6 @@ _worker_initialized = False
 
 # One lock per shared engine singleton -- see EngineBusyError / _run_engine_call
 # above for why these exist (serializing access around orphaned-timeout races).
-_surya_lock = threading.Lock()
 _trocr_lock = threading.Lock()
 
 def init_worker():
@@ -471,7 +454,6 @@ def init_worker():
     reload from scratch each time on a long-running worker (needless VRAM
     churn/fragmentation on a shared GPU). Now a second call is a no-op.
     """
-    global _surya_det, _surya_det_proc, _surya_rec, _surya_rec_proc
     global _nlp, _trocr_reader, _worker_initialized
     if _worker_initialized:
         return
@@ -484,20 +466,6 @@ def init_worker():
     # EVERY subsequent job for the life of the worker process.
     try:
         gpu_available = torch.cuda.is_available()
-        if run_ocr is not None and RESEARCH_ENGINES_ENABLED:
-            logging.warning(
-                "[!] OCRDOCS_ENABLE_RESEARCH_ENGINES=true: loading Surya (GPL-3.0). "
-                "Research/evaluation mode only per docs/stage5/license-manifest.json — "
-                "do not enable this in a commercial production deployment."
-            )
-            _surya_det, _surya_det_proc = load_det_model(), load_det_processor()
-            _surya_rec, _surya_rec_proc = load_rec_model(), load_rec_processor()
-        elif run_ocr is not None:
-            logging.info(
-                "[*] Surya OCR package present but disabled by default (GPL-3.0, "
-                "research-only). Set OCRDOCS_ENABLE_RESEARCH_ENGINES=true to enable "
-                "for local evaluation."
-            )
         if ocr_hybrid is not None and HANDWRITING_ENGINE_ENABLED:
             # Lazy: the model itself loads on the first weak/handwritten line, and a failed load degrades to
             # Tesseract-only instead of breaking the worker.
@@ -679,7 +647,7 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
     list is derived from what ran, not a hardcoded label. line_confidences
     maps each collected text line to a REAL per-engine confidence (0-1) —
     Tesseract via image_to_data, TrOCR's own sequence probability,
-    Surya's score when enabled — so downstream field extraction no longer has
+    the Paddle-VL/Chandra readers — so downstream field extraction no longer has
     to invent a number. Engine failures are logged (not silently swallowed)
     and each call runs under ENGINE_TIMEOUT_SECONDS so one pathological image
     can't hang the whole multipass loop.
@@ -713,27 +681,6 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
             logging.warning(f"[!] Hybrid reader still busy with an orphaned call on pass {pass_num}, skipping.")
         except Exception as e:
             logging.warning(f"[!] Hybrid read failed on pass {pass_num}: {e}")
-
-    # Pass 5, 9, 10: Surya Layout & Recognition (research mode only — see
-    # RESEARCH_ENGINES_ENABLED; _surya_rec stays None unless explicitly opted in)
-    if _surya_rec is not None and pass_num in [5, 9, 10]:
-        try:
-            preds = _run_engine_call(
-                _surya_lock, run_ocr, [enhanced_img], [_surya_det], [_surya_det_proc], [_surya_rec], [_surya_rec_proc]
-            )
-            for page in preds:
-                for line in page.text_lines:
-                    # Surya's TextLine exposes .confidence in recent versions; fall back
-                    # to a documented, conservative default if this build doesn't.
-                    conf = float(getattr(line, "confidence", 0.75) or 0.75)
-                    _merge(line.text, conf)
-            engines_used.append("Surya")
-        except FutureTimeoutError:
-            logging.warning(f"[!] Surya timed out after {ENGINE_TIMEOUT_SECONDS}s on pass {pass_num}, skipping.")
-        except EngineBusyError:
-            logging.warning(f"[!] Surya still busy with an orphaned call on pass {pass_num}, skipping.")
-        except Exception as e:
-            logging.warning(f"[!] Surya failed on pass {pass_num}: {e}")
 
     try:
         if torch.cuda.is_available():

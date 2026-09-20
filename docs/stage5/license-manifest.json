@@ -401,17 +401,7 @@
         "notes": "Serialization dependency of sentencepiece/transformers."
       }
     ],
-    "screenedResearchDependencies": [
-      {
-        "name": "surya-ocr",
-        "version": "0.4.14",
-        "ecosystem": "pypi",
-        "license": "GPL-3.0",
-        "commercialUseAllowed": false,
-        "copyleft": true,
-        "notes": "GPL-3.0 copyleft restricted to local research/evaluation mode; excluded from production deployment."
-      }
-    ]
+    "screenedResearchDependencies": []
   },
   "nativeTools": {
     "tools": [
