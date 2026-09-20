@@ -155,3 +155,18 @@ The runner will append immutable per-attempt evidence and resumable control stat
   Verified (Phase 1 build unblock):
   - npx tsc --noEmit exits 0.
   - node --test tests/*.test.mjs reports no hard crashes; the charter suites are removed entirely and the charter-independent suites remain green.
+
+## 2026-09-21 verified checkpoint (measured on the GX10, not declared)
+
+What was run and observed:
+- Repo health: `npm run lint` 0 errors, `npm test` 193/193, `python -m pytest tests/python` 56/56, `npm run build` ok. Earlier in this stretch lint had 10 errors (a corrupted committed `test_server.js`) and one test failed (an accidental `choco` production dependency); both were removed (commit 74d8490).
+- Identities: re-processing the 64 documents behind the 48 saved identities through the real server+worker produced 21 identities (16 unchanged, 32 gone, 5 new). Identities whose name was mostly form-label words fell from 19 to 0 (word-list heuristic, an estimate). Whether the remaining identities are correct has NOT been established; that needs human grading of `review.txt` / `review2.txt`.
+- Fields populated over 12 core identity fields: old 359, new 290, Qwen3.6 (reads image) 317, Qwen2.5-VL-7B 199. Exact-string agreement with Qwen3.6 where both filled: old 23%, new 36%, Qwen2.5-VL 64%. Qwen3.6 is not ground truth, and the two vision models disagreed on names and phone digits in a sampled document.
+- New typed value validators (address, email, mobile, licence, passport) in `src/utils/valueSanity.ts` (commit 3e2b085). Replay against stored values rejected only junk (years/postcodes as addresses, business landlines as mobiles). NOT YET DEPLOYED to the GX10.
+- OCR model throughput on the GB10 (vLLM, this hardware, 127 pages; PaddleOCR run alone, others overlapped so they are lower bounds): PaddleOCR-VL-1.6 71.6 pages/min at concurrency 32 (8.0 at 1); olmOCR-2-7B-FP8 15.3 pages/min at 32 (2.8 at 1); Chandra OCR 2 in progress. Throughput only; accuracy is unmeasured until graded.
+
+Still open and honest about it:
+- No user authentication on upload/documents/review (deliberately not added; the operator does not want a dashboard login).
+- The GX10 is shared with other services; memory is the binding constraint (unified 121 GiB). Loading a 7B vision model needs about 40 GB free at start-up.
+- Full re-run of the ~17k documents with the new stack and the accuracy comparison of the OCR models are not done.
+- Chandra's model weights are under a modified OpenRAIL-M licence (free below $2M funding/revenue, not for use competing with the vendor's API): evaluation only until reviewed.
