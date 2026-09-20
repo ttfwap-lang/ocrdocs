@@ -170,3 +170,8 @@ Still open and honest about it:
 - The GX10 is shared with other services; memory is the binding constraint (unified 121 GiB). Loading a 7B vision model needs about 40 GB free at start-up.
 - Full re-run of the ~17k documents with the new stack and the accuracy comparison of the OCR models are not done.
 - Chandra's model weights are under a modified OpenRAIL-M licence (free below $2M funding/revenue, not for use competing with the vendor's API): evaluation only until reviewed.
+
+## 2026-09-21 vlm_v2 pipeline checkpoint (code and unit tests only; NOT deployed, NOT measured on real pages)
+What exists and was run locally: Paddle-VL and Chandra HTTP clients, the Qwen classify/merge with owner (applicant/parent/spouse/...), section, entry and document type, S1 low-res probe + orientation, S2 regex clear (parks, audit-sampled, never deletes), S4 question-flag rules, a tool-using S5 agent verifier that cannot accept a correction no reader supports, server-side owner routing and agent annotations, `scripts/vllm_services.sh`, and `docs/PIPELINE_V2.md`. The Surya engine and its GPL dependency were removed. Every optional stage is off by default (`OCRDOCS_PIPELINE=legacy`).
+Verified by running: `npm run lint` clean, Node and Python test suites green (see the commit log for counts), `bash -n` on the shell scripts.
+Not verified: accuracy of any of it on real pages; that the containers start with the chosen flags (Qwen3-VL-8B is not downloaded); throughput of the whole pipeline; how many files each S4 rule flags; the DenseNet triage (no trained weights).

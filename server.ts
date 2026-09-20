@@ -237,7 +237,8 @@ app.get("/api/services/status", (_req, res) => {
 app.get("/api/scripts/:scriptName", requireWorkerAuth, async (req: express.Request<{ scriptName: string }>, res) => {
   const { scriptName } = req.params;
   const allowed = [
-    "dgx_setup.sh", "ocr_spark_engine.py", "ocr_hybrid.py", "ocr_paddle_vl.py", "ocr_qwen_merge.py", "deploy.sh",
+    "dgx_setup.sh", "ocr_spark_engine.py", "ocr_hybrid.py", "ocr_paddle_vl.py", "ocr_qwen_merge.py", "ocr_chandra.py",
+    "ocr_gates.py", "ocr_question_score.py", "ocr_agent_verify.py", "ocr_doc_pipeline.py", "vllm_services.sh", "deploy.sh",
     "check_dgx_codebase.sh",
   ];
   if (!allowed.includes(scriptName)) {

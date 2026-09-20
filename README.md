@@ -11,6 +11,7 @@ no inbound port is opened on the DGX box.
 
 See also:
 - [`docs/OCR_SUPPORTED_FORMATS.md`](docs/OCR_SUPPORTED_FORMATS.md) — formats, native vs OCR path, local vs gx10 engine availability.
+- [`docs/PIPELINE_V2.md`](docs/PIPELINE_V2.md) — the vlm_v2 pipeline (Paddle-VL, TrOCR, Chandra, Qwen3-VL, agent verifier): flow, switches, runbook, what is unmeasured.
 - [`docs/OCR_MULTI_PASS_PIPELINE.md`](docs/OCR_MULTI_PASS_PIPELINE.md) — the 10-pass engine, merge gates, and DuckDB storage.
 - [`docs/OCR_FIELD_PATTERNS.md`](docs/OCR_FIELD_PATTERNS.md) — the 60-field Australian-banking schema and per-field false-positive review.
 - [`docs/GX10_DEPLOYMENT.md`](docs/GX10_DEPLOYMENT.md) — owner runbook for the gx10 GPU worker (SSH required; not runnable from this sandbox).
