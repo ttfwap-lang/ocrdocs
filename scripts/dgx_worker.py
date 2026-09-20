@@ -158,12 +158,16 @@ def process_claimed_job(claim: Dict[str, Any]) -> None:
         post_result(job_id, {"status": "FAILED", "error": error})
         return
 
-    post_result(job_id, {
+    payload = {
         "status": "SUCCESS",
         "rawText": result["rawText"],
         "passes": result["passes"],
         "engineUsed": result["engineUsed"],
-    })
+    }
+    if result.get("vlmFields") or result.get("pages"):  # vlm_v2 pipeline only
+        payload["pages"] = result.get("pages", [])
+        payload["vlmFields"] = result.get("vlmFields", [])
+    post_result(job_id, payload)
     logging.info(f"[+] Job {job_id}: complete ({len(result['passes'])} passes run).")
 
 

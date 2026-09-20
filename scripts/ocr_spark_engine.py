@@ -56,6 +56,13 @@ except ImportError:  # pragma: no cover
     ocr_hybrid = None
 
 try:
+    import ocr_paddle_vl  # sibling module: PaddleOCR-VL over HTTP (vlm_v2 pipeline)
+    import ocr_qwen_merge  # sibling module: Qwen3-VL page classifier and field merger (vlm_v2 pipeline)
+except ImportError:  # pragma: no cover
+    ocr_paddle_vl = None
+    ocr_qwen_merge = None
+
+try:
     from surya.ocr import run_ocr
     from surya.model.recognition.model import load_model as load_rec_model, load_processor as load_rec_processor
     from surya.model.detection.model import load_model as load_det_model, load_processor as load_det_processor
@@ -737,6 +744,67 @@ def run_pass_ocr(image: Image.Image, pass_num: int) -> Tuple[str, List[str], Dic
 
     return "\n".join(collected.keys()), engines_used, collected
 
+def run_page_vlm(image: Image.Image) -> Dict[str, Any]:
+    """vlm_v2 page read. Returns {kind, text, engines, line_confs, fields, degraded}.
+
+    Qwen classifies the page; printed pages go to PaddleOCR-VL, handwritten ones to the Tesseract+TrOCR hybrid (only
+    the lines TrOCR read are handed to the merge as handwriting); Qwen then merges both readings into typed fields.
+    Any service being down degrades that page to the legacy Tesseract+TrOCR read instead of failing it.
+    """
+    degraded = False
+    try:
+        kind = ocr_qwen_merge.classify_page(image)
+    except ocr_qwen_merge.QwenUnavailable as e:
+        logging.warning(f"[!] Page classification unavailable, treating page as 'both': {e}")
+        kind, degraded = "both", True
+    if kind in ("blank", "photo"):
+        return {"kind": kind, "text": "", "engines": [], "line_confs": {}, "fields": [], "degraded": degraded}
+
+    engines: List[str] = []
+    confs: Dict[str, float] = {}
+    paddle_text = ""
+    if kind in ("printed", "both"):
+        try:
+            paddle_text = ocr_paddle_vl.read_page(image)
+            engines.append("PaddleOCR-VL")
+            for line in paddle_text.splitlines():
+                if len(line.strip()) > 1:
+                    confs[" ".join(line.split())] = 0.9  # Paddle-VL reports no per-line score; fixed, not measured
+        except ocr_paddle_vl.PaddleUnavailable as e:
+            logging.warning(f"[!] Paddle-VL unavailable, falling back to Tesseract for this page: {e}")
+            text, eng, lc = run_pass_ocr(image, 1)
+            return {"kind": kind, "text": text, "engines": eng, "line_confs": lc, "fields": [], "degraded": True}
+
+    trocr_lines: List[Tuple[str, float]] = []
+    if kind in ("handwritten", "both") and ocr_hybrid is not None and pytesseract is not None:
+        try:
+            page_lines = _run_engine_call(
+                _trocr_lock, ocr_hybrid.recognize_page, image, _trocr_reader, timeout=HYBRID_TIMEOUT_SECONDS
+            )
+            hand = [ln for ln in page_lines if ln.engine == "TrOCR"] if kind == "both" else list(page_lines)
+            if kind == "handwritten":
+                engines.append("Tesseract")
+            if any(ln.engine == "TrOCR" for ln in page_lines):
+                engines.append("TrOCR")
+            for ln in hand:
+                trocr_lines.append((ln.text, ln.conf))
+                confs[" ".join(ln.text.split())] = ln.conf
+        except Exception as e:  # noqa: BLE001 - includes timeout/busy; keep whatever Paddle already read
+            logging.warning(f"[!] Handwriting read failed for this page: {e}")
+            degraded = True
+
+    fields: List[Any] = []
+    if paddle_text or trocr_lines:
+        try:
+            fields = ocr_qwen_merge.merge_page(image, paddle_text, trocr_lines).fields
+            engines.append("Qwen3-VL")
+        except ocr_qwen_merge.QwenUnavailable as e:
+            logging.warning(f"[!] Qwen merge unavailable, regex extraction only for this page: {e}")
+            degraded = True
+    text = "\n".join(t for t in [paddle_text] + [t for t, _ in trocr_lines] if t)
+    return {"kind": kind, "text": text, "engines": engines, "line_confs": confs, "fields": fields, "degraded": degraded}
+
+
 def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
     """Extracts and validates all 60 Australian banking application fields.
 
@@ -940,6 +1008,9 @@ OCR_RENDER_DPI = int(os.environ.get("OCRDOCS_OCR_RENDER_DPI", "200"))
 # Hybrid (Tesseract + TrOCR) page reads per document. Pass 2 re-reads enhanced pixels for anything pass 1 missed;
 # more passes were measured to add almost nothing while multiplying cost.
 MAX_HYBRID_PASSES = int(os.environ.get("OCRDOCS_MAX_HYBRID_PASSES", "2"))
+# "legacy": multi-pass Tesseract+TrOCR over the whole document. "vlm_v2": per page, Qwen classifies, PaddleOCR-VL reads
+# print, TrOCR reads handwriting, Qwen merges into fields (single pass). Falls back per page if a service is down.
+PIPELINE_MODE = os.environ.get("OCRDOCS_PIPELINE", "legacy").strip().lower()
 
 
 def _page_needs_visual(page, native_chars: int) -> bool:
@@ -1065,8 +1136,18 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     ocr_line_confidences: Dict[str, float] = {}
     if used_native_text:
         engines_used.append("Native PDF Text Layer")
-    for img in images:
-        txt, engines, line_confs = run_pass_ocr(img, pass_num)
+    pages_info: List[Dict[str, Any]] = []
+    vlm_fields: List[Dict[str, Any]] = []
+    use_vlm = PIPELINE_MODE == "vlm_v2" and ocr_paddle_vl is not None and ocr_qwen_merge is not None
+    for image_index, img in enumerate(images):
+        if use_vlm:
+            page = run_page_vlm(img)
+            txt, engines, line_confs = page["text"], page["engines"], page["line_confs"]
+            pages_info.append({"imageIndex": image_index, "kind": page["kind"], "engines": engines,
+                               "degraded": page["degraded"], "fieldCount": len(page["fields"])})
+            vlm_fields.extend({**vars(f), "imageIndex": image_index} for f in page["fields"])
+        else:
+            txt, engines, line_confs = run_pass_ocr(img, pass_num)
         ocr_texts.append(txt)
         ocr_line_confidences.update(line_confs)
         for e in engines:
@@ -1103,6 +1184,9 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     )
     result["raw_text"] = combined_text
     result["engines_used"] = engines_used
+    if use_vlm:
+        result["pages"] = pages_info
+        result["vlm_fields"] = vlm_fields
     return "SUCCESS", fpath, result
 
 # ==============================================================================
@@ -1170,6 +1254,8 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
     prev_fields: Dict[str, str] = {}
     prev_confs: Dict[str, float] = {}
     latest_raw_text = ""
+    page_kinds: List[Dict[str, Any]] = []
+    vlm_fields: List[Dict[str, Any]] = []
     passes: List[Dict[str, Any]] = []
     consecutive_zero_delta = 0
     field_keys = list(BANK_FIELD_PATTERNS.keys())
@@ -1198,6 +1284,8 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
 
         new_fields = result.get("fields", {})
         new_confs = result.get("confidences", {})
+        if "pages" in result:
+            page_kinds, vlm_fields = result["pages"], result.get("vlm_fields", [])
         if result.get("raw_text"):
             latest_raw_text = result["raw_text"]
 
@@ -1218,6 +1306,10 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
             "regressionsPrevented": regressions_prevented,
             "recallPercent": recall_percent,
         })
+
+        # vlm_v2 reads every page once with the full stack; re-running it on enhanced pixels adds no new reader.
+        if PIPELINE_MODE == "vlm_v2" and "pages" in result:
+            break
 
         # Photos and graphics: two Tesseract-only passes found almost no characters and no fields. Running the
         # remaining research-engine passes on a 4000x3000 photo just burns minutes per image.
@@ -1256,6 +1348,8 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
         "validBsb": validate_australian_bsb(prev_fields.get("bsb", "")),
         "validDob": validate_australian_dob(prev_fields.get("date_of_birth", "")),
         "passes": passes,
+        "pages": page_kinds,
+        "vlmFields": vlm_fields,
         "engineUsed": ",".join(
             sorted({e for p in passes for e in p.get("enginesUsed", [])})
         ) or "multipass-ensemble",
