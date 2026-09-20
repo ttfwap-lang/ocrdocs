@@ -53,6 +53,8 @@ export interface PersistedExtractionResult {
     /** vlm_v2 only: per-page kind (printed/handwritten/both/...), engines used, and whether the page degraded. */
     pages?: Array<Record<string, unknown>>;
     vlmFieldCount?: number;
+    /** vlm_v2 only: what kind of document this is (loan_application, payslip, ...), majority across pages. */
+    documentType?: string;
   };
 }
 

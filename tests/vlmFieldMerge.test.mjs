@@ -21,7 +21,7 @@ const toField = (r) => ({
   name: r.fieldName, value: r.extractedValue, confidence: r.confidence, sourceSection: null,
   validated: false, validationStatus: 'pending', correctedValue: null, approved: false, category: r.category,
 });
-const vf = (name, value, o = {}) => ({ name, value, source: 'handwriting', confidence: 0.85, digitsVerified: true, evidence: '', ...o });
+const vf = (name, value, o = {}) => ({ name, value, source: 'handwriting', confidence: 0.85, digitsVerified: true, evidence: '', subject: 'applicant', section: '', entry: 1, ...o });
 const byName = (fields, name) => fields.find((f) => f.name === name);
 
 test('a field the regex missed takes the Qwen value and stays pending for review', () => {
@@ -104,4 +104,74 @@ test('parseVlmFields keeps only well-formed entries, clamps confidence and caps 
   assert.equal(parsed[1].digitsVerified, null);
   const many = Array.from({ length: 1000 }, () => ({ name: 'bsb', value: '1' }));
   assert.equal(m.parseVlmFields(many).length, 400);
+});
+
+// ---- whose detail is it -------------------------------------------------------------------------------------------
+test('parents details never fill the applicant slot; entries pair each parent with their job', () => {
+  const regex = [res('given_names', 'John'), res('occupation_industry', null)];
+  const out = m.mergeVlmFields(regex, [
+    vf('given_names', 'John', { subject: 'applicant', section: 'Your details' }),
+    vf('given_names', 'John', { subject: 'parent', section: 'Parents details', entry: 1, confidence: 0.8 }),
+    vf('given_names', 'Mary', { subject: 'parent', section: 'Parents details', entry: 2, confidence: 0.8 }),
+    vf('occupation', 'boilermaker', { subject: 'parent', section: 'Parents details', entry: 1, confidence: 0.8 }),
+    vf('occupation', 'nurse', { subject: 'parent', section: 'Parents details', entry: 2, confidence: 0.8 }),
+  ], toField);
+  assert.equal(byName(out, 'given_names').value, 'John');
+  assert.equal(byName(out, 'given_names').validationStatus, 'pending', 'applicant reading agrees with regex: no warning');
+  assert.equal(byName(out, 'Parent 1: Given Names').value, 'John');
+  assert.equal(byName(out, 'Parent 2: Given Names').value, 'Mary');
+  assert.equal(byName(out, 'Parent 1: Occupation').value, 'boilermaker');
+  assert.equal(byName(out, 'Parent 2: Occupation').value, 'nurse');
+  assert.equal(byName(out, 'occupation_industry').value, null, "a parent's job must not become the applicant's occupation");
+  assert.match(byName(out, 'Parent 2: Given Names').sourceSection, /Parents details/);
+});
+
+test("a regex hit that is really the parent's value is downgraded, and the applicant's own reading replaces it", () => {
+  const regex = [res('given_names', 'Mary')];
+  const out = m.mergeVlmFields(regex, [
+    vf('given_names', 'John', { subject: 'applicant', section: 'Your details' }),
+    vf('given_names', 'Mary', { subject: 'parent', section: 'Parents details', entry: 2 }),
+  ], toField);
+  const f = byName(out, 'given_names');
+  assert.equal(f.value, 'John');
+  assert.equal(f.validationStatus, 'warning');
+});
+
+test("with no applicant reading, a regex value that matches only a parent's is flagged", () => {
+  const out = m.mergeVlmFields([res('given_names', 'Mary')], [
+    vf('given_names', 'Mary', { subject: 'parent', section: 'Parents details', entry: 2 }),
+  ], toField);
+  const f = byName(out, 'given_names');
+  assert.equal(f.value, 'Mary');
+  assert.equal(f.validationStatus, 'warning');
+  assert.ok(f.confidence <= 0.5);
+  assert.match(f.sourceSection, /Parents details/);
+});
+
+test('an unstated owner fills the slot but is always flagged for review', () => {
+  const out = m.mergeVlmFields([res('family_name', null)], [vf('family_name', 'Nguyen', { subject: 'unknown' })], toField);
+  const f = byName(out, 'family_name');
+  assert.equal(f.value, 'Nguyen');
+  assert.equal(f.validationStatus, 'warning');
+  assert.match(f.sourceSection, /Owner not stated/);
+});
+
+test("other people's label text is rejected too", () => {
+  const out = m.mergeVlmFields([res('given_names', null)], [vf('given_names', 'Given names (in full)', { subject: 'parent', entry: 1 })], toField);
+  assert.equal(out.length, 1);
+});
+
+test('parseVlmFields validates subject, section and entry', () => {
+  const [a, b] = m.parseVlmFields([
+    { name: 'given_names', value: 'Mary', subject: 'parent', section: 'Parents details', entry: 2 },
+    { name: 'given_names', value: 'X', subject: 'grandparent', entry: 0 },
+  ]);
+  assert.deepEqual([a.subject, a.section, a.entry], ['parent', 'Parents details', 2]);
+  assert.deepEqual([b.subject, b.entry], ['unknown', 1]);
+});
+
+test('parseDocumentType accepts only the known taxonomy', () => {
+  assert.equal(m.parseDocumentType('payslip'), 'payslip');
+  assert.equal(m.parseDocumentType('receipt'), undefined);
+  assert.equal(m.parseDocumentType(5), undefined);
 });

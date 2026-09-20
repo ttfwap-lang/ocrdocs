@@ -201,12 +201,14 @@ test('Stage/Phase 2 — DGX job-queue endpoint contract', async (t) => {
         status: 'SUCCESS',
         rawText: 'BSB: 062-000' + String.fromCharCode(10) + 'Family name: (handwritten)',
         engineUsed: 'PaddleOCR-VL,TrOCR,Qwen3-VL',
+        documentType: 'loan_application',
         passes: [{ passNumber: 1 }],
         pages: [{ imageIndex: 0, kind: 'both', engines: ['PaddleOCR-VL', 'TrOCR', 'Qwen3-VL'], degraded: false, fieldCount: 3 }],
         vlmFields: [
           { name: 'family_name', value: 'Nguyen', source: 'handwriting', confidence: 0.85, digits_verified: null, evidence: 'line 2' },
           { name: 'bsb', value: '062-999', source: 'print', confidence: 0.35, digits_verified: false, evidence: '' },
           { name: 'account_number', value: '12345678', source: 'handwriting', confidence: 0.85, digits_verified: true, evidence: '' },
+          { name: 'given_names', value: 'Mary', source: 'handwriting', subject: 'parent', section: 'Parents details', entry: 2, confidence: 0.8, digits_verified: null, evidence: '' },
         ],
       }),
     });
@@ -216,7 +218,9 @@ test('Stage/Phase 2 — DGX job-queue endpoint contract', async (t) => {
     assert.equal(fields.find((f) => f.name === 'Family Name')?.value ?? fields.find((f) => /family/i.test(f.name))?.value, 'Nguyen');
     assert.equal(fields.find((f) => f.name === 'Bank State Branch (BSB)').value, '062-000', 'unverified Qwen digits must not override the regex reading');
     assert.equal(fields.find((f) => f.name === 'Account Number').value, '12345678');
-    assert.equal(body.extraction.metadata.vlmFieldCount, 3);
+    assert.equal(body.extraction.metadata.vlmFieldCount, 4);
+    assert.equal(body.extraction.metadata.documentType, 'loan_application');
+    assert.equal(fields.find((f) => f.name === 'Parent 2: Given Names')?.value, 'Mary');
     assert.equal(body.extraction.metadata.pages[0].kind, 'both');
   });
 
