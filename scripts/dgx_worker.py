@@ -168,6 +168,7 @@ def process_claimed_job(claim: Dict[str, Any]) -> None:
         payload["pages"] = result.get("pages", [])
         payload["vlmFields"] = result.get("vlmFields", [])
         payload["documentType"] = result.get("documentType", "other")
+        payload["review"] = result.get("review", {})
     post_result(job_id, payload)
     logging.info(f"[+] Job {job_id}: complete ({len(result['passes'])} passes run).")
 

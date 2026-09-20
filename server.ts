@@ -24,7 +24,7 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 
 import { extractBankFieldsFromText } from "./src/utils/ocrMatcherEngine";
-import { mergeVlmFields, parseDocumentType, parseVlmFields } from "./server/services/vlmFieldMerge";
+import { mergeVlmFields, parseDocumentType, parseReview, parseVlmFields } from "./server/services/vlmFieldMerge";
 import { ServiceAvailabilityResponse, ExtractionResult } from "./src/types";
 import { initDb, closeDb } from "./server/db/database";
 import { createDocumentRepo } from "./server/db/repositories/documentRepo";
@@ -924,6 +924,7 @@ app.post("/api/jobs/:id/result", requireWorkerAuth, (req: express.Request<{ id: 
         pages: Array.isArray(body.pages) ? body.pages.slice(0, 200) : [],
         vlmFieldCount: vlmFields.length,
         documentType: parseDocumentType(body.documentType),
+        review: parseReview(body.review),
         textTruncated: capped.truncated,
       }),
     });

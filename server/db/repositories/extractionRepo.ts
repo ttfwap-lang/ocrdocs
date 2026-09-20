@@ -181,6 +181,7 @@ export function createExtractionRepo(db: DatabaseType) {
       let pages: Array<Record<string, unknown>> | undefined;
       let vlmFieldCount: number | undefined;
       let documentType: string | undefined;
+      let review: any;
       if (extraction.extraction_json) {
         try {
           const parsed = JSON.parse(extraction.extraction_json);
@@ -189,6 +190,7 @@ export function createExtractionRepo(db: DatabaseType) {
           pages = Array.isArray(parsed.pages) && parsed.pages.length ? parsed.pages : undefined;
           vlmFieldCount = typeof parsed.vlmFieldCount === 'number' ? parsed.vlmFieldCount : undefined;
           documentType = typeof parsed.documentType === 'string' ? parsed.documentType : undefined;
+          review = parsed.review && typeof parsed.review === 'object' ? parsed.review : undefined;
         } catch {
           // Malformed JSON must not break result retrieval.
         }
@@ -207,6 +209,7 @@ export function createExtractionRepo(db: DatabaseType) {
           ...(pages ? { pages } : {}),
           ...(vlmFieldCount !== undefined ? { vlmFieldCount } : {}),
           ...(documentType ? { documentType } : {}),
+          ...(review ? { review } : {}),
         },
       };
     },

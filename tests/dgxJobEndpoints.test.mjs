@@ -202,6 +202,7 @@ test('Stage/Phase 2 — DGX job-queue endpoint contract', async (t) => {
         rawText: 'BSB: 062-000' + String.fromCharCode(10) + 'Family name: (handwritten)',
         engineUsed: 'PaddleOCR-VL,TrOCR,Qwen3-VL',
         documentType: 'loan_application',
+        review: { flags: [{ code: 'DIGITS_NOT_READ', detail: 'x', page: 0, field: 'bsb' }], verdicts: [], s2: { cleared: false, reason: '', auditSampled: false } },
         passes: [{ passNumber: 1 }],
         pages: [{ imageIndex: 0, kind: 'both', engines: ['PaddleOCR-VL', 'TrOCR', 'Qwen3-VL'], degraded: false, fieldCount: 3 }],
         vlmFields: [
@@ -220,6 +221,8 @@ test('Stage/Phase 2 — DGX job-queue endpoint contract', async (t) => {
     assert.equal(fields.find((f) => f.name === 'Account Number').value, '12345678');
     assert.equal(body.extraction.metadata.vlmFieldCount, 4);
     assert.equal(body.extraction.metadata.documentType, 'loan_application');
+    assert.equal(body.extraction.metadata.review.flags[0].code, 'DIGITS_NOT_READ');
+    assert.equal(body.extraction.metadata.review.s2.cleared, false);
     assert.equal(fields.find((f) => f.name === 'Parent 2: Given Names')?.value, 'Mary');
     assert.equal(body.extraction.metadata.pages[0].kind, 'both');
   });

@@ -30,6 +30,49 @@ export interface VlmField {
   section: string;
   /** 1-based position within a multi-value cell ("John and Mary" -> 1, 2). */
   entry: number;
+  /** S5 agent verdict on this field, when the file was flagged and inspected. */
+  agent?: 'confirmed' | 'corrected' | 'unresolved';
+  agentReasoning?: string;
+  originalValue?: string;
+}
+
+export interface ReviewInfo {
+  flags: Array<{ code: string; detail: string; page: number | null; field: string | null }>;
+  verdicts: Array<{ page: number; field: string; verdict: string; value: string; reasoning: string; downgraded: boolean }>;
+  s2?: { cleared: boolean; reason: string; auditSampled: boolean };
+}
+
+/** Flags, agent verdicts and the S2 decision from the worker: untrusted, so rebuilt field by field and capped. */
+export function parseReview(input: unknown): ReviewInfo | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const r = input as Record<string, unknown>;
+  const str = (v: unknown, n: number) => (typeof v === 'string' ? v.slice(0, n) : '');
+  const flags = (Array.isArray(r.flags) ? r.flags : []).slice(0, 100).flatMap((f: any) =>
+    f && typeof f.code === 'string'
+      ? [{ code: f.code.slice(0, 40), detail: str(f.detail, 300), page: Number.isInteger(f.page) ? f.page : null, field: typeof f.field === 'string' ? f.field.slice(0, 64) : null }]
+      : []);
+  const verdicts = (Array.isArray(r.verdicts) ? r.verdicts : []).slice(0, 100).flatMap((v: any) =>
+    v && typeof v.field === 'string' && ['confirmed', 'corrected', 'unresolved'].includes(v.verdict)
+      ? [{ page: Number.isInteger(v.page) ? v.page : 0, field: v.field.slice(0, 64), verdict: v.verdict, value: str(v.value, 500), reasoning: str(v.reasoning, 600), downgraded: v.downgraded === true }]
+      : []);
+  const s2 = r.s2 && typeof r.s2 === 'object'
+    ? { cleared: (r.s2 as any).cleared === true, reason: str((r.s2 as any).reason, 300), auditSampled: (r.s2 as any).auditSampled === true }
+    : undefined;
+  if (!flags.length && !verdicts.length && !s2) return undefined;
+  return { flags, verdicts, ...(s2 ? { s2 } : {}) };
+}
+
+/** Add the agent's verdict to a merged field: unresolved is always a warning; corrections and confirmations are noted. */
+function annotate(f: ExtractedField, v: VlmField): ExtractedField {
+  if (!v.agent) return f;
+  const why = v.agentReasoning ? `: ${v.agentReasoning}` : '';
+  if (v.agent === 'unresolved') {
+    return { ...f, validated: false, validationStatus: 'warning', confidence: Math.min(f.confidence, 0.5), sourceSection: `${f.sourceSection ?? ''} Agent could not settle this${why}`.trim() };
+  }
+  if (v.agent === 'corrected') {
+    return { ...f, sourceSection: `${f.sourceSection ?? ''} Agent corrected "${v.originalValue ?? ''}" to "${f.value ?? ''}"${why}`.trim() };
+  }
+  return { ...f, sourceSection: `${f.sourceSection ?? ''} Agent confirmed${why}`.trim() };
 }
 
 export const DOCUMENT_TYPES = [
@@ -81,6 +124,9 @@ export function parseVlmFields(input: unknown): VlmField[] {
       subject: (SUBJECTS as readonly string[]).includes(r.subject as string) ? (r.subject as Subject) : 'unknown',
       section: typeof r.section === 'string' ? r.section.slice(0, 120) : '',
       entry: typeof r.entry === 'number' && Number.isInteger(r.entry) && r.entry >= 1 ? Math.min(r.entry, 20) : 1,
+      ...(r.agent === 'confirmed' || r.agent === 'corrected' || r.agent === 'unresolved' ? { agent: r.agent } : {}),
+      ...(typeof r.agentReasoning === 'string' ? { agentReasoning: r.agentReasoning.slice(0, 600) } : {}),
+      ...(typeof r.originalValue === 'string' ? { originalValue: r.originalValue.slice(0, 500) } : {}),
     });
   }
   return out;
@@ -113,11 +159,11 @@ export function mergeVlmFields(
       if (done.has(label)) continue;
       done.add(label);
       others.push({ id, value: cleaned, subject: v.subject, section: v.section });
-      fields.push({
+      fields.push(annotate({
         name: label, value: cleaned, confidence: v.confidence, sourceSection: note, validated: false,
         validationStatus: v.digitsVerified === false ? 'warning' : 'pending', correctedValue: null, approved: false,
         category: def?.category ?? 'identity',
-      });
+      }, v));
       continue;
     }
     if (done.has(id)) continue;
@@ -126,11 +172,11 @@ export function mergeVlmFields(
     const extra = EXTRA_FIELDS[id];
     if (extra) {
       done.add(id);
-      fields.push({
+      fields.push(annotate({
         name: extra.name, value: v.value, confidence: v.confidence, sourceSection: note + unclear, validated: false,
         validationStatus: v.digitsVerified === false || unclear ? 'warning' : 'pending', correctedValue: null,
         approved: false, category: extra.category,
-      });
+      }, v));
       continue;
     }
 
@@ -160,6 +206,7 @@ export function mergeVlmFields(
       };
     }
     // else: Qwen's digits were not read by any OCR engine, so the regex reading stands.
+    fields[idx] = annotate(fields[idx], v);
   }
 
   // A regex hit that is really somebody else's value (the parent's "John" read into given_names) is not trusted.

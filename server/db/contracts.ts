@@ -55,6 +55,12 @@ export interface PersistedExtractionResult {
     vlmFieldCount?: number;
     /** vlm_v2 only: what kind of document this is (loan_application, payslip, ...), majority across pages. */
     documentType?: string;
+    /** vlm_v2 only: why the file was flagged, what the agent decided, and whether S2 parked it. */
+    review?: {
+      flags: Array<{ code: string; detail: string; page: number | null; field: string | null }>;
+      verdicts: Array<{ page: number; field: string; verdict: string; value: string; reasoning: string; downgraded: boolean }>;
+      s2?: { cleared: boolean; reason: string; auditSampled: boolean };
+    };
   };
 }
 

@@ -175,3 +175,54 @@ test('parseDocumentType accepts only the known taxonomy', () => {
   assert.equal(m.parseDocumentType('receipt'), undefined);
   assert.equal(m.parseDocumentType(5), undefined);
 });
+
+// ---- agent verdicts and review info --------------------------------------------------------------------------------
+test('an unresolved agent verdict is always a warning with lowered confidence, whatever else agreed', () => {
+  const out = m.mergeVlmFields([res('family_name', 'Lee')], [vf('family_name', 'Lee', { agent: 'unresolved', agentReasoning: 'smudged' })], toField);
+  const f = byName(out, 'family_name');
+  assert.equal(f.validationStatus, 'warning');
+  assert.ok(f.confidence <= 0.5);
+  assert.match(f.sourceSection, /Agent could not settle this: smudged/);
+});
+
+test('a corrected verdict is noted with the original value and confirmed is noted too', () => {
+  const corrected = m.mergeVlmFields([res('bsb', null)], [vf('bsb', '062-000', { agent: 'corrected', originalValue: '062-999', agentReasoning: 'chandra read it' })], toField);
+  assert.match(byName(corrected, 'bsb').sourceSection, /Agent corrected "062-999" to "062-000": chandra read it/);
+  const confirmed = m.mergeVlmFields([res('family_name', 'Lee')], [vf('family_name', 'Lee', { agent: 'confirmed' })], toField);
+  assert.match(byName(confirmed, 'family_name').sourceSection, /Agent confirmed/);
+});
+
+test("agent verdicts on other people's fields and extras are annotated as well", () => {
+  const out = m.mergeVlmFields([res('given_names', null)], [
+    vf('given_names', 'Mary', { subject: 'parent', entry: 2, agent: 'unresolved' }),
+    vf('account_number', '12345678', { agent: 'unresolved' }),
+  ], toField);
+  assert.equal(byName(out, 'Parent 2: Given Names').validationStatus, 'warning');
+  assert.equal(byName(out, 'Account Number').validationStatus, 'warning');
+});
+
+test('parseVlmFields keeps only valid agent verdict values', () => {
+  const [a, b] = m.parseVlmFields([
+    { name: 'bsb', value: '1', agent: 'corrected', agentReasoning: 'r', originalValue: 'o' },
+    { name: 'bsb', value: '2', agent: 'approved' },
+  ]);
+  assert.deepEqual([a.agent, a.agentReasoning, a.originalValue], ['corrected', 'r', 'o']);
+  assert.equal(b.agent, undefined);
+});
+
+test('parseReview rebuilds flags, verdicts and the S2 decision from untrusted input and drops junk', () => {
+  assert.equal(m.parseReview(null), undefined);
+  assert.equal(m.parseReview({ flags: [], verdicts: [] }), undefined);
+  const r = m.parseReview({
+    flags: [{ code: 'DIGITS_NOT_READ', detail: 'x', page: 1, field: 'bsb' }, { detail: 'no code' }, 7],
+    verdicts: [{ page: 1, field: 'bsb', verdict: 'unresolved', value: 'v', reasoning: 'r', downgraded: true }, { field: 'x', verdict: 'maybe' }],
+    s2: { cleared: true, reason: 'plain', auditSampled: false, extra: 'ignored' },
+  });
+  assert.equal(r.flags.length, 1);
+  assert.deepEqual(r.flags[0], { code: 'DIGITS_NOT_READ', detail: 'x', page: 1, field: 'bsb' });
+  assert.equal(r.verdicts.length, 1);
+  assert.equal(r.verdicts[0].downgraded, true);
+  assert.deepEqual(r.s2, { cleared: true, reason: 'plain', auditSampled: false });
+  const many = m.parseReview({ flags: Array.from({ length: 500 }, () => ({ code: 'X', detail: '' })) });
+  assert.equal(many.flags.length, 100);
+});
