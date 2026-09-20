@@ -21,9 +21,12 @@ export function createJobRepo(db: DatabaseType) {
     `UPDATE jobs
      SET status = 'processing', started_at = datetime('now'), attempts = attempts + 1
      WHERE id = (
-       SELECT id FROM jobs
-       WHERE status = 'queued'
-       ORDER BY rowid
+       SELECT j.id FROM jobs j
+       JOIN documents d ON d.id = j.document_id
+       WHERE j.status = 'queued'
+       -- Cheap types first (FIFO within each group): one 20 MB scanned PDF can occupy the single serial worker for
+       -- minutes, and on a 17k-document batch that stalled thousands of quick text/XML/image jobs behind it.
+       ORDER BY (CASE WHEN d.mime_type = 'application/pdf' THEN 1 ELSE 0 END), j.rowid
        LIMIT 1
      )
      RETURNING *`,

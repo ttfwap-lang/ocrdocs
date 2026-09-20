@@ -1,45 +1,45 @@
 # ==============================================================================
 # OCRDocs Python Worker Pinned Dependencies (Stage 5 Reproducible Dependencies)
-# Target Runtime: Python >= 3.10, < 3.13 (64-bit)
-# Operating Systems: Linux (Ubuntu 22.04 LTS / Debian 12), Windows Server 2022 / 11
+# Target Runtime: Python 3.12 (64-bit), CUDA 13 (aarch64 GB10 / x86_64)
+# Operating Systems: Linux (Ubuntu 24.04 / Debian 12), Windows Server 2022 / 11
 # License Policy: Permissive (Apache-2.0, MIT, BSD-3-Clause) required for production.
 #                 Screened engines with copyleft (GPL/AGPL) flagged in license-manifest.json.
+# Pins below are the exact versions verified running the real engine on the gx10 (2026-09-20).
+# Removed vs the previous stack: easyocr, paddleocr, paddlepaddle, spacy (measured: Tesseract beats EasyOCR on
+# printed text, Paddle failed on every document, TrOCR beats both on handwriting; spaCy is optional and unused).
 # ==============================================================================
 
 # --- Core Image Processing & PDF Extraction (Production Scope: Permissive) ---
-opencv-python-headless==4.10.0.84
-Pillow==10.4.0
-pypdfium2==4.30.0
+opencv-python-headless==5.0.0.93
+Pillow==12.3.0
+pypdfium2==5.13.0
 
 # --- Scientific Computing, Dataframes & Storage (Production Scope: Permissive) ---
-numpy==1.26.4
-pandas==2.2.3
-duckdb==1.1.1
+numpy==2.5.2
+pandas==3.0.6
+duckdb==1.5.5
 # torch is intentionally NOT pinned here: dgx_setup.sh Phase 5 installs the
-# architecture-specific CUDA build (cu124 on aarch64) directly. Pinning it
+# architecture-specific CUDA build (cu130 on aarch64) directly. Pinning it
 # again here without an index-url overwrote that build with a CPU-only wheel.
 
-# --- OCR Engines, Text Extraction & NLP (Production Scope: Permissive) ---
+# --- Printed-text OCR + document parsing (Production Scope: Permissive) ---
 pytesseract==0.3.13
-spacy==3.7.5
-easyocr==1.7.2
-python-docx==1.1.2
-striprtf==0.0.26
+python-docx==1.2.0
+striprtf==0.0.33
+
+# --- Handwriting Recognition: TrOCR line reader (Production Scope: Permissive; ON by default) ---
+# transformers must stay on 4.x: 5.x cannot build TrOCR's sentencepiece tokenizer.
+transformers==4.57.6
+tokenizers==0.22.2
+safetensors==0.8.0
+huggingface_hub==0.36.2
+accelerate==1.15.0
+sentencepiece==0.2.2
+protobuf==7.36.2
 
 # --- DGX Worker Networking (Production Scope: Permissive) ---
-requests==2.32.3
+requests==2.34.2
 
 # --- Screened Evaluation Engines (Subject to Commercial / Licensing Screening) ---
-# PaddleOCR: Apache-2.0 runtime
-paddleocr==2.8.1
-paddlepaddle==2.6.2
 # Surya OCR: GPL-3.0 (Evaluation / Research mode only; excluded from default production builds)
 surya-ocr==0.4.14
-
-# --- Handwriting Recognition (Production Scope: Permissive; opt-in via
-#     OCRDOCS_ENABLE_HANDWRITING_ENGINE, not a license restriction — see
-#     scripts/ocr_spark_engine.py HANDWRITING_ENGINE_ENABLED) ---
-# transformers: Apache-2.0. Needs torch>=2.5 for full model support; degrades
-# gracefully (tokenizer/config utilities only) on older torch, matching the
-# unpinned-torch policy above.
-transformers==4.46.3

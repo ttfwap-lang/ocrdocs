@@ -7,7 +7,7 @@ if [[ -z "$TARGET_DIR" || ! -d "$TARGET_DIR" ]]; then
 fi
 # Archive tool: 7z (p7zip) or 7zz. Missing tool = archives are left in place, loudly.
 SEVENZ="$(command -v 7z || command -v 7zz || true)"
-export SEVENZ
+export SEVENZ TARGET_DIR
 
 # --- FUNCTION: FLATTEN FOLDER ---
 flatten_directory() {
@@ -31,9 +31,10 @@ process_files() {
         
         # SINGLE-PASS IDENTIFICATION: Grabs both mime and extension guess simultaneously to save I/O
         # Example output: "application/x-dosexec; charset=binary    exe"
-        file_info=$(file -b --mime-type --extension "$filepath")
-        mime=$(echo "$file_info" | awk "{print \$1}" | sed "s/;//")
-        ext_guess=$(echo "$file_info" | awk "{print \$NF}")
+        # Two separate calls on purpose: combining --mime-type with --extension makes file 5.45 report plain text
+        # as application/octet-stream, which hid ~1,800 real text files.
+        mime=$(file -b --mime-type "$filepath")
+        ext_guess=$(file -b --extension "$filepath")
         
         # 1. EXTENDED INTELLIGENT WINDOWS SYSTEM PURGE
         base_lower=$(basename "$filepath" | tr "[:upper:]" "[:lower:]")
@@ -114,6 +115,14 @@ extract_archives() {
             fi
             "$SEVENZ" x -mmt=1 -y -o"$temp_out" "$filepath" >/dev/null 2>&1
             rc=$?
+            # p7zip exit codes: 0 ok, 1 warning (members extracted), >=2 real failure (corrupt, encrypted, unsupported).
+            if [[ $rc -ge 2 ]]; then
+                FAILED_DIR="${TARGET_DIR%/}.failed"; mkdir -p "$FAILED_DIR"
+                chmod -R u+rwX "$temp_out" 2>/dev/null
+                rmdir "$temp_out" 2>/dev/null || true
+                mv --backup=t "$filepath" "$FAILED_DIR/" 2>/dev/null
+            fi
+            [[ $rc -eq 1 ]] && rc=0
             # Archive members can carry mode 000 dirs/files; make them traversable or flatten/find cannot read them.
             chmod -R u+rwX "$temp_out" 2>/dev/null
             [[ $rc -eq 0 ]] && rm -f "$filepath"

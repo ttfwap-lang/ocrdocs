@@ -215,3 +215,86 @@ test("queue drain: stageQueuedRoot moves loose files (archives too), skips fresh
   assert.equal(svc.stageQueuedRoot(), null);
   assert.throws(() => svc.getRecord("../../etc/passwd"), /invalid import id/);
 });
+
+test("queue drain ignores pre-parse side folders (<id>.unsupported / <id>.failed) so it cannot loop on its own output", async () => {
+  const dir = path.join(tempDir, "drain2");
+  fs.rmSync(dir, { recursive: true, force: true });
+  const queued = path.join(dir, "queued");
+  fs.mkdirSync(path.join(queued, "abc123-xyz789.unsupported"), { recursive: true });
+  fs.mkdirSync(path.join(queued, "abc123-xyz789.failed"), { recursive: true });
+  const old = new Date(Date.now() - 60_000);
+  for (const p of ["abc123-xyz789.unsupported", "abc123-xyz789.failed"]) fs.utimesSync(path.join(queued, p), old, old);
+  const out = path.join(dir, "svc.mjs");
+  await esbuild.build({ entryPoints: [path.join(project, "server/services/importService.ts")], bundle: true, outfile: out, format: "esm", platform: "node", packages: "external" });
+  const { createImportService } = await import(pathToFileURL(out).href);
+  const svc = createImportService({ documentRepo: {}, jobRepo: {}, queuedDir: queued, parsedDir: path.join(dir, "parsed"), preparseScript: "x", preparseShell: "node", maxFiles: 10, maxTotalMb: 10 });
+  assert.equal(svc.stageQueuedRoot(), null);
+});
+
+test("verifyContent: rejects files whose bytes do not match their extension (random-data .png/.json/.txt)", async () => {
+  const dir = path.join(tempDir, "verify");
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const out = path.join(dir, "svc.mjs");
+  await esbuild.build({ entryPoints: [path.join(project, "server/services/importService.ts")], bundle: true, outfile: out, format: "esm", platform: "node", packages: "external" });
+  const { verifyContent } = await import(pathToFileURL(out).href);
+  const w = (name, data) => { const p = path.join(dir, name); fs.writeFileSync(p, data); return p; };
+  const noise = Buffer.from(Array.from({ length: 4000 }, (_, i) => (i * 131 + 17) & 0xff).map((b, i) => (i % 7 === 0 ? 0 : b)));
+  assert.equal(verifyContent(w("a.png", PNG_BYTES), ".png"), true);
+  assert.equal(verifyContent(w("b.png", noise), ".png"), false);
+  assert.equal(verifyContent(w("b.jpg", noise), ".jpg"), false);
+  assert.equal(verifyContent(w("c.json", '{"a": 1}'), ".json"), true);
+  assert.equal(verifyContent(w("d.json", noise), ".json"), false);
+  assert.equal(verifyContent(w("e.xml", '﻿<?xml version="1.0"?><a/>'), ".xml"), true);
+  assert.equal(verifyContent(w("f.xml", noise), ".xml"), false);
+  assert.equal(verifyContent(w("g.txt", "Given Name: John\n"), ".txt"), true);
+  assert.equal(verifyContent(w("h.txt", noise), ".txt"), false);
+  assert.equal(verifyContent(w("i.pdf", "%PDF-1.4\n%%EOF"), ".pdf"), true);
+  assert.equal(verifyContent(w("j.rtf", "{" + String.fromCharCode(92) + "rtf1 hi}"), ".rtf"), true);
+  assert.equal(verifyContent(w("k.png", ""), ".png"), false);
+  assert.equal(verifyContent(path.join(dir, "missing.png"), ".png"), false);
+});
+
+test("verifyContent: accepts UTF-16 (BOM) XML/text, still rejects random bytes", async () => {
+  const dir = path.join(tempDir, "verify16");
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const out = path.join(dir, "svc.mjs");
+  await esbuild.build({ entryPoints: [path.join(project, "server/services/importService.ts")], bundle: true, outfile: out, format: "esm", platform: "node", packages: "external" });
+  const { verifyContent } = await import(pathToFileURL(out).href);
+  const le = (str) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(str, "utf16le")]);
+  const be = (str) => { const b = Buffer.from(str, "utf16le"); b.swap16(); return Buffer.concat([Buffer.from([0xfe, 0xff]), b]); };
+  const w = (name, data) => { const p = path.join(dir, name); fs.writeFileSync(p, data); return p; };
+  assert.equal(verifyContent(w("a.xml", le('<?xml version="1.0"?><a>hi</a>\r\n')), ".xml"), true);
+  assert.equal(verifyContent(w("b.txt", le("Given Name: John\r\nABN 51 824 753 556\r\n")), ".txt"), true);
+  assert.equal(verifyContent(w("c.xml", be('<?xml version="1.0"?><a/>')), ".xml"), true);
+  const noise = Buffer.from(Array.from({ length: 4000 }, (_, i) => (i * 131 + 17) & 0xff));
+  assert.equal(verifyContent(w("d.txt", Buffer.concat([Buffer.from([0xff, 0xfe]), noise])), ".txt"), false);
+});
+
+test("job queue serves non-PDF jobs before PDFs (FIFO within each group)", async () => {
+  const dir = path.join(tempDir, "order");
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  process.env.DATABASE_PATH = path.join(dir, "order.db");
+  const bundle = async (entry, name) => {
+    const out = path.join(dir, name);
+    await esbuild.build({ entryPoints: [path.join(project, entry)], bundle: true, outfile: out, format: "esm", platform: "node", packages: "external" });
+    return import(pathToFileURL(out).href + "?" + Date.now());
+  };
+  const { initDb, closeDb } = await bundle("server/db/database.ts", "db.mjs");
+  const { createDocumentRepo } = await bundle("server/db/repositories/documentRepo.ts", "doc.mjs");
+  const { createJobRepo } = await bundle("server/db/repositories/jobRepo.ts", "job.mjs");
+  const db = initDb();
+  const docs = createDocumentRepo(db);
+  const jobs = createJobRepo(db);
+  const mk = (name, mime, n) => docs.insert({ filename: name, originalPath: `/x/${name}`, contentHash: `h${n}`, mimeType: mime });
+  const pdf1 = mk("a.pdf", "application/pdf", 1);
+  const txt1 = mk("b.txt", "text/plain", 2);
+  const pdf2 = mk("c.pdf", "application/pdf", 3);
+  const png1 = mk("d.png", "image/png", 4);
+  for (const d of [pdf1, txt1, pdf2, png1]) jobs.enqueue({ documentId: d.id });
+  const order = [1, 2, 3, 4].map(() => jobs.dequeue().document_id);
+  assert.deepEqual(order, [txt1.id, png1.id, pdf1.id, pdf2.id]);
+  closeDb();
+});

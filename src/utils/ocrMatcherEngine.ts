@@ -12,6 +12,7 @@ import {
   validateAustralianBsb,
   repairOcrDigits,
 } from './australianValidationUtility';
+import { cleanNameValue, rejectReason } from './valueSanity';
 import { BankFieldDefinition, ExtractionResult, AustralianAddressStructure, ContextualDisambiguationMeta } from '../types';
 import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../data/bankFields';
 
@@ -38,8 +39,28 @@ export function extractBankFieldsFromText(text: string): ExtractionResult[] {
     results.push(result);
   }
 
-  // 3. Enforce standard Australian formatting rules (DOB, 4-digit Postcode, ABN/BSB) before results are rendered
-  return enforceAustralianFormattingRules(results);
+  // 3. Reject values that are really the form's own label/instruction text (they fabricated fake identities), and
+  //    strip leading/trailing label words from name fields ("or family name Reddy" -> "Reddy").
+  const ownLabels = new Map(allFields.map(f => [f.id, f.exampleLabels ?? []]));
+  const sane = results.map(r => {
+    if (r.status !== 'matched' || typeof r.extractedValue !== 'string') return r;
+    const cleaned = cleanNameValue(r.fieldId, r.extractedValue);
+    const reason = rejectReason(r.fieldId, cleaned, ownLabels.get(r.fieldId));
+    if (reason) {
+      return {
+        ...r,
+        status: 'missing' as const,
+        extractedValue: null,
+        confidence: 0,
+        isValid: undefined,
+        validationMessage: `Rejected ${reason}: "${String(r.extractedValue).slice(0, 60)}" is form text, not a value.`,
+      };
+    }
+    return cleaned === r.extractedValue ? r : { ...r, extractedValue: cleaned };
+  });
+
+  // 4. Enforce standard Australian formatting rules (DOB, 4-digit Postcode, ABN/BSB) before results are rendered
+  return enforceAustralianFormattingRules(sane);
 }
 
 interface DocumentContext {

@@ -663,3 +663,76 @@ def test_one_corrupted_pdf_page_does_not_discard_the_rest(tmp_path, monkeypatch)
     # Both good pages' native text made it through despite the broken page
     # between them.
     assert result["raw_text"].count("Balance: $100.00") == 2
+
+
+# ---------------------------------------------------------------------------
+# Throughput guards found on the real 17k-document batch
+# ---------------------------------------------------------------------------
+
+def test_photo_with_no_text_stops_after_two_passes(monkeypatch):
+    """Photos/graphics produce symbol noise, never fields; they used to run 3+ passes (incl. research engines)."""
+    calls = []
+
+    def fake_pass(args):
+        calls.append(args[1])
+        return "OK", "x", {"fields": {}, "confidences": {}, "raw_text": "~ , . ' ` -", "engines_used": ["Tesseract"]}
+
+    monkeypatch.setattr(engine, "init_worker", lambda: None)
+    monkeypatch.setattr(engine, "process_single_file_for_pass", fake_pass)
+    result = engine.process_document_multipass("photo.jpg", max_passes=10)
+    assert result["status"] == "FAILED"
+    assert "No readable text" in result["error"]
+    assert calls == [1, 2]
+
+
+def test_document_with_real_text_is_not_cut_short(monkeypatch):
+    calls = []
+
+    def fake_pass(args):
+        calls.append(args[1])
+        return "OK", "x", {"fields": {}, "confidences": {}, "raw_text": "Statement of account for the period " * 5, "engines_used": ["Tesseract"]}
+
+    monkeypatch.setattr(engine, "init_worker", lambda: None)
+    monkeypatch.setattr(engine, "process_single_file_for_pass", fake_pass)
+    result = engine.process_document_multipass("doc.png", max_passes=10)
+    assert result["status"] == "SUCCESS"
+    assert len(calls) >= 3
+
+
+
+def test_huge_images_are_downscaled_before_ocr(tmp_path):
+    from PIL import Image
+    p = tmp_path / "big.png"
+    Image.new("RGB", (6000, 4000), "white").save(p)
+    img = engine._load_capped_image(str(p))
+    assert max(img.size) <= engine.MAX_IMAGE_SIDE
+    assert img.size[0] / img.size[1] == pytest.approx(1.5, rel=0.01)
+    small = tmp_path / "small.png"
+    Image.new("RGB", (800, 600), "white").save(small)
+    assert engine._load_capped_image(str(small)).size == (800, 600)
+
+
+def test_pdf_with_substantial_native_text_stops_after_pass_one(monkeypatch):
+    calls = []
+
+    def fake_pass(args):
+        calls.append(args[1])
+        return "OK", "x", {"fields": {}, "confidences": {}, "raw_text": "Account statement text layer. " * 40, "engines_used": ["Native PDF Text Layer"]}
+
+    monkeypatch.setattr(engine, "init_worker", lambda: None)
+    monkeypatch.setattr(engine, "process_single_file_for_pass", fake_pass)
+    assert engine.process_document_multipass("doc.pdf", max_passes=10)["status"] == "SUCCESS"
+    assert calls == [1]
+
+
+def test_pdf_with_thin_native_text_keeps_ocr_passes(monkeypatch):
+    calls = []
+
+    def fake_pass(args):
+        calls.append(args[1])
+        return "OK", "x", {"fields": {}, "confidences": {}, "raw_text": "Page 1 of 12 " * 4, "engines_used": ["Native PDF Text Layer"]}
+
+    monkeypatch.setattr(engine, "init_worker", lambda: None)
+    monkeypatch.setattr(engine, "process_single_file_for_pass", fake_pass)
+    engine.process_document_multipass("scan.pdf", max_passes=10)
+    assert len(calls) >= 2

@@ -240,7 +240,7 @@
     "productionDependencies": [
       {
         "name": "opencv-python-headless",
-        "version": "4.10.0.84",
+        "version": "5.0.0.93",
         "ecosystem": "pypi",
         "license": "Apache-2.0",
         "commercialUseAllowed": true,
@@ -249,7 +249,7 @@
       },
       {
         "name": "Pillow",
-        "version": "10.4.0",
+        "version": "12.3.0",
         "ecosystem": "pypi",
         "license": "HPND",
         "commercialUseAllowed": true,
@@ -258,7 +258,7 @@
       },
       {
         "name": "pypdfium2",
-        "version": "4.30.0",
+        "version": "5.13.0",
         "ecosystem": "pypi",
         "license": "Apache-2.0",
         "commercialUseAllowed": true,
@@ -267,7 +267,7 @@
       },
       {
         "name": "numpy",
-        "version": "2.1.1",
+        "version": "2.5.2",
         "ecosystem": "pypi",
         "license": "BSD-3-Clause",
         "commercialUseAllowed": true,
@@ -276,7 +276,7 @@
       },
       {
         "name": "pandas",
-        "version": "2.2.3",
+        "version": "3.0.6",
         "ecosystem": "pypi",
         "license": "BSD-3-Clause",
         "commercialUseAllowed": true,
@@ -285,21 +285,12 @@
       },
       {
         "name": "duckdb",
-        "version": "1.1.1",
+        "version": "1.5.5",
         "ecosystem": "pypi",
         "license": "MIT",
         "commercialUseAllowed": true,
         "copyleft": false,
         "notes": "Embedded analytical storage for offline reporting."
-      },
-      {
-        "name": "torch",
-        "version": "2.4.1",
-        "ecosystem": "pypi",
-        "license": "BSD-3-Clause",
-        "commercialUseAllowed": true,
-        "copyleft": false,
-        "notes": "Deep learning tensor operations for neural OCR."
       },
       {
         "name": "pytesseract",
@@ -311,26 +302,8 @@
         "notes": "Python wrapper for Tesseract OCR engine."
       },
       {
-        "name": "spacy",
-        "version": "3.7.5",
-        "ecosystem": "pypi",
-        "license": "MIT",
-        "commercialUseAllowed": true,
-        "copyleft": false,
-        "notes": "Tokenization and entity disambiguation."
-      },
-      {
-        "name": "easyocr",
-        "version": "1.7.2",
-        "ecosystem": "pypi",
-        "license": "Apache-2.0",
-        "commercialUseAllowed": true,
-        "copyleft": false,
-        "notes": "Lightweight deep-learning OCR model."
-      },
-      {
         "name": "python-docx",
-        "version": "1.1.2",
+        "version": "1.2.0",
         "ecosystem": "pypi",
         "license": "MIT",
         "commercialUseAllowed": true,
@@ -339,7 +312,7 @@
       },
       {
         "name": "striprtf",
-        "version": "0.0.26",
+        "version": "0.0.33",
         "ecosystem": "pypi",
         "license": "BSD-3-Clause",
         "commercialUseAllowed": true,
@@ -348,33 +321,87 @@
       },
       {
         "name": "requests",
-        "version": "2.32.3",
+        "version": "2.34.2",
         "ecosystem": "pypi",
         "license": "Apache-2.0",
         "commercialUseAllowed": true,
         "copyleft": false,
         "notes": "HTTP client used by the DGX worker to claim jobs, fetch originals, and post results."
+      },
+      {
+        "name": "torch",
+        "version": "2.4.1",
+        "ecosystem": "pypi",
+        "license": "BSD-3-Clause",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Deep learning tensor operations for neural OCR."
+      },
+      {
+        "name": "transformers",
+        "version": "4.57.6",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "TrOCR handwriting line recognizer runtime (4.x: 5.x cannot build the tokenizer)."
+      },
+      {
+        "name": "tokenizers",
+        "version": "0.22.2",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Tokenizer backend for transformers."
+      },
+      {
+        "name": "safetensors",
+        "version": "0.8.0",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Model weight loading."
+      },
+      {
+        "name": "huggingface_hub",
+        "version": "0.36.2",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Model download/cache client."
+      },
+      {
+        "name": "accelerate",
+        "version": "1.15.0",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Device placement helpers for transformers."
+      },
+      {
+        "name": "sentencepiece",
+        "version": "0.2.2",
+        "ecosystem": "pypi",
+        "license": "Apache-2.0",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Sentencepiece tokenizer required by TrOCR."
+      },
+      {
+        "name": "protobuf",
+        "version": "7.36.2",
+        "ecosystem": "pypi",
+        "license": "BSD-3-Clause",
+        "commercialUseAllowed": true,
+        "copyleft": false,
+        "notes": "Serialization dependency of sentencepiece/transformers."
       }
     ],
     "screenedResearchDependencies": [
-      {
-        "name": "paddleocr",
-        "version": "2.8.1",
-        "ecosystem": "pypi",
-        "license": "Apache-2.0",
-        "commercialUseAllowed": true,
-        "copyleft": false,
-        "notes": "Permissive code license; neural weights subject to APRA commercial audit."
-      },
-      {
-        "name": "paddlepaddle",
-        "version": "2.6.2",
-        "ecosystem": "pypi",
-        "license": "Apache-2.0",
-        "commercialUseAllowed": true,
-        "copyleft": false,
-        "notes": "Runtime backend required by PaddleOCR."
-      },
       {
         "name": "surya-ocr",
         "version": "0.4.14",
@@ -400,9 +427,9 @@
     ]
   },
   "licenseSummary": {
-    "totalProductionDependencies": 28,
-    "commercialPermissiveCount": 28,
+    "totalProductionDependencies": 33,
+    "commercialPermissiveCount": 33,
     "copyleftCountInProduction": 0,
-    "screenedConditionalCount": 3
+    "screenedConditionalCount": 1
   }
 }

@@ -989,6 +989,11 @@ async function startServer(options?: {
     });
   }
 
+  if (process.env.OCRDOCS_PURGE_UNVERIFIED === "true") {
+    const r = importService.purgeUnverified();
+    console.log(`[OCRD] purge-unverified: checked ${r.checked} imported document(s), removed ${r.purged}, re-queued ${r.requeued}`);
+  }
+
   // 24/7 drain: every OCRDOCS_QUEUE_POLL_SECONDS, clean + import whatever sits in the queued root.
   let queueTimer: NodeJS.Timeout | undefined;
   if (process.env.OCRDOCS_QUEUE_WATCH === "true") {

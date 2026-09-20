@@ -61,7 +61,7 @@ ARCH=$(uname -m)
 if [[ "$ARCH" == "aarch64" ]]; then
     echo "[*] Detected ARM64 (aarch64) DGX Spark architecture..."
     pip install torch torchvision \
-        --index-url https://download.pytorch.org/whl/cu124 \
+        --index-url https://download.pytorch.org/whl/cu130 \
         --extra-index-url https://pypi.nvidia.com --quiet --retries 10 --timeout 120
 else
     echo "[*] Detected x86_64 architecture..."
@@ -70,22 +70,28 @@ fi
 
 echo "[*] Phase 6: Installing pinned OCR, Computer Vision & NLP dependencies..."
 pip install -r "${SCRIPT_DIR}/requirements.txt" --quiet --retries 10 --timeout 120
-pip install -e "${SCRIPT_DIR}[screened,handwriting]" --quiet --retries 10 --timeout 120
+pip install -e "${SCRIPT_DIR}" --quiet --retries 10 --timeout 120
 
-echo "[*] Phase 7: Downloading SpaCy English NLP language model..."
-if ! python3 -c "import spacy; spacy.load('en_core_web_sm')" 2>/dev/null; then
-    python3 -m spacy download en_core_web_sm --quiet --retries 10
-fi
+echo "[*] Phase 7: Pre-fetching the TrOCR handwriting model (so the first job does not download it)..."
+python3 - <<'PY'
+import os
+from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+mid = os.environ.get("OCRDOCS_HANDWRITING_MODEL", "microsoft/trocr-large-handwritten")
+TrOCRProcessor.from_pretrained(mid); VisionEncoderDecoderModel.from_pretrained(mid)
+print("[+] TrOCR ready:", mid)
+PY
+command -v tesseract >/dev/null || { echo "[-] tesseract binary missing: apt install tesseract-ocr" >&2; exit 1; }
 
 echo "[*] Phase 8: Performing Pre-Flight Diagnostics..."
 python3 -c "
-import sys, torch, cv2, spacy, duckdb, docx
+import sys, torch, cv2, duckdb, docx, transformers
 from striprtf.striprtf import rtf_to_text
 print(f'[+] Python: {sys.version.split()[0]}')
 print(f'[+] PyTorch: {torch.__version__} | CUDA Available: {torch.cuda.is_available()}')
 if torch.cuda.is_available():
     print(f'[+] GPU Device: {torch.cuda.get_device_name(0)}')
     print(f'[+] VRAM Total: {torch.cuda.get_device_properties(0).total_memory / (1024**3):.2f} GB')
+print(f'[+] transformers: {transformers.__version__}')
 print(f'[+] DuckDB: {duckdb.__version__}')
 print(f'[+] python-docx: {docx.__version__}')
 print('[+] striprtf: import OK')

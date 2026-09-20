@@ -10,33 +10,33 @@ readme = "README.md"
 requires-python = ">=3.10, <3.13"
 license = { text = "Apache-2.0" }
 dependencies = [
-    "opencv-python-headless==4.10.0.84",
-    "Pillow==10.4.0",
-    "pypdfium2==4.30.0",
-    "numpy==1.26.4",
-    "pandas==2.2.3",
-    "duckdb==1.1.1",
+    "opencv-python-headless==5.0.0.93",
+    "Pillow==12.3.0",
+    "pypdfium2==5.13.0",
+    "numpy==2.5.2",
+    "pandas==3.0.6",
+    "duckdb==1.5.5",
     # torch intentionally not pinned here either -- see requirements.txt comment.
     "pytesseract==0.3.13",
-    "spacy==3.7.5",
-    "easyocr==1.7.2",
-    "python-docx==1.1.2",
-    "striprtf==0.0.26",
-    "requests==2.32.3",
+    "python-docx==1.2.0",
+    "striprtf==0.0.33",
+    "transformers==4.57.6",
+    "tokenizers==0.22.2",
+    "safetensors==0.8.0",
+    "huggingface_hub==0.36.2",
+    "accelerate==1.15.0",
+    "sentencepiece==0.2.2",
+    "protobuf==7.36.2",
+    "requests==2.34.2",
 ]
 
 [project.optional-dependencies]
 screened = [
-    "paddleocr==2.8.1",
-    "paddlepaddle==2.6.2",
     "surya-ocr==0.4.14",
-]
-handwriting = [
-    "transformers==4.46.3",
 ]
 
 [tool.setuptools]
-py-modules = ["ocr_spark_engine"]
+py-modules = ["ocr_spark_engine", "ocr_hybrid"]
 
 [tool.black]
 line-length = 100

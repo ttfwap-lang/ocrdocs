@@ -162,12 +162,11 @@ describe('Stage 5 — Reproducible Dependencies & License Screening', () => {
       'pandas',
       'duckdb',
       'pytesseract',
-      'spacy',
-      'easyocr',
+      'transformers',
+      'sentencepiece',
       'python-docx',
       'striprtf',
       'requests',
-      'paddlepaddle',
     ];
 
     for (const r of required) {
@@ -175,7 +174,7 @@ describe('Stage 5 — Reproducible Dependencies & License Screening', () => {
       assert.match(pkgMap.get(r), /^\d+\.\d+/, `Package "${r}" must have valid semver pin`);
     }
 
-    for (const removed of ['gdown', 'pymupdf']) {
+    for (const removed of ['gdown', 'pymupdf', 'easyocr', 'paddleocr', 'paddlepaddle']) {
       assert.equal(pkgMap.has(removed), false, `Removed dependency "${removed}" must not be installed by default`);
     }
 
@@ -190,7 +189,7 @@ describe('Stage 5 — Reproducible Dependencies & License Screening', () => {
     const setupPath = path.join(REPO_ROOT, 'scripts', 'dgx_setup.sh');
     assert.ok(fs.existsSync(setupPath), 'scripts/dgx_setup.sh must exist');
     const setupContent = fs.readFileSync(setupPath, 'utf8');
-    assert.match(setupContent, /torch torchvision[\s\S]*?--index-url https:\/\/download\.pytorch\.org\/whl\/cu124/, 'dgx_setup.sh must install the CUDA 12.4 torch build for aarch64 (Grace Blackwell)');
+    assert.match(setupContent, /torch torchvision[\s\S]*?--index-url https:\/\/download\.pytorch\.org\/whl\/cu130/, 'dgx_setup.sh must install the CUDA 13.0 torch build for aarch64 (Grace Blackwell)');
     assert.match(setupContent, /torch torchvision --index-url https:\/\/download\.pytorch\.org\/whl\/cu121/, 'dgx_setup.sh must install the CUDA 12.1 torch build for x86_64');
 
     // Verify scripts/pyproject.toml also exists

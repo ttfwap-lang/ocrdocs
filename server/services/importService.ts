@@ -23,7 +23,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { closeSync, createReadStream, openSync, readSync } from "node:fs";
 import { spawn } from "node:child_process";
 import {
   copyFileSync,
@@ -133,6 +133,73 @@ export function isAccepted(originalname: string, size: number): boolean {
 }
 
 const IMPORT_ID_RE = /^[a-z0-9]+-[a-z0-9]{6}$/;
+/** Side folders pre-parse.sh writes next to a staged dir (<id>.unsupported / <id>.failed): never new work. */
+const IMPORT_SIDE_DIR_RE = /^[a-z0-9]+-[a-z0-9]{6}\.(unsupported|failed)$/;
+
+/**
+ * True when the file's leading bytes actually look like what its extension claims. A real batch contained
+ * ~2,300 files named .png/.jpg/.json/.xml/.txt whose content was random bytes (packed/encrypted app resources):
+ * they can never be OCR'd, and the text-typed ones would be "extracted" as garbage that can fake ABN/BSB hits.
+ */
+export function verifyContent(path: string, ext: string): boolean {
+  let head: Buffer;
+  try {
+    const fd = openSync(path, "r");
+    try {
+      head = Buffer.alloc(4096);
+      const n = readSync(fd, head, 0, 4096, 0);
+      head = head.subarray(0, n);
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+  if (head.length === 0) return false;
+  const startsWith = (sig: number[]) => sig.every((b, i) => head[i] === b);
+  const ascii = (from: number, s: string) => head.subarray(from, from + s.length).toString("latin1") === s;
+  // UTF-16 with a BOM (Windows tools write XML/text this way) legitimately contains NUL bytes: decode it first.
+  const utf16LE = head.length >= 2 && head[0] === 0xff && head[1] === 0xfe;
+  const utf16BE = head.length >= 2 && head[0] === 0xfe && head[1] === 0xff;
+  const decoded = (): string => {
+    if (utf16LE) return head.subarray(2, head.length - (head.length % 2)).toString("utf16le");
+    if (utf16BE) {
+      const be = Buffer.from(head.subarray(2, head.length - (head.length % 2)));
+      return be.swap16().toString("utf16le");
+    }
+    return head.toString("utf8");
+  };
+  const text = () => {
+    if (!utf16LE && !utf16BE && head.includes(0)) return false;
+    const str = decoded();
+    if (str.length === 0) return false;
+    let printable = 0;
+    let latin = 0;
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
+      if (c === 9 || c === 10 || c === 13 || (c >= 32 && c !== 0xfffd)) printable++;
+      if (c < 0x250) latin++;
+    }
+    // Random bytes decoded as UTF-16 come out as "printable" CJK noise; English documents are overwhelmingly Latin-range.
+    if ((utf16LE || utf16BE) && latin / str.length < 0.9) return false;
+    return printable / str.length >= 0.95;
+  };
+  const stripped = () => decoded().replace(/^﻿/, "").trimStart();
+  switch (ext.toLowerCase().replace(/^\./, "")) {
+    case "png": return startsWith([0x89, 0x50, 0x4e, 0x47]);
+    case "jpg": case "jpeg": return startsWith([0xff, 0xd8, 0xff]);
+    case "bmp": return ascii(0, "BM");
+    case "tif": case "tiff": return startsWith([0x49, 0x49, 0x2a, 0x00]) || startsWith([0x4d, 0x4d, 0x00, 0x2a]);
+    case "webp": return ascii(0, "RIFF") && ascii(8, "WEBP");
+    case "pdf": return head.subarray(0, 1024).includes(Buffer.from("%PDF"));
+    case "docx": return startsWith([0x50, 0x4b]);
+    case "rtf": return stripped().startsWith("{\\rtf");
+    case "json": return text() && /^[\[{"\d\-tfn]/.test(stripped());
+    case "xml": return text() && stripped().startsWith("<");
+    case "txt": return text();
+    default: return false;
+  }
+}
 
 function newImportId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -299,6 +366,13 @@ export function createImportService(cfg: ImportConfig) {
     renameSync(manifest.stagedDir, parsedDir);
     // Record the move immediately so a crash mid-enqueue never orphans the dir.
     writeRecord({ importId, stagedDir: parsedDir, status: "parsed", parsedDir, jobIds: [] });
+    // Keep the set-aside (unsupported / failed-archive) files with the batch they came from, out of the queue root.
+    for (const suffix of [".unsupported", ".failed"]) {
+      const side = `${manifest.stagedDir}${suffix}`;
+      if (existsSync(side)) {
+        renameSync(side, `${parsedDir}${suffix}`);
+      }
+    }
 
     const jobIds: string[] = [];
     for (const entry of readdirSync(parsedDir)) {
@@ -309,6 +383,13 @@ export function createImportService(cfg: ImportConfig) {
       // Re-apply the accept filter: pre-parse output may contain files the
       // engine can't OCR (e.g. extracted binaries) or empty leftovers.
       if (!isAccepted(entry, statSync(full).size)) {
+        continue;
+      }
+      // Extension claims a type the bytes don't have: set it aside rather than queue an OCR job that must fail.
+      if (!verifyContent(full, extname(entry))) {
+        const aside = `${parsedDir}.unverified`;
+        mkdirSync(aside, { recursive: true });
+        renameSync(full, join(aside, entry));
         continue;
       }
       // Content-hash dedup mirrors POST /api/documents: identical bytes must
@@ -342,6 +423,47 @@ export function createImportService(cfg: ImportConfig) {
       jobIds,
     });
     return { parsedDir, jobIds };
+  }
+
+  /**
+   * One-shot cleanup for documents queued before verifyContent existed: deletes the DB rows (jobs/extractions
+   * cascade) of documents that live under the parsed root and fail verification, moving the files aside.
+   * Never touches documents from elsewhere (e.g. user uploads).
+   */
+  function purgeUnverified(): { checked: number; purged: number; requeued: number } {
+    let checked = 0;
+    let purged = 0;
+    let requeued = 0;
+    const root = cfg.parsedDir.replace(/[\\/]+$/, "");
+    for (const doc of cfg.documentRepo.getAll()) {
+      if (!doc.original_path.startsWith(root)) continue;
+      checked++;
+      if (!existsSync(doc.original_path) || verifyContent(doc.original_path, extname(doc.original_path))) continue;
+      const aside = join(root, "_unverified");
+      mkdirSync(aside, { recursive: true });
+      try {
+        renameSync(doc.original_path, join(aside, `${doc.id}-${doc.filename}`));
+      } catch {
+        /* file already gone: still drop the row */
+      }
+      cfg.documentRepo.delete(doc.id);
+      purged++;
+    }
+    // Anything set aside earlier that passes the (now UTF-16-aware) check goes back to the queue root so the
+    // normal drain re-imports it; genuine junk stays in _unverified.
+    const asideDir = join(root, "_unverified");
+    if (existsSync(asideDir)) {
+      for (const name of readdirSync(asideDir)) {
+        const full = join(asideDir, name);
+        const original = name.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/, "");
+        if (statSync(full).isFile() && verifyContent(full, extname(original))) {
+          mkdirSync(cfg.queuedDir, { recursive: true });
+          renameSync(full, join(cfg.queuedDir, original));
+          requeued++;
+        }
+      }
+    }
+    return { checked, purged, requeued };
   }
 
   function failImport(importId: string, stderr: string, code: number | null): void {
@@ -379,7 +501,10 @@ export function createImportService(cfg: ImportConfig) {
     const now = Date.now();
     const pick: string[] = [];
     for (const entry of readdirSync(cfg.queuedDir, { withFileTypes: true })) {
-      if (entry.name.startsWith(".") || (entry.isDirectory() && IMPORT_ID_RE.test(entry.name))) {
+      if (
+        entry.name.startsWith(".") ||
+        (entry.isDirectory() && (IMPORT_ID_RE.test(entry.name) || IMPORT_SIDE_DIR_RE.test(entry.name)))
+      ) {
         continue;
       }
       const full = join(cfg.queuedDir, entry.name);
@@ -399,7 +524,7 @@ export function createImportService(cfg: ImportConfig) {
     return importId;
   }
 
-  return { stageQueuedRoot, stageImport, runPreParse, finalize, failImport, getRecord, listRecords };
+  return { purgeUnverified, stageQueuedRoot, stageImport, runPreParse, finalize, failImport, getRecord, listRecords };
 }
 
 export { EXT_TO_MIME };
