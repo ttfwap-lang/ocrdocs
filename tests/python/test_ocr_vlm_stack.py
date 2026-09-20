@@ -142,3 +142,53 @@ def test_merge_transport_failure_is_qwen_unavailable():
 
     with pytest.raises(qm.QwenUnavailable):
         qm.merge_page(img(), "x", [], post=post)
+
+
+# ---- whose detail / section / entry / document type --------------------------------------------------------------
+PARENTS_PAGE = {
+    "document_type": "loan_application",
+    "fields": [
+        {"name": "given_names", "value": "John", "source": "handwriting", "subject": "applicant", "section": "Your details"},
+        {"name": "given_names", "value": "John", "source": "handwriting", "subject": "parent", "section": "Parents details", "entry": 1},
+        {"name": "given_names", "value": "Mary", "source": "handwriting", "subject": "parent", "section": "Parents details", "entry": 2},
+        {"name": "occupation", "value": "boilermaker", "source": "handwriting", "subject": "parent", "section": "Parents details", "entry": 1},
+        {"name": "occupation", "value": "nurse", "source": "handwriting", "subject": "parent", "section": "Parents details", "entry": 2},
+    ],
+}
+
+
+def test_merge_keeps_whose_detail_each_value_is_and_pairs_multi_value_cells():
+    r = qm.merge_page(img(), "Given Name: John", [("John and Mary", 0.9)], post=lambda u, b, t: reply(json.dumps(PARENTS_PAGE)))
+    assert r.document_type == "loan_application"
+    by = {(f.name, f.subject, f.entry): f.value for f in r.fields}
+    assert by[("given_names", "applicant", 1)] == "John"
+    assert by[("given_names", "parent", 1)] == "John" and by[("given_names", "parent", 2)] == "Mary"
+    # entry numbers pair a person with their job: John(1) is the boilermaker, Mary(2) the nurse
+    assert by[("occupation", "parent", 1)] == "boilermaker" and by[("occupation", "parent", 2)] == "nurse"
+    assert {f.section for f in r.fields if f.subject == "parent"} == {"Parents details"}
+
+
+def test_missing_or_invalid_subject_is_unknown_never_the_applicant():
+    page = {"document_type": "made-up", "fields": [
+        {"name": "family_name", "value": "Lee", "source": "print"},
+        {"name": "family_name", "value": "Kim", "source": "print", "subject": "grandparent", "entry": 0},
+    ]}
+    r = qm.merge_page(img(), "x", [], post=lambda u, b, t: reply(json.dumps(page)))
+    assert [f.subject for f in r.fields] == ["unknown", "unknown"]
+    assert [f.entry for f in r.fields] == [1, 1]
+    assert r.document_type == "other"
+
+
+def test_merge_prompt_and_schema_demand_the_owner_and_document_type():
+    seen = {}
+
+    def post(url, body, timeout):
+        seen["body"] = body
+        return reply(json.dumps({"document_type": "payslip", "fields": []}))
+
+    r = qm.merge_page(img(), "x", [], post=post)
+    text = seen["body"]["messages"][0]["content"][1]["text"]
+    assert "WHOSE DETAIL" in text and "Parents details" in text and "entry 1, 2" in text
+    schema = seen["body"]["response_format"]["json_schema"]["schema"]
+    assert "subject" in schema["properties"]["fields"]["items"]["required"]
+    assert "document_type" in schema["required"] and r.document_type == "payslip"

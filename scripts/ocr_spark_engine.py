@@ -741,15 +741,33 @@ def run_page_vlm(image: Image.Image) -> Dict[str, Any]:
             degraded = True
 
     fields: List[Any] = []
+    document_type = "other"
     if paddle_text or trocr_lines:
         try:
-            fields = ocr_qwen_merge.merge_page(image, paddle_text, trocr_lines).fields
+            merged = ocr_qwen_merge.merge_page(image, paddle_text, trocr_lines)
+            fields, document_type = merged.fields, merged.document_type
             engines.append("Qwen3-VL")
         except ocr_qwen_merge.QwenUnavailable as e:
             logging.warning(f"[!] Qwen merge unavailable, regex extraction only for this page: {e}")
             degraded = True
     text = "\n".join(t for t in [paddle_text] + [t for t, _ in trocr_lines] if t)
-    return {"kind": kind, "text": text, "engines": engines, "line_confs": confs, "fields": fields, "degraded": degraded}
+    return {"kind": kind, "text": text, "engines": engines, "line_confs": confs, "fields": fields, "degraded": degraded,
+            "document_type": document_type}
+
+
+def majority_document_type(types: List[str]) -> str:
+    """One type for the whole document: the most common page type, ignoring "other" unless nothing else was seen.
+    Two different specific types tied for first (a statement stapled to a payslip) is "mixed"."""
+    counts: Dict[str, int] = {}
+    for t in types:
+        if t and t != "other":
+            counts[t] = counts.get(t, 0) + 1
+    if not counts:
+        return "other"
+    ranked = sorted(counts.items(), key=lambda kv: -kv[1])
+    if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+        return "mixed"
+    return ranked[0][0]
 
 
 def extract_australian_banking_fields(text: str, line_confidences: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
@@ -1091,7 +1109,8 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
             page = run_page_vlm(img)
             txt, engines, line_confs = page["text"], page["engines"], page["line_confs"]
             pages_info.append({"imageIndex": image_index, "kind": page["kind"], "engines": engines,
-                               "degraded": page["degraded"], "fieldCount": len(page["fields"])})
+                               "degraded": page["degraded"], "fieldCount": len(page["fields"]),
+                               "documentType": page.get("document_type", "other")})
             vlm_fields.extend({**vars(f), "imageIndex": image_index} for f in page["fields"])
         else:
             txt, engines, line_confs = run_pass_ocr(img, pass_num)
@@ -1134,6 +1153,7 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
     if use_vlm:
         result["pages"] = pages_info
         result["vlm_fields"] = vlm_fields
+        result["document_type"] = majority_document_type([p["documentType"] for p in pages_info])
     return "SUCCESS", fpath, result
 
 # ==============================================================================
@@ -1203,6 +1223,7 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
     latest_raw_text = ""
     page_kinds: List[Dict[str, Any]] = []
     vlm_fields: List[Dict[str, Any]] = []
+    document_type = "other"
     passes: List[Dict[str, Any]] = []
     consecutive_zero_delta = 0
     field_keys = list(BANK_FIELD_PATTERNS.keys())
@@ -1233,6 +1254,7 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
         new_confs = result.get("confidences", {})
         if "pages" in result:
             page_kinds, vlm_fields = result["pages"], result.get("vlm_fields", [])
+            document_type = result.get("document_type", "other")
         if result.get("raw_text"):
             latest_raw_text = result["raw_text"]
 
@@ -1297,6 +1319,7 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
         "passes": passes,
         "pages": page_kinds,
         "vlmFields": vlm_fields,
+        "documentType": document_type,
         "engineUsed": ",".join(
             sorted({e for p in passes for e in p.get("enginesUsed", [])})
         ) or "multipass-ensemble",

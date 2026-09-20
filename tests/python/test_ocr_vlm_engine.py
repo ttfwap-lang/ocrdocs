@@ -115,10 +115,31 @@ def test_single_file_pass_reports_pages_and_fields_only_in_vlm_mode(stack, monke
     status, _, result = engine.process_single_file_for_pass((str(f), 1))
     assert status == "SUCCESS"
     assert result["pages"] == [{"imageIndex": 0, "kind": "both", "engines": result["pages"][0]["engines"],
-                                "degraded": False, "fieldCount": 1}]
+                                "degraded": False, "fieldCount": 1, "documentType": "other"}]
     assert result["vlm_fields"][0]["name"] == "family_name" and result["vlm_fields"][0]["imageIndex"] == 0
 
     monkeypatch.setattr(engine, "PIPELINE_MODE", "legacy")
     stack.log.clear()
     status, _, result = engine.process_single_file_for_pass((str(f), 1))
     assert "pages" not in result and "vlm_fields" not in result and "classify" not in stack.log
+
+
+@pytest.mark.parametrize("types,expected", [
+    ([], "other"),
+    (["other", "other"], "other"),
+    (["payslip", "payslip", "other"], "payslip"),
+    (["other", "payslip"], "payslip"),
+    (["loan_application", "payslip"], "mixed"),
+    (["loan_application", "loan_application", "payslip"], "loan_application"),
+])
+def test_document_type_is_the_page_majority_ignoring_other(types, expected):
+    assert engine.majority_document_type(types) == expected
+
+
+def test_page_document_type_flows_from_the_merge_into_the_file_result(stack, monkeypatch, tmp_path):
+    monkeypatch.setattr(qm, "merge_page", lambda img, p, l, **k: qm.MergeResult([], "payslip"))
+    f = tmp_path / "scan.png"
+    page().save(f)
+    monkeypatch.setattr(engine, "PIPELINE_MODE", "vlm_v2")
+    _, _, result = engine.process_single_file_for_pass((str(f), 1))
+    assert result["pages"][0]["documentType"] == "payslip" and result["document_type"] == "payslip"

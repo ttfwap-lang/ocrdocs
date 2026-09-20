@@ -2,7 +2,9 @@
 
 classify_page: one small call per page -> printed | handwritten | both | blank | photo (decides which readers run).
 merge_page:    the page image plus the Paddle-VL text and the TrOCR lines -> typed fields, each tagged with whether it
-               came from print or handwriting.
+               came from print or handwriting, WHOSE detail it is (applicant, parent, spouse, ...), the printed heading it
+               sits under, and its position within a multi-value cell ("John and Mary" -> entries 1 and 2), plus the
+               document type.
 
 Qwen is not trusted with digits. Every returned value that contains digits is checked against the digits the OCR
 engines actually read on that page; a value Qwen produced that neither engine saw is kept but marked unverified and
@@ -30,7 +32,13 @@ MIN_DIGITS_TO_CHECK = 4
 PAGE_KINDS = ["printed", "handwritten", "both", "blank", "photo"]
 FIELD_KEYS = [
     "given_names", "family_name", "date_of_birth", "residential_address", "mobile_number", "email_address",
-    "drivers_licence_number", "passport_details", "tax_file_number", "bsb", "account_number", "abn",
+    "drivers_licence_number", "passport_details", "tax_file_number", "bsb", "account_number", "abn", "occupation",
+]
+# Whose detail a value is. "unknown" is what a missing/invalid answer becomes: never silently the applicant.
+SUBJECTS = ["applicant", "spouse", "parent", "dependant", "employer", "referee", "other"]
+DOCUMENT_TYPES = [
+    "loan_application", "bank_statement", "payslip", "drivers_licence", "passport", "medicare_card", "tax_return",
+    "utility_bill", "employment_contract", "id_form_other", "other",
 ]
 
 CLASSIFY_SCHEMA = {
@@ -41,6 +49,7 @@ CLASSIFY_SCHEMA = {
 MERGE_SCHEMA = {
     "type": "object",
     "properties": {
+        "document_type": {"type": "string", "enum": DOCUMENT_TYPES},
         "fields": {
             "type": "array",
             "items": {
@@ -49,13 +58,16 @@ MERGE_SCHEMA = {
                     "name": {"type": "string", "enum": FIELD_KEYS},
                     "value": {"type": "string"},
                     "source": {"type": "string", "enum": ["print", "handwriting"]},
+                    "subject": {"type": "string", "enum": SUBJECTS},
+                    "section": {"type": "string"},
+                    "entry": {"type": "integer", "minimum": 1},
                     "evidence": {"type": "string"},
                 },
-                "required": ["name", "value", "source"],
+                "required": ["name", "value", "source", "subject"],
             },
-        }
+        },
     },
-    "required": ["fields"],
+    "required": ["document_type", "fields"],
 }
 
 CLASSIFY_PROMPT = (
@@ -70,7 +82,13 @@ MERGE_PROMPT = (
     "return the values of these fields that are clearly present: " + ", ".join(FIELD_KEYS) + ". "
     "Set source to 'handwriting' if the value was handwritten, otherwise 'print'. Copy digits exactly as they appear "
     "in a reading. Never guess or invent a value; omit a field that is not clearly present. Do not return form "
-    "labels, instructions or example text as values."
+    "labels, instructions or example text as values. "
+    "WHOSE DETAIL: set subject to whose value it is. It is the applicant only if its own label or the section heading "
+    "it sits under says so (e.g. 'Given Name', 'Your details'). Values under a heading about another person "
+    "(e.g. 'Parents details', 'Spouse', 'Employer', 'Referee') take that subject: parent, spouse, employer, referee. "
+    "Copy the printed heading into section. When one cell lists several people or values ('John and Mary', "
+    "'boilermaker, nurse') return one field per person, in order, with entry 1, 2, ... so the same entry number pairs "
+    "a person's name with their job. Also return document_type: " + ", ".join(DOCUMENT_TYPES) + " ('other' if unsure)."
 )
 
 
@@ -82,11 +100,15 @@ class MergedField:
     confidence: float
     digits_verified: Optional[bool]  # None when the value has too few digits to check
     evidence: str = ""
+    subject: str = "unknown"  # SUBJECTS, or "unknown" when the model did not say
+    section: str = ""
+    entry: int = 1
 
 
 @dataclass
 class MergeResult:
     fields: List[MergedField] = field(default_factory=list)
+    document_type: str = "other"
 
 
 class QwenUnavailable(RuntimeError):
@@ -162,7 +184,9 @@ def merge_page(
         {"type": "image_url", "image_url": {"url": image_to_data_url(image)}},
         {"type": "text", "text": text},
     ]
-    raw = _chat(content, MERGE_SCHEMA, "page_fields", post, base_url, 1500).get("fields") or []
+    reply = _chat(content, MERGE_SCHEMA, "page_fields", post, base_url, 2000)
+    raw = reply.get("fields") or []
+    doc_type = reply.get("document_type")
     corpus = _digits(paddle_text) + "".join(_digits(t) for t, _ in trocr_lines)
     out: List[MergedField] = []
     for f in raw:
@@ -173,5 +197,8 @@ def merge_page(
         conf = 0.35 if verified is False else 0.85 if verified else 0.7
         if verified is False:
             logging.warning(f"[!] Qwen returned {name}={value!r} but those digits were not read by any OCR engine.")
-        out.append(MergedField(name, value, f.get("source") or "print", conf, verified, f.get("evidence") or ""))
-    return MergeResult(out)
+        subject = f.get("subject") if f.get("subject") in SUBJECTS else "unknown"
+        entry = f.get("entry") if isinstance(f.get("entry"), int) and f.get("entry") >= 1 else 1
+        out.append(MergedField(name, value, f.get("source") or "print", conf, verified, f.get("evidence") or "",
+                               subject, (f.get("section") or "")[:120], entry))
+    return MergeResult(out, doc_type if doc_type in DOCUMENT_TYPES else "other")

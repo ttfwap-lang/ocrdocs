@@ -167,6 +167,7 @@ def process_claimed_job(claim: Dict[str, Any]) -> None:
     if result.get("vlmFields") or result.get("pages"):  # vlm_v2 pipeline only
         payload["pages"] = result.get("pages", [])
         payload["vlmFields"] = result.get("vlmFields", [])
+        payload["documentType"] = result.get("documentType", "other")
     post_result(job_id, payload)
     logging.info(f"[+] Job {job_id}: complete ({len(result['passes'])} passes run).")
 
