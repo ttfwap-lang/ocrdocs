@@ -21,6 +21,8 @@ import torch
 from PIL import Image
 from torchvision.models import densenet121
 
+from ocr_gates import ink_ratio  # noqa: F401 - the same cheap ink check the S1/S2 gates use; re-exported for callers
+
 CLASSES = ["printed", "handwritten", "both", "blank"]
 INPUT_SIZE = int(os.environ.get("OCRDOCS_TRIAGE_INPUT_SIZE", "512"))
 MIN_PROB = float(os.environ.get("OCRDOCS_TRIAGE_MIN_PROB", "0.80"))
@@ -46,12 +48,6 @@ def preprocess(image: Image.Image, size: int = INPUT_SIZE) -> np.ndarray:
     canvas.paste(g, ((size - g.width) // 2, (size - g.height) // 2))
     a = np.asarray(canvas, dtype=np.float32) / 255.0
     return (np.stack([a, a, a]) - _MEAN) / _STD
-
-
-def ink_ratio(image: Image.Image) -> float:
-    """Fraction of dark pixels on a small copy: about a millisecond, and independent of the network."""
-    g = np.asarray(image.convert("L").resize((256, 256), Image.Resampling.BILINEAR))
-    return float((g < 128).mean())
 
 
 def route(kind: str, prob: float, ink: float, min_prob: float = MIN_PROB, blank_min_prob: float = BLANK_MIN_PROB,
