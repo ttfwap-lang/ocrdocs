@@ -66,6 +66,15 @@ Full mode details:
 - **Engine wiring** is applied with `apply_llamacloud_engine.py` (a reviewed one-off patch, so the change that makes the
   worker send files offshore is a deliberate step). Until then `OCRDOCS_LLAMAPARSE` has no effect on the worker.
 
+### Australian (Sydney) endpoint and the desktop bulk script
+LlamaIndex offers an Australian endpoint to enterprise customers (not in the public docs; the URL comes from the
+customer's agreement). `region "au"` in `scripts/ocr_llamaparse.py` reads it from `OCRDOCS_LLAMAPARSE_BASE_URL` and refuses
+anything that is not https or that is one of the public North America/Europe hosts, so it cannot be mislabelled.
+`scripts/llamaparse_bulk.py` (a self-contained copy is on the Desktop in `llamaparse_bulk/`) sends a file list through the
+Australian endpoint only: dry run by default, `--run` plus `--endpoint-host <host>` (typed to confirm) to send, `--check`
+to prove the endpoint and key on an invented page, resumable, capped by `--max-files`. **Unverified:** the Australian
+endpoint's exact URL, auth and API paths; the script assumes the public v2 API shape until those details arrive.
+
 ## Rules that protect real data
 - **S2 parks, never deletes.** Only a file whose pages are all printed, whose probe read enough good text, and that
   matches no catalogue label or value shape is parked. Handwriting is never judged by the probe (Tesseract cannot read it).

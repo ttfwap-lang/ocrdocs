@@ -207,8 +207,9 @@ class LlamaCloud:
             raise lp.LlamaParseUnavailable(f"{ext or 'this'} files are not sent to LlamaParse")
         if lp.mode() != "full" and self.c._key is None:
             raise lp.LlamaParseUnavailable("OCRDOCS_LLAMAPARSE is not 'full'")
-        if self.c.region not in lp.BASES or self.c.tier not in lp.TIERS:
+        if self.c.region not in lp.REGIONS or self.c.tier not in lp.TIERS:
             raise lp.LlamaParseUnavailable("invalid LlamaParse region or tier")
+        lp.base_url(self.c.region)  # validates a configured Australian endpoint before anything is uploaded
         with self.c._lock:
             if self.c.calls >= self.c.max_calls:
                 raise lp.LlamaParseUnavailable(f"call budget of {self.c.max_calls} reached for this worker")

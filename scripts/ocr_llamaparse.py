@@ -24,6 +24,7 @@ import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass, field
@@ -32,6 +33,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from PIL import Image
 
 BASES = {"na": "https://api.cloud.llamaindex.ai", "eu": "https://api.cloud.eu.llamaindex.ai"}
+REGIONS = ("na", "eu", "au")
+# "au" is the Australian (Sydney) endpoint LlamaIndex offers enterprise customers. Its URL comes from the customer's own
+# agreement, so it is a setting (OCRDOCS_LLAMAPARSE_BASE_URL), never a guess in code.
+PUBLIC_HOSTS = {"api.cloud.llamaindex.ai", "api.cloud.eu.llamaindex.ai", "cloud.llamaindex.ai", "cloud.eu.llamaindex.ai"}
 TIERS = ("fast", "cost_effective", "agentic", "agentic_plus")
 POLL_SECONDS = 3.0
 JOB_TIMEOUT_SECONDS = float(os.environ.get("OCRDOCS_LLAMAPARSE_TIMEOUT_SECONDS", "180"))
@@ -55,6 +60,21 @@ class ParsedPage:
     text: str
     blocks: List[Block] = field(default_factory=list)
     confidence: Optional[float] = None
+
+
+def base_url(region: str) -> str:
+    """API base URL for a region. "au" must be configured and must not point at the public North America/Europe hosts."""
+    if region in BASES:
+        return BASES[region]
+    if region != "au":
+        raise LlamaParseUnavailable(f"unknown region '{region}' (na|eu|au)")
+    url = os.environ.get("OCRDOCS_LLAMAPARSE_BASE_URL", "").strip().rstrip("/")
+    if not url.startswith("https://"):
+        raise LlamaParseUnavailable("region 'au' needs OCRDOCS_LLAMAPARSE_BASE_URL (an https:// URL from your LlamaIndex enterprise agreement)")
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if host in PUBLIC_HOSTS:
+        raise LlamaParseUnavailable(f"'{host}' is a public North America/Europe host, not an Australian endpoint")
+    return url
 
 
 def mode() -> str:
@@ -126,14 +146,15 @@ class LlamaParse:
         headers = {"Authorization": f"Bearer {self._api_key()}", "Accept": "application/json"}
         if content_type:
             headers["Content-Type"] = content_type
-        return self.http(method, BASES[self.region] + path, headers, body, timeout)
+        return self.http(method, base_url(self.region) + path, headers, body, timeout)
 
     def parse_page(self, image: Image.Image) -> ParsedPage:
         """Upload one page or crop, wait for the result, read it, then delete the job. Raises LlamaParseUnavailable."""
         if mode() == "off" and self._key is None:
             raise LlamaParseUnavailable("OCRDOCS_LLAMAPARSE is off")
-        if self.region not in BASES:
-            raise LlamaParseUnavailable(f"unknown region '{self.region}' (na|eu)")
+        if self.region not in REGIONS:
+            raise LlamaParseUnavailable(f"unknown region '{self.region}' (na|eu|au)")
+        base_url(self.region)  # an "au" region without a valid configured endpoint fails here, before anything is uploaded
         if self.tier not in TIERS:
             raise LlamaParseUnavailable(f"unknown tier '{self.tier}'")
         with self._lock:
