@@ -59,11 +59,13 @@ try:
     import ocr_paddle_vl  # sibling module: PaddleOCR-VL over HTTP (vlm_v2 pipeline)
     import ocr_qwen_merge  # sibling module: Qwen3-VL page classifier and field merger (vlm_v2 pipeline)
     import ocr_chandra  # sibling module: Chandra OCR 2 second reader (vlm_v2, flagged pages only)
+    import ocr_llamaparse  # sibling module: optional CLOUD reader (LlamaParse); off unless OCRDOCS_LLAMAPARSE is set
+    import ocr_llamacloud  # sibling module: full LlamaCloud parse + classify + extract (OCRDOCS_LLAMAPARSE=full)
     import ocr_gates  # sibling module: S1 low-res probe / orientation and S2 regex clear
     import ocr_doc_pipeline  # sibling module: document-level orchestration of the vlm_v2 stages
     import ocr_agent_verify  # sibling module: S5 agent verifier
 except ImportError:  # pragma: no cover
-    ocr_paddle_vl = ocr_qwen_merge = ocr_chandra = ocr_gates = ocr_doc_pipeline = ocr_agent_verify = None
+    ocr_paddle_vl = ocr_qwen_merge = ocr_chandra = ocr_llamaparse = ocr_llamacloud = ocr_gates = ocr_doc_pipeline = ocr_agent_verify = None
 
 
 # ==============================================================================
@@ -767,6 +769,28 @@ def run_page_vlm(image: Image.Image, kind: Optional[str] = None) -> Dict[str, An
             "fields": fields, "degraded": degraded, "document_type": document_type}
 
 
+CLOUD_JOIN_SECONDS = float(os.environ.get("OCRDOCS_LLAMAPARSE_JOIN_SECONDS", "300"))
+_cloud_client = None
+_cloud_executor = None
+
+
+def _cloud_pool():
+    """One small pool for LlamaCloud jobs, so the analysis of a file runs beside the local read."""
+    global _cloud_executor
+    if _cloud_executor is None:
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        _cloud_executor = _TPE(max_workers=2, thread_name_prefix="llamacloud")
+    return _cloud_executor
+
+
+def _analyze_in_cloud(path: Path):
+    """Full LlamaCloud analysis of the ORIGINAL file. One shared client, so the per-worker call budget is really shared."""
+    global _cloud_client
+    if _cloud_client is None:
+        _cloud_client = ocr_llamacloud.LlamaCloud()
+    return _cloud_client.analyze(path.read_bytes(), path.name)
+
+
 def build_pipeline_deps() -> "ocr_doc_pipeline.Deps":
     """Wire the vlm_v2 stages to this engine's readers, validators and services (each optional stage per its flag)."""
     validators = {
@@ -780,9 +804,14 @@ def build_pipeline_deps() -> "ocr_doc_pipeline.Deps":
         with _trocr_lock:
             return _trocr_reader.recognize([im])[0][0]
 
+    # LlamaParse is a cloud service: it exists here only when the owner set OCRDOCS_LLAMAPARSE (region: crops the agent
+    # asks for; page: also whole flagged pages; full: also every whole file). One shared client shares the call budget.
+    llama = ocr_llamaparse.LlamaParse() if ocr_llamaparse.mode() != "off" else None
     agent = None
     if AGENT_ENABLED:
         readers = {"trocr": trocr_crop, "paddle": ocr_paddle_vl.read_page, "chandra": lambda im: ocr_chandra.read_page(im).text}
+        if llama:
+            readers["llamaparse"] = lambda im: llama.parse_page(im).text
         agent = ocr_agent_verify.AgentVerifier(ocr_agent_verify.qwen_chat(AGENT_URL, AGENT_MODEL), readers, validators)
     return ocr_doc_pipeline.Deps(
         classify=classify_page_safe,
@@ -791,6 +820,8 @@ def build_pipeline_deps() -> "ocr_doc_pipeline.Deps":
         label_patterns=BANK_FIELD_PATTERNS,
         validators=validators,
         second_reader=(lambda im: ocr_chandra.read_page(im).text) if CHANDRA_ENABLED else None,
+        # mode "page" adds whole flagged pages as a second opinion; mode "full" already analyses every file, so it does not.
+        extra_readers={"LlamaParse": lambda im: llama.parse_page(im).text} if (llama and ocr_llamaparse.mode() == "page") else {},
         agent=agent,
     )
 
@@ -1140,8 +1171,16 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
         engines_used.append("Native PDF Text Layer")
     doc: Optional[Dict[str, Any]] = None
     use_vlm = PIPELINE_MODE == "vlm_v2" and ocr_doc_pipeline is not None and ocr_qwen_merge is not None
-    if use_vlm and images:
-        doc = ocr_doc_pipeline.run_document(images, build_pipeline_deps(), audit_sample=ocr_gates.audit_sample(path.name))
+    # Full LlamaCloud analysis of the ORIGINAL file (whole-document context, so owner routing can span pages). It runs on
+    # its own thread while the local pipeline reads, and is joined just before the question flags are computed.
+    cloud_future = None
+    if use_vlm and ocr_llamacloud.enabled() and path.suffix.lower() in ocr_llamacloud.UPLOAD_EXTENSIONS:
+        cloud_future = _cloud_pool().submit(_analyze_in_cloud, path)
+    if use_vlm and (images or cloud_future is not None):
+        deps = build_pipeline_deps()
+        if cloud_future is not None:
+            deps.cloud = lambda: cloud_future.result(timeout=CLOUD_JOIN_SECONDS)
+        doc = ocr_doc_pipeline.run_document(images, deps, audit_sample=ocr_gates.audit_sample(path.name))
         ocr_texts.append(doc["text"])
         ocr_line_confidences.update(doc["line_confs"])
         engines_used.extend(e for e in doc["engines"] if e not in engines_used)
@@ -1191,6 +1230,7 @@ def process_single_file_for_pass(args: Tuple[str, int]) -> Tuple[str, str, Dict[
         result["flags"] = doc["flags"]
         result["verdicts"] = doc["verdicts"]
         result["s2"] = {"cleared": doc["cleared"], "reason": doc["cleared_reason"], "auditSampled": doc["audit_sampled"]}
+        result["cloud"] = doc.get("cloud")
     return "SUCCESS", fpath, result
 
 # ==============================================================================
@@ -1293,7 +1333,8 @@ def process_document_multipass(file_path: str, max_passes: int = 10) -> Dict[str
         if "pages" in result:
             page_kinds, vlm_fields = result["pages"], result.get("vlm_fields", [])
             document_type = result.get("document_type", "other")
-            review = {"flags": result.get("flags", []), "verdicts": result.get("verdicts", []), "s2": result.get("s2")}
+            review = {"flags": result.get("flags", []), "verdicts": result.get("verdicts", []), "s2": result.get("s2"),
+                      "cloud": result.get("cloud")}
         if result.get("raw_text"):
             latest_raw_text = result["raw_text"]
 
