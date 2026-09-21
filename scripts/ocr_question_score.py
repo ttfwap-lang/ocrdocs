@@ -70,6 +70,7 @@ def question_flags(
     document_type: str = "other",
     validators: Optional[Mapping[str, Validator]] = None,
     reader_texts: Optional[Sequence[tuple]] = None,
+    document_type_alt: Optional[str] = None,
 ) -> List[Flag]:
     """pages: worker page entries; fields: worker vlm field dicts; validators: {field name: text -> True/False/None};
     reader_texts: [(page_index, text_from_reader_a, text_from_reader_b)] when a second reader ran."""
@@ -85,12 +86,16 @@ def question_flags(
 
     if document_type in ("other", "mixed", "", None):
         flags.append(Flag("DOC_TYPE_UNSURE", f"document type is '{document_type or 'unknown'}'"))
+    if document_type_alt:
+        flags.append(Flag("DOC_TYPE_DISAGREE", f"the local read says '{document_type_alt}', the cloud classifier says '{document_type}'"))
 
     applicant_values: Dict[str, set] = defaultdict(set)
     for f in fields:
         name, value = f.get("name", ""), str(f.get("value", ""))
         page = f.get("imageIndex")
         subject = f.get("subject", "unknown")
+        if f.get("alternateValue"):
+            flags.append(Flag("SOURCES_DISAGREE", f"'{value}' vs '{f['alternateValue']}' read by {f.get('alternateSource', 'the other source')}", page, name))
         if f.get("digits_verified") is False:
             flags.append(Flag("DIGITS_NOT_READ", f"'{value}' contains digits no OCR engine read", page, name))
         if f.get("source") == "handwriting" and float(f.get("confidence", 1.0)) < LOW_HANDWRITING_CONF:

@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from PIL import Image
 
 import ocr_gates
+import ocr_llamacloud
 import ocr_question_score as qs
 from ocr_agent_verify import AgentVerifier, Verdict
 
@@ -29,6 +30,9 @@ class Deps:
     label_patterns: Mapping[str, Any] = field(default_factory=dict)
     validators: Mapping[str, Callable[[str], Optional[bool]]] = field(default_factory=dict)
     second_reader: Optional[Callable[[Image.Image], str]] = None      # Chandra full-page text
+    extra_readers: Mapping[str, Callable[[Image.Image], str]] = field(default_factory=dict)  # e.g. {"LlamaParse": fn}
+    # Joins the LlamaCloud analysis (parse + classify + extract) that runs alongside the local read; None = not used.
+    cloud: Optional[Callable[[], Optional["ocr_llamacloud.CloudResult"]]] = None
     agent: Optional[AgentVerifier] = None
 
 
@@ -102,23 +106,48 @@ def run_document(images: Sequence[Image.Image], deps: Deps, audit_sample: bool =
         engines.extend(e for e in page_engines if e not in engines)
     document_type = majority_document_type([p["documentType"] for p in pages_info])
 
-    flags = qs.question_flags(pages_info, fields, document_type, deps.validators)
+    cloud_info: Optional[Dict[str, Any]] = None
+    document_type_alt: Optional[str] = None
+    cloud_text = ""
+    if deps.cloud:
+        try:
+            cloud = deps.cloud()
+        except Exception as e:  # noqa: BLE001 - the cloud is an extra source; without it the local result stands
+            logging.warning(f"[!] LlamaCloud analysis unavailable: {e}")
+            cloud = None
+        if cloud:
+            fields = ocr_llamacloud.reconcile_fields(fields, cloud.fields)
+            document_type, document_type_alt = ocr_llamacloud.pick_document_type(document_type, cloud)
+            cloud_text = "\n".join(cloud.page_texts)
+            if "LlamaParse" not in engines:
+                engines.append("LlamaParse")
+            cloud_info = {"documentType": cloud.document_type, "typeConfidence": cloud.type_confidence,
+                          "typeReasoning": cloud.type_reasoning, "credits": cloud.credits, "errors": cloud.errors,
+                          "fieldCount": len(cloud.fields)}
 
-    if deps.second_reader and flags:
-        flagged_pages = sorted({f.page for f in flags if f.page is not None and pages_info[f.page]["kind"] in ("printed", "both")})
+    flags = qs.question_flags(pages_info, fields, document_type, deps.validators, document_type_alt=document_type_alt)
+
+    readers: List[Tuple[str, Callable[[Image.Image], str]]] = []
+    if deps.second_reader:
+        readers.append(("Chandra", deps.second_reader))
+    readers.extend(deps.extra_readers.items())
+    if readers and flags:
+        flagged_pages = sorted({f.page for f in flags if f.page is not None and f.page < len(pages_info)
+                                and pages_info[f.page]["kind"] in ("printed", "both")})
         reader_texts = []
         for p in flagged_pages:
-            try:
-                other = deps.second_reader(imgs[p])
-            except Exception as e:  # noqa: BLE001 - the second opinion is optional; its absence is not a flag
-                logging.warning(f"[!] second reader unavailable for page {p}: {e}")
-                continue
-            reader_texts.append((p, paddle_texts[p], other))
-            texts[p] = texts[p] + "\n[second reader]\n" + other
-            if "Chandra" not in pages_info[p]["engines"]:
-                pages_info[p]["engines"].append("Chandra")
-                if "Chandra" not in engines:
-                    engines.append("Chandra")
+            for name, read in readers:
+                try:
+                    other = read(imgs[p])
+                except Exception as e:  # noqa: BLE001 - an extra opinion is optional; its absence is not a flag
+                    logging.warning(f"[!] {name} unavailable for page {p}: {e}")
+                    continue
+                reader_texts.append((p, paddle_texts[p], other))
+                texts[p] = texts[p] + f"\n[{name}]\n" + other
+                if name not in pages_info[p]["engines"]:
+                    pages_info[p]["engines"].append(name)
+                if name not in engines:
+                    engines.append(name)
         flags = flags + qs.reader_flags(reader_texts)
 
     verdicts: List[Verdict] = []
@@ -130,7 +159,8 @@ def run_document(images: Sequence[Image.Image], deps: Deps, audit_sample: bool =
             logging.warning(f"[!] agent verification failed: {e}")
 
     return {
-        "cleared": False, "cleared_reason": cleared_reason, "audit_sampled": bool(cleared_reason), "text": "\n".join(t for t in texts if t),
+        "cleared": False, "cleared_reason": cleared_reason, "audit_sampled": bool(cleared_reason),
+        "text": "\n".join(t for t in texts + ([f"[LlamaParse]\n{cloud_text}"] if cloud_text else []) if t), "cloud": cloud_info,
         "pages": pages_info, "fields": fields, "flags": [vars(f) for f in flags], "verdicts": [vars(v) for v in verdicts],
         "document_type": document_type, "engines": engines, "line_confs": confs, "page_texts": texts,
         "rotations": [p.rotation for p in probes] if probes else [],

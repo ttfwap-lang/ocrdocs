@@ -1,0 +1,952 @@
+{
+  "version": 1,
+  "generatedFrom": "src/data/bankFields.ts (99 catalogue fields + 1 extras)",
+  "system_prompt": "You extract data from Australian identity and financial documents (loan applications, licences, passports, payslips, statements). Put a value under \"applicant\" only if its own label or the section heading it sits under says it belongs to the applicant. Values under headings about another person go in \"other_people\" with the right relationship, never under \"applicant\". When one cell lists several people or values, split them into separate entries in order. Copy digits and spelling exactly as printed or handwritten; never guess, complete or correct a value; use null when a field is not clearly present. Ignore form labels, instructions and example text.",
+  "fieldIds": [
+    "title_salutation",
+    "given_names",
+    "middle_name",
+    "family_name",
+    "date_of_birth",
+    "residency_status",
+    "marital_status",
+    "dependants_count",
+    "residential_address",
+    "address_tenure",
+    "previous_address",
+    "housing_situation",
+    "mobile_number",
+    "email_address",
+    "drivers_licence",
+    "passport_details",
+    "employment_status",
+    "occupation_industry",
+    "employer_details",
+    "employment_tenure",
+    "gross_annual_income",
+    "net_monthly_income",
+    "additional_income",
+    "monthly_living_expenses",
+    "asset_holdings",
+    "liability_mortgages",
+    "liability_credit_cards",
+    "liability_other_loans",
+    "credit_limit_requested",
+    "balance_transfer",
+    "preferred_name",
+    "previous_name",
+    "gender",
+    "country_of_birth",
+    "visa_subclass",
+    "visa_expiry",
+    "licence_state",
+    "licence_expiry",
+    "joint_applicant",
+    "applicant_role",
+    "postal_address",
+    "unit_level",
+    "street_number",
+    "street_name_type",
+    "suburb_locality",
+    "state_territory",
+    "previous_address_tenure",
+    "address_verification_doc",
+    "home_phone",
+    "work_phone",
+    "preferred_contact_method",
+    "contact_time",
+    "emergency_contact_name",
+    "emergency_phone",
+    "language_interpreter",
+    "employer_address",
+    "employer_phone",
+    "payroll_contact",
+    "employment_start_date",
+    "previous_employer",
+    "previous_employment_tenure",
+    "business_structure",
+    "anzsic_code",
+    "income_frequency",
+    "gross_monthly_income",
+    "salary_sacrifice",
+    "overtime_income",
+    "bonus_commission",
+    "rental_income",
+    "investment_income",
+    "government_benefit",
+    "income_verification_doc",
+    "rent_board_payment",
+    "utilities_expense",
+    "insurance_expense",
+    "transport_fuel_expense",
+    "childcare_education_expense",
+    "child_support_paid",
+    "hem_benchmark_expense",
+    "savings_balance",
+    "superannuation_balance",
+    "vehicle_value",
+    "investment_property_value",
+    "bnpl_commitments",
+    "hecs_help_debt",
+    "product_type_requested",
+    "loan_amount_requested",
+    "loan_purpose",
+    "repayment_frequency",
+    "direct_debit_account",
+    "abn",
+    "bsb",
+    "postcode",
+    "account_number",
+    "acn",
+    "tfn",
+    "medicare_number",
+    "bpay_biller_code",
+    "card_number_masked",
+    "tax_file_number"
+  ],
+  "data_schema": {
+    "type": "object",
+    "properties": {
+      "applicant": {
+        "type": "object",
+        "description": "The applicant's OWN details only: values whose label or section heading says they belong to the person the form is about.",
+        "properties": {
+          "title_salutation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Title / Salutation. Printed labels: Title; Salutation; Prefix; Mr.; Honorific. Example: Mr.. Null if not present on the document."
+          },
+          "given_names": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Given Names / First Name. Printed labels: Given Name(s); First Name; Forename; 1st Name. Example: Oliver Benjamin. Null if not present on the document."
+          },
+          "middle_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Middle Name / Initials. Printed labels: Middle Name; Other Name; Initials; Mid Name. Example: Benjamin. Null if not present on the document."
+          },
+          "family_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Family Name / Surname. Printed labels: Family Name; Surname; Last Name; Maiden Name. Example: Fitzgerald. Null if not present on the document."
+          },
+          "date_of_birth": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Date of Birth (DOB). Printed labels: DOB; Date of Birth; Birthdate; Born On. Date exactly as printed or written, preferably DD/MM/YYYY. Example: 14/08/1988. Null if not present on the document."
+          },
+          "residency_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Residency / Citizenship Status. Printed labels: Residency Status; Citizenship; PR Status; Visa Holder. Example: Australian Citizen. Null if not present on the document."
+          },
+          "marital_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Marital / Relationship Status. Printed labels: Marital Status; Relationship Status; De Facto; Married. Example: De Facto. Null if not present on the document."
+          },
+          "dependants_count": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Dependants / Children Count. Printed labels: Dependants; Number of Dependents; Children; Deps. A whole number as printed. Example: 2. Null if not present on the document."
+          },
+          "residential_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Residential Address. Printed labels: Residential Address; Street Address; Addr Line 1; Suburb/State. Example: 42 Collins Street, Melbourne VIC 3000. Null if not present on the document."
+          },
+          "address_tenure": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Address Tenure (Time at Address). Printed labels: Time at Address; Years at Address; Tenure; Address Yrs. Example: 4 Years 6 Months. Null if not present on the document."
+          },
+          "previous_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Previous / Past Address. Printed labels: Previous Address; Prior Address; Former Residence; Prev Address. Example: 18 Barangaroo Ave, Sydney NSW 2000. Null if not present on the document."
+          },
+          "housing_situation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Housing Situation / Status. Printed labels: Housing Status; Accommodation; Renting; Owned Outright. Example: Mortgaged. Null if not present on the document."
+          },
+          "mobile_number": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Mobile Phone Number. Printed labels: Mobile; Contact Number; Telephone; Mob No. Australian phone number exactly as printed. Example: 0412 987 654. Null if not present on the document."
+          },
+          "email_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Email Address. Recognizes hyphenated (e-mail), electronic mail, inbox, and contact email. Printed labels: Email; E-mail Address; Electronic Mail; Contact Email. Email address exactly as printed. Example: oliver.fitzgerald@apexfinance.com.au. Null if not present on the document."
+          },
+          "drivers_licence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Driver’s Licence Details. Printed labels: Driver Licence No; DL Number; Card No; Drivers License. Copy every digit and letter exactly as printed. Never guess a digit. Example: 83920194 VIC. Null if not present on the document."
+          },
+          "passport_details": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Passport / Travel Document. Printed labels: Passport Number; Travel Document; Passpt No; Document Expiry. Copy every digit and letter exactly as printed. Never guess a digit. Example: PA9283710. Null if not present on the document."
+          },
+          "employment_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Employment Status / Type. Printed labels: Employment Status; Job Type; Full-time; Emp Status. Example: Permanent Full-Time. Null if not present on the document."
+          },
+          "occupation_industry": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Occupation / Industry. Printed labels: Occupation; Job Title; Industry; Profession. Example: Senior Cloud Engineer / Technology. Null if not present on the document."
+          },
+          "employer_details": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Employer / Company Name. Printed labels: Employer Name; Company Name; Workplace; Business Name. Example: Atlassian Australia Pty Ltd (ABN 53 102 443 916). Null if not present on the document."
+          },
+          "employment_tenure": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Employment Tenure (Time in Job). Printed labels: Job Tenure; Years Employed; Employment Duration; Emp Yrs. Example: 3 Years 2 Months. Null if not present on the document."
+          },
+          "gross_annual_income": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Gross Annual Income / Salary. Printed labels: Gross Annual Income; Base Pay (p.a.); Annual Package; Before Tax. Amount as printed: digits and a decimal point only, no currency symbol. Example: $165,000.00 p.a.. Null if not present on the document."
+          },
+          "net_monthly_income": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Net Monthly Income (Take-Home). Printed labels: Net Monthly Income; Take-Home Pay; After Tax Pay; Net Pay. Amount as printed: digits and a decimal point only, no currency symbol. Example: $9,820.00 / month. Null if not present on the document."
+          },
+          "additional_income": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Additional / Variable Income. Printed labels: Bonus / Commission; Rental Income; Variable Income; Allowance. Amount as printed: digits and a decimal point only, no currency symbol. Example: $18,500.00 (Annual Bonus). Null if not present on the document."
+          },
+          "monthly_living_expenses": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Monthly Living Expenses (HEM). Printed labels: Living Expenses; Monthly Spend; Groceries & Utilities; Living Cost. Amount as printed: digits and a decimal point only, no currency symbol. Example: $3,400.00 / month. Null if not present on the document."
+          },
+          "asset_holdings": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Asset Holdings & Net Worth. Printed labels: Total Assets; Savings Balance; Superannuation; Property Value. Amount as printed: digits and a decimal point only, no currency symbol. Example: $820,000.00 (Property + Super + Savings). Null if not present on the document."
+          },
+          "liability_mortgages": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Mortgage Liabilities & Home Loans. Printed labels: Home Loan Balance; Mortgage Repayment; Housing Loan Debt. Amount as printed: digits and a decimal point only, no currency symbol. Example: $485,000.00 ($2,780/mo). Null if not present on the document."
+          },
+          "liability_credit_cards": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Credit Card Limits & Balances. Printed labels: Credit Card Limit; CC Balance; Store Cards; Revolving Credit. Amount as printed: digits and a decimal point only, no currency symbol. Example: $12,000.00 (Limit across 2 cards). Null if not present on the document."
+          },
+          "liability_other_loans": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Personal Loans, Car Loans & HECS/HELP. Printed labels: Personal Loan; Car Loan; HECS / HELP Debt; BNPL / Afterpay. Amount as printed: digits and a decimal point only, no currency symbol. Example: $14,200.00 (Car Loan: $390/mo). Null if not present on the document."
+          },
+          "credit_limit_requested": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Requested Credit / Facility Limit. Printed labels: Requested Credit Limit; Limit Requested; Req Limit; Facility Limit. Amount as printed: digits and a decimal point only, no currency symbol. Example: $25,000.00. Null if not present on the document."
+          },
+          "balance_transfer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Balance Transfer Amount & Biller. Printed labels: Balance Transfer Amount; Biller Code; BT Facility; Transfer Balance. Amount as printed: digits and a decimal point only, no currency symbol. Example: $6,500.00 (Biller: 84920). Null if not present on the document."
+          },
+          "preferred_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Preferred Name / Known As. Printed labels: Preferred Name; Known As; Alias; Pref Name; Chosen Name. Example: Ollie. Null if not present on the document."
+          },
+          "previous_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Previous Name / Maiden Name. Printed labels: Previous Name; Prior Name; Maiden Name; Former Name. Example: Oliver Vance. Null if not present on the document."
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Gender / Sex. Printed labels: Gender; Sex; Gender Identity; Biological Sex. Example: Male. Null if not present on the document."
+          },
+          "country_of_birth": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Country of Birth. Printed labels: Country of Birth; Birth Country; Place of Birth; COB. Example: Australia. Null if not present on the document."
+          },
+          "visa_subclass": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Visa Subclass / Type. Printed labels: Visa Subclass; Subclass 482; Visa Type; VEVO Status. Example: Subclass 186. Null if not present on the document."
+          },
+          "visa_expiry": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Visa Expiry Date. Printed labels: Visa Expiry; Valid To; Permit Expiry Date; Visa End Date. Date exactly as printed or written, preferably DD/MM/YYYY. Example: 28/02/2028. Null if not present on the document."
+          },
+          "licence_state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Driver Licence State / Territory. Printed labels: Licence State; Issuing State; DL State; State of Issue. Example: VIC. Null if not present on the document."
+          },
+          "licence_expiry": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Driver Licence Expiry Date. Printed labels: Licence Expiry; DL Expiry Date; Licence Valid To; Card Expiry. Date exactly as printed or written, preferably DD/MM/YYYY. Example: 19/11/2027. Null if not present on the document."
+          },
+          "joint_applicant": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Joint Applicant Indicator. Printed labels: Joint Applicant; Applicant 2; Co-Borrower; Co-Applicant. Example: Yes - Secondary Applicant. Null if not present on the document."
+          },
+          "applicant_role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Applicant Role / Capacity. Printed labels: Applicant Role; Borrower Type; Primary Borrower; Guarantor. Example: Primary Borrower. Null if not present on the document."
+          },
+          "postal_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Postal / Mailing Address. Printed labels: Postal Address; Mailing Address; PO Box; Delivery Address. Example: PO Box 842, Melbourne VIC 3001. Null if not present on the document."
+          },
+          "unit_level": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Unit / Level / Apartment Number. Printed labels: Unit Number; Apartment; Suite No; Level; Flat. Example: Suite 14. Null if not present on the document."
+          },
+          "street_number": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Street Number. Printed labels: Street Number; House Number; Street No; Building Number. Example: 452. Null if not present on the document."
+          },
+          "street_name_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Street Name and Type. Printed labels: Street Name; Road Name; Thoroughfare; Street Type. Example: Flinders Street. Null if not present on the document."
+          },
+          "suburb_locality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Suburb / Locality. Printed labels: Suburb; Locality; Town/City; Residential Suburb. Example: Melbourne. Null if not present on the document."
+          },
+          "state_territory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "State / Territory Code. Printed labels: State; Territory; State/Territory; Region. Example: VIC. Null if not present on the document."
+          },
+          "previous_address_tenure": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Previous Address Tenure. Printed labels: Time at Previous Address; Previous Tenure; Prior Address Duration; Past Residence Yrs. Example: 2 Years 4 Months. Null if not present on the document."
+          },
+          "address_verification_doc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Address Verification Document. Printed labels: Proof of Address; Rates Notice; Utility Bill; Tenancy Agreement. Example: City of Melbourne Council Rates Notice. Null if not present on the document."
+          },
+          "home_phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Home Phone / Landline. Printed labels: Home Phone; Landline; Fixed Line; Home Telephone. Australian phone number exactly as printed. Example: (03) 9482 1049. Null if not present on the document."
+          },
+          "work_phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Work / Business Phone. Printed labels: Work Phone; Business Phone; Office Telephone; Direct Line. Australian phone number exactly as printed. Example: (03) 8614 2000. Null if not present on the document."
+          },
+          "preferred_contact_method": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Preferred Contact Method. Printed labels: Preferred Contact; Contact Method; Communication Preference; Contact Via. Example: Email. Null if not present on the document."
+          },
+          "contact_time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Contact Time. Printed labels: Best Time to Call; Contact Time; Preferred Hours; Call Window. Example: Morning (9am - 12pm). Null if not present on the document."
+          },
+          "emergency_contact_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Emergency Contact / Next of Kin Name. Printed labels: Emergency Contact; Next of Kin; NOK Name; Nominated Contact. Example: Sarah Sterling. Null if not present on the document."
+          },
+          "emergency_phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Emergency Phone. Printed labels: Emergency Phone; Next of Kin Mobile; NOK Phone; Emergency Number. Australian phone number exactly as printed. Example: 0418 234 567. Null if not present on the document."
+          },
+          "language_interpreter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Language / Interpreter. Printed labels: Interpreter Required; Language Spoken; Preferred Language; TIS National. Example: English (No Interpreter Needed). Null if not present on the document."
+          },
+          "employer_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Employer / Workplace Address. Printed labels: Employer Address; Workplace Location; Company Address; Office Address. Example: Level 29, 341 George Street, Sydney NSW 2000. Null if not present on the document."
+          },
+          "employer_phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Employer Phone / Switchboard. Printed labels: Employer Phone; Company Telephone; Workplace Switchboard; Office Phone. Australian phone number exactly as printed. Example: (02) 9283 4000. Null if not present on the document."
+          },
+          "payroll_contact": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Payroll / HR Contact Person. Printed labels: Payroll Contact; HR Officer; Human Resources; Paymaster. Example: Jane Caldwell (HR Business Partner). Null if not present on the document."
+          },
+          "employment_start_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Employment Start / Commencement Date. Printed labels: Start Date; Commencement Date; Hire Date; Date Commenced. Date exactly as printed or written, preferably DD/MM/YYYY. Example: 01/07/2019. Null if not present on the document."
+          },
+          "previous_employer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Previous Employer Name. Printed labels: Previous Employer; Prior Employer; Former Company; Past Workplace. Example: Telstra Operations Ltd. Null if not present on the document."
+          },
+          "previous_employment_tenure": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Previous Employment Tenure. Printed labels: Previous Job Tenure; Prior Employment Duration; Years at Prior Job; Past Job Time. Example: 4 Years 1 Month. Null if not present on the document."
+          },
+          "business_structure": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Business Structure / Entity Type. Printed labels: Business Structure; Entity Type; Pty Ltd; Sole Trader; Partnership. Example: Proprietary Limited (Pty Ltd). Null if not present on the document."
+          },
+          "anzsic_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ANZSIC Industry Code. Printed labels: ANZSIC Code; Industry Code; ANZSIC Class; Industry Classification. Copy every digit and letter exactly as printed. Never guess a digit. Example: 7000. Null if not present on the document."
+          },
+          "income_frequency": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Income / Pay Frequency. Printed labels: Income Frequency; Pay Frequency; Pay Cycle; Salary Frequency. Example: Fortnightly. Null if not present on the document."
+          },
+          "gross_monthly_income": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Gross Monthly Income. Printed labels: Gross Monthly Income; Monthly Gross; Base Monthly Pay; Pre-tax Monthly. Amount as printed: digits and a decimal point only, no currency symbol. Example: $13,750.00 / month. Null if not present on the document."
+          },
+          "salary_sacrifice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Salary Sacrifice / Novated Lease. Printed labels: Salary Sacrifice; Novated Lease; Salary Packaging; Pre-tax Deduction. Amount as printed: digits and a decimal point only, no currency symbol. Example: $1,200.00 / month. Null if not present on the document."
+          },
+          "overtime_income": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Overtime Earnings. Printed labels: Overtime; OT Earnings; Shift Allowance; Penalty Rates. Amount as printed: digits and a decimal point only, no currency symbol. Example: $850.00 / month. Null if not present on the document."
+          },
+          "bonus_commission": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bonus / Commission Income. Printed labels: Bonus / Commission; Annual Bonus; Sales Commission; Performance Pay. Amount as printed: digits and a decimal point only, no currency symbol. Example: $24,000.00 p.a.. Null if not present on the document."
+          },
+          "rental_income": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Rental Income (Gross / Net). Printed labels: Rental Income; Gross Rent; Investment Property Rent; Lease Income. Amount as printed: digits and a decimal point only, no currency symbol. Example: $2,400.00 / month. Null if not present on the document."
+          },
+          "investment_income": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Investment / Dividend Income. Printed labels: Investment Income; Dividends; Trust Distribution; Interest Income. Amount as printed: digits and a decimal point only, no currency symbol. Example: $6,800.00 p.a.. Null if not present on the document."
+          },
+          "government_benefit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Government Benefit. Printed labels: Government Benefit; Centrelink; Family Tax Benefit; FTB. Amount as printed: digits and a decimal point only, no currency symbol. Example: $420.00 / fortnight. Null if not present on the document."
+          },
+          "income_verification_doc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Income Verification Document. Printed labels: Payslip; Notice of Assessment; PAYG Summary; Income Statement. Example: ATO Notice of Assessment 2021 Financial Year. Null if not present on the document."
+          },
+          "rent_board_payment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Rent / Board Payment. Printed labels: Rent Paid; Board Paid; Rental Payment; Housing Rent. Amount as printed: digits and a decimal point only, no currency symbol. Example: $650.00 / week. Null if not present on the document."
+          },
+          "utilities_expense": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Utilities & Telecommunications. Printed labels: Utilities; Electricity & Gas; Water Rates; Internet Bills. Amount as printed: digits and a decimal point only, no currency symbol. Example: $380.00 / month. Null if not present on the document."
+          },
+          "insurance_expense": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Insurance Premiums. Printed labels: Insurance Premiums; Health Insurance; Home & Contents; Vehicle Insurance. Amount as printed: digits and a decimal point only, no currency symbol. Example: $520.00 / month. Null if not present on the document."
+          },
+          "transport_fuel_expense": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Transport / Fuel Expense. Printed labels: Transport Costs; Fuel & Petrol; Vehicle Registration; Public Transport. Amount as printed: digits and a decimal point only, no currency symbol. Example: $340.00 / month. Null if not present on the document."
+          },
+          "childcare_education_expense": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Childcare & Education Expenses. Printed labels: Childcare Fees; School Fees; Tuition; Education Costs. Amount as printed: digits and a decimal point only, no currency symbol. Example: $1,150.00 / month. Null if not present on the document."
+          },
+          "child_support_paid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Child Support / Maintenance Paid. Printed labels: Child Support Paid; Spousal Maintenance; CSA Payment; Family Maintenance. Amount as printed: digits and a decimal point only, no currency symbol. Example: $600.00 / month. Null if not present on the document."
+          },
+          "hem_benchmark_expense": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "HEM Benchmark Living Expenses. Printed labels: HEM Benchmark; HEM Living Expenses; HEM Amount; Household Expenditure Measure; HEM Baseline. Amount as printed: digits and a decimal point only, no currency symbol. Example: $2,850.00 / month. Null if not present on the document."
+          },
+          "savings_balance": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Savings & Offset Account Balances. Printed labels: Savings Balance; Offset Account; Cash at Bank; Term Deposit. Amount as printed: digits and a decimal point only, no currency symbol. Example: $48,500.00. Null if not present on the document."
+          },
+          "superannuation_balance": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Superannuation Fund Balance. Printed labels: Superannuation Balance; Super Fund; SMSF Balance; Retirement Savings. Amount as printed: digits and a decimal point only, no currency symbol. Example: $184,200.00. Null if not present on the document."
+          },
+          "vehicle_value": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Motor Vehicle Market Value. Printed labels: Vehicle Value; Car Value; Motor Vehicle Asset; Redbook Value. Amount as printed: digits and a decimal point only, no currency symbol. Example: $32,000.00. Null if not present on the document."
+          },
+          "investment_property_value": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Investment Property Value. Printed labels: Investment Property Value; Real Estate Portfolio; Rental Property Value; Property Valuation. Amount as printed: digits and a decimal point only, no currency symbol. Example: $680,000.00. Null if not present on the document."
+          },
+          "bnpl_commitments": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Buy Now Pay Later (BNPL) Commitments. Printed labels: BNPL Commitments; Afterpay; Zip Pay; Buy Now Pay Later. Amount as printed: digits and a decimal point only, no currency symbol. Example: $650.00 limit ($120.00 owing). Null if not present on the document."
+          },
+          "hecs_help_debt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "HECS / HELP Student Loan Debt. Printed labels: HECS Debt; HELP Student Loan; Higher Education Loan; Student Debt. Amount as printed: digits and a decimal point only, no currency symbol. Example: $21,400.00. Null if not present on the document."
+          },
+          "product_type_requested": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Credit Facility / Product Type Requested. Printed labels: Product Type; Facility Type; Loan Product; Product Requested. Example: Principal and Interest Variable Home Loan. Null if not present on the document."
+          },
+          "loan_amount_requested": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Loan Amount Requested. Printed labels: Loan Amount Requested; Borrowing Amount; Finance Amount; Principal Amount. Amount as printed: digits and a decimal point only, no currency symbol. Example: $520,000.00. Null if not present on the document."
+          },
+          "loan_purpose": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Loan / Credit Purpose. Printed labels: Loan Purpose; Purpose of Loan; Borrowing Purpose; Credit Purpose. Example: Refinance of Existing Home Loan. Null if not present on the document."
+          },
+          "repayment_frequency": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Requested Repayment Frequency. Printed labels: Repayment Frequency; Payment Frequency; Repayment Cycle; Payment Interval. Example: Monthly. Null if not present on the document."
+          },
+          "direct_debit_account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Direct Debit / Settlement Account. Printed labels: Direct Debit Account; Settlement Account; Nominated Account; Repayment Account. Example: Commonwealth Bank of Australia (BSB 063-001 Acc 10293847). Null if not present on the document."
+          },
+          "abn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Australian Business Number (ABN). Standard 11-digit Australian Business Number with modulo 89 validation. Printed labels: ABN; Australian Business Number. Copy every digit and letter exactly as printed. Never guess a digit. Example: 53 102 443 916. Null if not present on the document."
+          },
+          "bsb": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bank State Branch (BSB). Standard 6-digit APRA Australian Bank State Branch code. Printed labels: BSB; Bank State Branch. Copy every digit and letter exactly as printed. Never guess a digit. Example: 083-004. Null if not present on the document."
+          },
+          "postcode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Australian Postcode. 4-digit Australian postal code valid in range 0200-9999. Printed labels: Postcode; Postal Code. Copy every digit and letter exactly as printed. Never guess a digit. Example: 3000. Null if not present on the document."
+          },
+          "account_number": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Australian Bank Account Number. Standard 6 to 10 digit Australian bank account number. Printed labels: Account Number; Bank Account No; Acc Number. Copy every digit and letter exactly as printed. Never guess a digit. Example: 492019482. Null if not present on the document."
+          },
+          "acn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Australian Company Number (ACN). Standard 9-digit Australian Company Number registered with ASIC. Printed labels: ACN; Australian Company Number. Copy every digit and letter exactly as printed. Never guess a digit. Example: 102 443 916. Null if not present on the document."
+          },
+          "tfn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tax File Number (TFN). Standard 8 or 9-digit Australian Tax File Number issued by ATO. Printed labels: TFN; Tax File Number. Copy every digit and letter exactly as printed. Never guess a digit. Example: 123 456 782. Null if not present on the document."
+          },
+          "medicare_number": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Medicare Number. Australian 10-digit Medicare card number with optional individual reference number (IRN). Printed labels: Medicare Number; Medicare Card No. Copy every digit and letter exactly as printed. Never guess a digit. Example: 2123 45670 1. Null if not present on the document."
+          },
+          "bpay_biller_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "BPAY Biller Code. Standard 4 to 6 digit Australian BPAY Biller Code. Printed labels: Biller Code; BPAY Biller Code; BPAY Code. Copy every digit and letter exactly as printed. Never guess a digit. Example: 84920. Null if not present on the document."
+          },
+          "card_number_masked": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Card Number (Masked). Printed labels: Card Number (Masked); Masked Card Number; Card PAN; Credit Card No. Copy every digit and letter exactly as printed. Never guess a digit. Example: 4532 **** **** 1234. Null if not present on the document."
+          },
+          "tax_file_number": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tax File Number (TFN), 8 or 9 digits. Copy every digit exactly. Printed labels: Tax File Number; TFN."
+          }
+        },
+        "required": []
+      },
+      "other_people": {
+        "type": "array",
+        "description": "Every other person named on the document (parents, spouse, dependants, employers, referees). One entry per person, in the order they appear, so a list like \"John and Mary\" with jobs \"boilermaker, nurse\" gives two entries: John with boilermaker, then Mary with nurse.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "relationship": {
+              "type": "string",
+              "enum": [
+                "parent",
+                "spouse",
+                "dependant",
+                "employer",
+                "referee",
+                "other"
+              ],
+              "description": "How this person relates to the applicant."
+            },
+            "section": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The printed heading this person appears under, copied verbatim (for example \"Parents details\")."
+            },
+            "title_salutation": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Title / Salutation. Printed labels: Title; Salutation; Prefix; Mr.; Honorific. Example: Mr.. Null if not present on the document."
+            },
+            "given_names": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Given Names / First Name. Printed labels: Given Name(s); First Name; Forename; 1st Name. Example: Oliver Benjamin. Null if not present on the document."
+            },
+            "middle_name": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Middle Name / Initials. Printed labels: Middle Name; Other Name; Initials; Mid Name. Example: Benjamin. Null if not present on the document."
+            },
+            "family_name": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Family Name / Surname. Printed labels: Family Name; Surname; Last Name; Maiden Name. Example: Fitzgerald. Null if not present on the document."
+            },
+            "date_of_birth": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Date of Birth (DOB). Printed labels: DOB; Date of Birth; Birthdate; Born On. Date exactly as printed or written, preferably DD/MM/YYYY. Example: 14/08/1988. Null if not present on the document."
+            },
+            "residential_address": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Residential Address. Printed labels: Residential Address; Street Address; Addr Line 1; Suburb/State. Example: 42 Collins Street, Melbourne VIC 3000. Null if not present on the document."
+            },
+            "mobile_number": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Mobile Phone Number. Printed labels: Mobile; Contact Number; Telephone; Mob No. Australian phone number exactly as printed. Example: 0412 987 654. Null if not present on the document."
+            },
+            "email_address": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Email Address. Recognizes hyphenated (e-mail), electronic mail, inbox, and contact email. Printed labels: Email; E-mail Address; Electronic Mail; Contact Email. Email address exactly as printed. Example: oliver.fitzgerald@apexfinance.com.au. Null if not present on the document."
+            },
+            "drivers_licence": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Driver’s Licence Details. Printed labels: Driver Licence No; DL Number; Card No; Drivers License. Copy every digit and letter exactly as printed. Never guess a digit. Example: 83920194 VIC. Null if not present on the document."
+            },
+            "passport_details": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Passport / Travel Document. Printed labels: Passport Number; Travel Document; Passpt No; Document Expiry. Copy every digit and letter exactly as printed. Never guess a digit. Example: PA9283710. Null if not present on the document."
+            },
+            "employment_status": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Employment Status / Type. Printed labels: Employment Status; Job Type; Full-time; Emp Status. Example: Permanent Full-Time. Null if not present on the document."
+            },
+            "occupation_industry": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Occupation / Industry. Printed labels: Occupation; Job Title; Industry; Profession. Example: Senior Cloud Engineer / Technology. Null if not present on the document."
+            },
+            "employer_details": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Employer / Company Name. Printed labels: Employer Name; Company Name; Workplace; Business Name. Example: Atlassian Australia Pty Ltd (ABN 53 102 443 916). Null if not present on the document."
+            },
+            "abn": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Australian Business Number (ABN). Standard 11-digit Australian Business Number with modulo 89 validation. Printed labels: ABN; Australian Business Number. Copy every digit and letter exactly as printed. Never guess a digit. Example: 53 102 443 916. Null if not present on the document."
+            }
+          },
+          "required": [
+            "relationship"
+          ]
+        }
+      }
+    },
+    "required": [
+      "applicant",
+      "other_people"
+    ]
+  }
+}

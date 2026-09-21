@@ -98,7 +98,7 @@ def test_second_reader_runs_only_on_flagged_printed_pages_and_disagreement_becom
     doc = dp.run_document([im()], d)
     assert reads == [1] and "Chandra" in doc["pages"][0]["engines"]
     assert "READERS_DISAGREE" in codes(doc)
-    assert "[second reader]" in doc["page_texts"][0]
+    assert "[Chandra]" in doc["page_texts"][0]
 
 
 def test_no_flags_means_the_second_reader_and_agent_never_run():
@@ -160,3 +160,63 @@ def test_agent_failure_leaves_the_flags_for_a_human():
 ])
 def test_majority_document_type(types, expected):
     assert dp.majority_document_type(types) == expected
+
+
+# ---- LlamaCloud analysis joined into the document ---------------------------------------------------------------------
+import ocr_llamacloud as llc
+
+
+def cloud_result(fields=(), doc="loan_application", conf=0.93, texts=("cloud page text",)):
+    return llc.CloudResult(document_type=doc, type_confidence=conf, type_reasoning="why", fields=list(fields),
+                           page_texts=list(texts), credits=8.0)
+
+
+def cfield(name, value, **o):
+    d = dict(name=name, value=value, source="print", confidence=0.9, digits_verified=None, evidence="", subject="applicant",
+             section="", entry=1, imageIndex=0, origin="llamaparse")
+    d.update(o)
+    return d
+
+
+def test_cloud_fields_are_reconciled_with_the_local_ones_and_agreement_needs_no_flag():
+    d = deps(read_page=lambda i, k: page(k, COMPLETE), cloud=lambda: cloud_result([cfield("given_names", "John"), cfield("bsb", "062-000")]))
+    doc = dp.run_document([im()], d)
+    by = {f["name"]: f for f in doc["fields"]}
+    assert by["given_names"]["origin"] == "both" and by["bsb"]["origin"] == "llamaparse"
+    assert doc["flags"] == [] and "LlamaParse" in doc["engines"]
+    assert doc["cloud"] == {"documentType": "loan_application", "typeConfidence": 0.93, "typeReasoning": "why", "credits": 8.0, "errors": [], "fieldCount": 2}
+    assert "[LlamaParse]\ncloud page text" in doc["text"]
+
+
+def test_a_disagreement_between_the_sources_is_flagged_for_the_agent():
+    d = deps(read_page=lambda i, k: page(k, COMPLETE), cloud=lambda: cloud_result([cfield("family_name", "Smyth", confidence=0.95)]))
+    doc = dp.run_document([im()], d)
+    fam = next(f for f in doc["fields"] if f["name"] == "family_name")
+    assert fam["value"] == "Smyth" and fam["alternateValue"] == "Smith" and fam["confidence"] <= 0.6
+    assert "SOURCES_DISAGREE" in codes(doc)
+
+
+def test_the_custom_cloud_classifier_leads_the_document_type_and_a_dispute_is_flagged():
+    d = deps(read_page=lambda i, k: page(k, COMPLETE, doc="loan_application"), cloud=lambda: cloud_result(doc="payslip"))
+    doc = dp.run_document([im()], d)
+    assert doc["document_type"] == "payslip" and "DOC_TYPE_DISAGREE" in codes(doc)
+
+
+def test_an_unreachable_cloud_leaves_the_local_result_intact():
+    def boom():
+        raise TimeoutError("cloud too slow")
+
+    doc = dp.run_document([im()], deps(read_page=lambda i, k: page(k, COMPLETE), cloud=boom))
+    assert doc["cloud"] is None and "LlamaParse" not in doc["engines"] and doc["flags"] == []
+
+
+def test_the_cloud_can_analyse_a_file_that_has_no_local_pages():
+    doc = dp.run_document([], deps(cloud=lambda: cloud_result([cfield("given_names", "Jane"), cfield("family_name", "Test"), cfield("date_of_birth", "1/1/1990")])))
+    assert [f["name"] for f in doc["fields"]] == ["given_names", "family_name", "date_of_birth"] and doc["pages"] == []
+    assert doc["document_type"] == "loan_application"
+
+
+def test_agent_only_offers_the_readers_that_exist():
+    v = av.AgentVerifier(lambda m, t: {}, {"trocr": lambda i: "", "llamaparse": lambda i: ""})
+    assert v.tools[0]["function"]["parameters"]["properties"]["reader"]["enum"] == ["trocr", "llamaparse"]
+    assert av.TOOLS[0]["function"]["parameters"]["properties"]["reader"]["enum"] == ["trocr", "paddle", "chandra"]

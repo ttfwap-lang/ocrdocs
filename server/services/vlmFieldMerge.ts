@@ -30,6 +30,11 @@ export interface VlmField {
   section: string;
   /** 1-based position within a multi-value cell ("John and Mary" -> 1, 2). */
   entry: number;
+  /** Which source produced the value: the local Qwen merge, LlamaCloud, or both (they agreed). */
+  origin?: 'qwen' | 'llamaparse' | 'both';
+  /** When the two sources disagreed: the value the losing source read, and which source it was. */
+  alternateValue?: string;
+  alternateSource?: string;
   /** S5 agent verdict on this field, when the file was flagged and inspected. */
   agent?: 'confirmed' | 'corrected' | 'unresolved';
   agentReasoning?: string;
@@ -124,6 +129,9 @@ export function parseVlmFields(input: unknown): VlmField[] {
       subject: (SUBJECTS as readonly string[]).includes(r.subject as string) ? (r.subject as Subject) : 'unknown',
       section: typeof r.section === 'string' ? r.section.slice(0, 120) : '',
       entry: typeof r.entry === 'number' && Number.isInteger(r.entry) && r.entry >= 1 ? Math.min(r.entry, 20) : 1,
+      ...(r.origin === 'qwen' || r.origin === 'llamaparse' || r.origin === 'both' ? { origin: r.origin } : {}),
+      ...(typeof r.alternateValue === 'string' ? { alternateValue: r.alternateValue.slice(0, 500) } : {}),
+      ...(typeof r.alternateSource === 'string' ? { alternateSource: r.alternateSource.slice(0, 32) } : {}),
       ...(r.agent === 'confirmed' || r.agent === 'corrected' || r.agent === 'unresolved' ? { agent: r.agent } : {}),
       ...(typeof r.agentReasoning === 'string' ? { agentReasoning: r.agentReasoning.slice(0, 600) } : {}),
       ...(typeof r.originalValue === 'string' ? { originalValue: r.originalValue.slice(0, 500) } : {}),
@@ -148,7 +156,9 @@ export function mergeVlmFields(
 
   for (const v of ordered) {
     const id = ALIAS[v.name] ?? v.name;
-    const note = `Qwen (${v.source})${v.section ? `, under "${v.section}"` : ''}${v.evidence ? `: ${v.evidence}` : ''}`;
+    const who = v.origin === 'llamaparse' ? 'LlamaParse' : v.origin === 'both' ? 'Qwen and LlamaParse agree' : 'Qwen';
+    const other = v.alternateValue ? ` The ${v.alternateSource ?? 'other source'} read "${v.alternateValue}" instead.` : '';
+    const note = `${who} (${v.source})${v.section ? `, under "${v.section}"` : ''}${v.evidence ? `: ${v.evidence}` : ''}${other}`;
 
     // Another person's detail: its own named field, never the applicant's slot.
     if (v.subject !== 'applicant' && v.subject !== 'unknown') {
@@ -169,7 +179,8 @@ export function mergeVlmFields(
     if (done.has(id)) continue;
     const unclear = v.subject === 'unknown' ? UNCLEAR : '';
 
-    const extra = EXTRA_FIELDS[id];
+    // Only ids the regex catalogue does not define become extras; account_number, for one, IS a catalogue field.
+    const extra = DEFS.has(id) ? undefined : EXTRA_FIELDS[id];
     if (extra) {
       done.add(id);
       fields.push(annotate({

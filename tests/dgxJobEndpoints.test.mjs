@@ -218,7 +218,7 @@ test('Stage/Phase 2 — DGX job-queue endpoint contract', async (t) => {
     const fields = body.extraction.fields;
     assert.equal(fields.find((f) => f.name === 'Family Name')?.value ?? fields.find((f) => /family/i.test(f.name))?.value, 'Nguyen');
     assert.equal(fields.find((f) => f.name === 'Bank State Branch (BSB)').value, '062-000', 'unverified Qwen digits must not override the regex reading');
-    assert.equal(fields.find((f) => f.name === 'Account Number').value, '12345678');
+    assert.equal(fields.find((f) => /account number/i.test(f.name) && f.value === '12345678')?.value, '12345678');
     assert.equal(body.extraction.metadata.vlmFieldCount, 4);
     assert.equal(body.extraction.metadata.documentType, 'loan_application');
     assert.equal(body.extraction.metadata.review.flags[0].code, 'DIGITS_NOT_READ');

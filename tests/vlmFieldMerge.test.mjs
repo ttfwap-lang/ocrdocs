@@ -68,12 +68,13 @@ test('the drivers_licence_number alias maps to drivers_licence', () => {
   assert.equal(byName(out, 'drivers_licence').value, '12345678');
 });
 
-test('account and tax file numbers, which the regex catalogue lacks, are appended as unvalidated extras', () => {
-  const out = m.mergeVlmFields([res('bsb', null)], [vf('account_number', '12345678'), vf('tax_file_number', '123456782', { digitsVerified: false })], toField);
-  const acct = byName(out, 'Account Number');
+test('account number fills its catalogue field; the tax file number, which the catalogue lacks, is appended as an unvalidated extra', () => {
+  const out = m.mergeVlmFields([res('bsb', null), res('account_number', null)], [vf('account_number', '12345678'), vf('tax_file_number', '123456782', { digitsVerified: false })], toField);
+  const acct = byName(out, 'account_number');
   const tfn = byName(out, 'Tax File Number');
   assert.equal(acct.value, '12345678');
-  assert.equal(acct.validated, false);
+  assert.equal(out.filter(f => /account/i.test(f.name)).length, 1, 'no duplicate Account Number field');
+  assert.equal(tfn.value, '123456782');
   assert.equal(tfn.validationStatus, 'warning');
 });
 
@@ -193,12 +194,12 @@ test('a corrected verdict is noted with the original value and confirmed is note
 });
 
 test("agent verdicts on other people's fields and extras are annotated as well", () => {
-  const out = m.mergeVlmFields([res('given_names', null)], [
+  const out = m.mergeVlmFields([res('given_names', null), res('account_number', null)], [
     vf('given_names', 'Mary', { subject: 'parent', entry: 2, agent: 'unresolved' }),
-    vf('account_number', '12345678', { agent: 'unresolved' }),
+    vf('tax_file_number', '123456782', { agent: 'unresolved' }),
   ], toField);
   assert.equal(byName(out, 'Parent 2: Given Names').validationStatus, 'warning');
-  assert.equal(byName(out, 'Account Number').validationStatus, 'warning');
+  assert.equal(byName(out, 'Tax File Number').validationStatus, 'warning');
 });
 
 test('parseVlmFields keeps only valid agent verdict values', () => {
@@ -225,4 +226,24 @@ test('parseReview rebuilds flags, verdicts and the S2 decision from untrusted in
   assert.deepEqual(r.s2, { cleared: true, reason: 'plain', auditSampled: false });
   const many = m.parseReview({ flags: Array.from({ length: 500 }, () => ({ code: 'X', detail: '' })) });
   assert.equal(many.flags.length, 100);
+});
+
+// ---- two sources: origin and the value the other source read --------------------------------------------------------
+test('notes say which source read the value and what the other source read instead', () => {
+  const out = m.mergeVlmFields([res('bsb', null)], [vf('bsb', '062-000', { origin: 'llamaparse', alternateValue: '062-999', alternateSource: 'qwen', evidence: '062-000' })], toField);
+  const f = byName(out, 'bsb');
+  assert.match(f.sourceSection, /^LlamaParse \(handwriting\)/);
+  assert.match(f.sourceSection, /The qwen read "062-999" instead/);
+  const both = m.mergeVlmFields([res('family_name', null)], [vf('family_name', 'Lee', { origin: 'both' })], toField);
+  assert.match(byName(both, 'family_name').sourceSection, /^Qwen and LlamaParse agree/);
+});
+
+test('parseVlmFields keeps only valid origin values and bounded alternates', () => {
+  const [a, b] = m.parseVlmFields([
+    { name: 'bsb', value: '1', origin: 'llamaparse', alternateValue: 'x'.repeat(900), alternateSource: 'qwen' },
+    { name: 'bsb', value: '2', origin: 'gemini' },
+  ]);
+  assert.equal(a.origin, 'llamaparse');
+  assert.equal(a.alternateValue.length, 500);
+  assert.equal(b.origin, undefined);
 });

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "note": "LlamaCloud Classify rules for Australian identity and financial documents. `type` values are exactly the document_type taxonomy used across the pipeline (server/services/vlmFieldMerge.ts DOCUMENT_TYPES); tests keep the two in sync.",
+  "rules": [
+    {
+      "type": "loan_application",
+      "description": "A home loan, personal loan, car loan or credit card application form completed by or for an applicant. Has sections such as your details, residential address, employment and income, living expenses, assets and liabilities, and a declaration or signature. Often printed with handwritten entries."
+    },
+    {
+      "type": "bank_statement",
+      "description": "A bank or credit card statement for a period, showing an account name, BSB and account number, opening and closing balances, and a table of dated transactions with debits and credits."
+    },
+    {
+      "type": "payslip",
+      "description": "An employee payslip or pay advice showing the employer, employee name, pay period, gross pay, tax withheld, superannuation and net pay, often with year-to-date totals."
+    },
+    {
+      "type": "drivers_licence",
+      "description": "An Australian driver licence card or its scan, front or back: photo, licence number, card number, class, conditions, expiry date and a state road authority name such as Service NSW, VicRoads, Transport and Main Roads, or a state equivalent."
+    },
+    {
+      "type": "passport",
+      "description": "The photo data page of a passport, showing surname, given names, nationality, date of birth, passport number, dates of issue and expiry, and the two-line machine readable zone beginning with P<."
+    },
+    {
+      "type": "medicare_card",
+      "description": "An Australian Medicare card: a green card with a Medicare number of ten digits plus an individual reference number, cardholder names and a valid-to date."
+    },
+    {
+      "type": "tax_return",
+      "description": "An Australian Taxation Office document: an individual tax return, notice of assessment, PAYG payment summary or income statement, showing a tax file number, taxable income and tax payable or refund."
+    },
+    {
+      "type": "utility_bill",
+      "description": "A utility, telecommunications or council rates bill or notice for electricity, gas, water, internet or phone, showing a service address, account number, billing period and amount due."
+    },
+    {
+      "type": "employment_contract",
+      "description": "An employment contract, offer letter or employer letter stating a position, salary or hourly rate, start date and employment terms."
+    },
+    {
+      "type": "id_form_other",
+      "description": "Any other identification or personal details form, declaration or certificate that collects a person's identity details but is not one of the more specific types above, such as a tax file number declaration or a proof of age card."
+    },
+    {
+      "type": "other",
+      "description": "Anything else that fits none of the types above, including marketing material, terms and conditions, blank forms, photographs and unrelated correspondence."
+    }
+  ]
+}

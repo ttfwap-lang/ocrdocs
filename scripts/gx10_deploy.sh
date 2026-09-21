@@ -98,7 +98,7 @@ else
   sudo -u flak3dd mkdir -p /tmp/ocrimport/logs /tmp/ocrimport/db /tmp/ocrimport/input /tmp/ocrimport/output /tmp/ocrimport/noocr
   sudo -u flak3dd env NVME_ROOT=/tmp/ocrimport HF_HOME="$RUNTIME/hf" HF_HUB_OFFLINE=1 "$RUNTIME/venv/bin/python3" -c "
 import sys; sys.path.insert(0, '$APP/scripts')
-import ocr_spark_engine as e, ocr_hybrid, ocr_paddle_vl, ocr_qwen_merge, ocr_chandra, ocr_gates, ocr_question_score, ocr_agent_verify, ocr_doc_pipeline
+import ocr_spark_engine as e, ocr_hybrid, ocr_paddle_vl, ocr_qwen_merge, ocr_chandra, ocr_gates, ocr_question_score, ocr_agent_verify, ocr_doc_pipeline, ocr_llamaparse, ocr_llamacloud
 print('engine import ok | hybrid', e.ocr_hybrid is not None, '| cuda', e.torch.cuda.is_available())"     || { echo "runtime cannot run the engine as flak3dd; leaving the worker unchanged" >&2; exit 1; }
   cat > "$WDROP/runtime.conf" <<CONF
 [Service]

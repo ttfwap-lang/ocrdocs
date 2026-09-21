@@ -89,3 +89,15 @@ def test_flag_rates_count_files_per_rule():
     r = qs.flag_rates([a, b, []])
     assert r["files"] == 3 and r["flagged"] == 2 and r["flagged_pct"] == 66.7
     assert r["by_rule"] == {"DIGITS_NOT_READ": 1, "PAGE_DEGRADED": 1}
+
+
+def test_a_field_the_two_sources_disagreed_on_is_flagged_with_both_values():
+    fl = qs.question_flags(CLEAN_PAGES, [field("bsb", "062-000", alternateValue="062-999", alternateSource="qwen", imageIndex=1)], "bank_statement")
+    hit = next(f for f in fl if f.code == "SOURCES_DISAGREE")
+    assert (hit.page, hit.field) == (1, "bsb") and "'062-000' vs '062-999'" in hit.detail and "qwen" in hit.detail
+
+
+def test_a_document_type_the_cloud_classifier_disputes_is_flagged():
+    fl = qs.question_flags(CLEAN_PAGES, [], "payslip", document_type_alt="loan_application")
+    assert "DOC_TYPE_DISAGREE" in codes(fl)
+    assert "DOC_TYPE_DISAGREE" not in codes(qs.question_flags(CLEAN_PAGES, [], "payslip"))

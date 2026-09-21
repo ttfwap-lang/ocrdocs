@@ -36,6 +36,36 @@ flowchart TD
 Every stage that cannot run degrades to "send it to a human": Paddle down falls back to Tesseract for that page,
 Qwen down means "read it with everything" and no merge, Chandra or the agent down leaves the flags standing.
 
+## LlamaParse / LlamaCloud (optional cloud reader, off by default)
+**Data warning:** this sends documents to LlamaIndex's servers. Managed LlamaCloud has only North America (`us-east-1`) and
+Europe (`eu-central-1`), no Australian region, so every page sent leaves Australia (Privacy Act, APP 8: the owner decides).
+The vendor states files are cached 48 hours then deleted and never used for training. Every job here is submitted with
+`disable_cache` and deleted (parse, classify and extract jobs) as soon as its result is read; the API key lives only in
+the worker's environment.
+
+| Mode | What is sent |
+|---|---|
+| `region` | only the crops the agent asks to re-read (`llamaparse` tool) |
+| `page` | also whole flagged printed pages as a second reader |
+| `full` | every PDF, image and docx: one upload gives a parse job; **Classify** (custom rules) and **Extract** (custom schema) both run off it |
+
+Full mode details:
+- **Custom extraction JSON** (`scripts/llamacloud/extract_schema.json`) is generated from the regex catalogue
+  (`node scripts/build_extract_schema.mjs`): every catalogue field id with its printed labels and format hint, an
+  `applicant` object, and an `other_people` array with a `relationship` so parents, spouse, employer and referees never
+  land in the applicant's fields ("John and Mary" with "boilermaker, nurse" gives two parent entries in order). A test
+  fails if the file drifts from `src/data/bankFields.ts`; LlamaCloud validated the schema (200 on `/extract/schema/validation`).
+- **Custom classify rules** (`scripts/llamacloud/classify_rules.json`) are exactly the pipeline's `document_type` taxonomy,
+  each with an Australian-document description. The cloud classification leads when its confidence is at least 0.6.
+- **Reconcile:** Qwen and the cloud fields are matched by (field, owner, entry). Agreement raises confidence and settles
+  an unstated owner; disagreement keeps the better-supported value at reduced confidence, records the other as
+  `alternateValue`, and raises `SOURCES_DISAGREE` for the agent; a disputed document type raises `DOC_TYPE_DISAGREE`.
+- Verified live on invented pages only (never a real document): upload, classify and extract off one parse job, per-field
+  confidence and citations, and 200s on every delete. `cost_effective` parsing kept line text verbatim where `agentic`
+  rewrote a form and dropped a label, so parsing defaults to `cost_effective` and extraction to `agentic`.
+- **Engine wiring** is applied with `apply_llamacloud_engine.py` (a reviewed one-off patch, so the change that makes the
+  worker send files offshore is a deliberate step). Until then `OCRDOCS_LLAMAPARSE` has no effect on the worker.
+
 ## Rules that protect real data
 - **S2 parks, never deletes.** Only a file whose pages are all printed, whose probe read enough good text, and that
   matches no catalogue label or value shape is parked. Handwriting is never judged by the probe (Tesseract cannot read it).
@@ -62,6 +92,10 @@ Qwen down means "read it with everything" and no merge, Chandra or the agent dow
 | `OCRDOCS_CHANDRA_URL` | `http://localhost:8300` | Chandra endpoint |
 | `OCRDOCS_AGENT_URL` / `OCRDOCS_AGENT_MODEL` | Qwen URL / model | agent chat endpoint |
 | `OCRDOCS_TRIAGE_WEIGHTS` | unset | DenseNet triage weights (module written, not wired) |
+| `OCRDOCS_LLAMAPARSE` | `off` | `region`, `page` or `full`: see LlamaParse / LlamaCloud below. Also needs `LLAMA_CLOUD_API_KEY` in the worker environment only |
+| `OCRDOCS_LLAMAPARSE_TIER` / `_REGION` | `cost_effective` / `na` | parse tier; `na` or `eu` |
+| `OCRDOCS_LLAMAEXTRACT_TIER` | `agentic` | Extract tier (`cost_effective` or `agentic`) |
+| `OCRDOCS_LLAMAPARSE_MAX_CALLS` | `200` | files or pages sent per worker process; raise it deliberately for a bulk run |
 
 ## Stack
 
@@ -96,6 +130,8 @@ flowchart LR
    `extraction_json`.
 
 ## Not yet done
+- LlamaCloud on real documents: never run; only invented pages were sent. No graded comparison of the cloud fields
+  against Qwen, and no measured cost per document (an agentic extract of a one-page synthetic form used 5 credits).
 - Real-page evaluation: graded digit accuracy of Paddle vs Chandra vs TrOCR vs Qwen on BSB, account number and DOB.
 - `vllm_services.sh` has been syntax-checked only; it has not started a container on the GX10. The Qwen3-VL-8B launch
   flags (memory fraction, quantization) are unmeasured.

@@ -43,6 +43,14 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {"page": {"type": "integer"}}, "required": ["page"]}}},
 ]
 
+def tools_for(reader_names: Sequence[str]) -> List[dict]:
+    """TOOLS with the reader enum limited to the readers this run actually has, so the model cannot ask for one that
+    is not configured (LlamaParse, for instance, is only offered when it is enabled)."""
+    tools = json.loads(json.dumps(TOOLS))
+    tools[0]["function"]["parameters"]["properties"]["reader"]["enum"] = list(reader_names)
+    return tools
+
+
 SYSTEM = (
     "You verify machine-read fields from Australian identity and financial documents. You get one page image, the "
     "fields that were flagged as questionable and why, and the stored OCR text. Inspect the page, use the tools to "
@@ -103,6 +111,7 @@ class AgentVerifier:
         clock: Callable[[], float] = time.monotonic,
     ):
         self.chat, self.readers, self.validators, self.clock = chat, readers, validators or {}, clock
+        self.tools = tools_for(list(readers))
 
     # ---- tools ---------------------------------------------------------------------------------------------------
     def _tool(self, name: str, args: Mapping[str, Any], image: Image.Image, page_texts: Sequence[str], run: _Run) -> str:
@@ -145,7 +154,7 @@ class AgentVerifier:
             if self.clock() - start > DEADLINE_SECONDS:
                 break
             try:
-                msg = self.chat(messages, TOOLS)
+                msg = self.chat(messages, self.tools)
             except Exception as e:  # noqa: BLE001 - model unreachable: hand everything to a human
                 return self._all_unresolved(page, flagged, f"agent unavailable: {e}")
             calls = msg.get("tool_calls") or []
