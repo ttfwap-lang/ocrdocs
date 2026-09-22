@@ -116,3 +116,17 @@ export interface UserRow {
   password_hash: string;
   created_at: string;
 }
+
+export interface PortraitRow {
+  id: string;
+  document_id: string;
+  page_index: number;
+  crop_x: number | null;
+  crop_y: number | null;
+  crop_w: number | null;
+  crop_h: number | null;
+  quality_score: number;
+  source: string;
+  document_type: string | null;
+  created_at: string;
+}

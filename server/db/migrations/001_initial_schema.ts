@@ -62,6 +62,21 @@ export function runMigrations(db: DatabaseType): void {
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS portraits (
+      id             TEXT PRIMARY KEY,
+      document_id    TEXT NOT NULL,
+      page_index     INTEGER NOT NULL DEFAULT 0,
+      crop_x         INTEGER,
+      crop_y         INTEGER,
+      crop_w         INTEGER,
+      crop_h         INTEGER,
+      quality_score  REAL NOT NULL DEFAULT 0.5,
+      source         TEXT NOT NULL DEFAULT 'heuristic',
+      document_type  TEXT,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_extractions_document_id
       ON extractions(document_id);
 
@@ -76,6 +91,9 @@ export function runMigrations(db: DatabaseType): void {
 
     CREATE INDEX IF NOT EXISTS idx_documents_content_hash
       ON documents(content_hash);
+
+    CREATE INDEX IF NOT EXISTS idx_portraits_document_id
+      ON portraits(document_id);
   `);
 
   addColumnIfMissing(db, 'jobs', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
