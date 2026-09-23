@@ -262,13 +262,53 @@ Not verified: accuracy of any of it on real pages; that the containers start wit
   semantics, same `normalizeDob`): 309 grouped documents -> 149 identities, matching the
   live API. This reference is what any headshot converter must use.
 
-### Known remaining gap (the only work left to make identities complete)
-Identity **photos** are not wired: `server/services/headshotService.ts` expects a FLAT
-`index.jsonl` (`{docId, identityId, subdir, doc, page, source, headshots:[{crop, relPath,
-bbox, verified}]}`), but the desktop corpus index is NESTED
-(`{file, note, record:{subjects:[…], headshots:[{page,crop,bbox,verified,path}]}}`) and keys
-people by folder name (`applicant_Aihua_Chen`), not by the app's sha256 `identityId`.
-Measured ceiling if converted as-is: 121 face-bearing records -> 75 match an app document ->
-36 match an app identity -> **26 of 149 identities (17.4%)** would gain >=1 verified photo
-(64 of 218 verified crops). The 46 unmatched face-records belong to documents that had no
-`verif=ok` fields and were therefore never loaded into the app DB.
+## 2026-09-24 identity integrity fix + headshot wiring (phase 1 of IDENTITY_PLAN.md)
+
+### Defect 1: `normalizeDob` split people whose DOB appeared in two spellings
+`identityService` reduced DOB to digits only, so `24 NOV 1963` -> `241963` while
+`24/11/1963` -> `24111963`. One person, two identityIds. Measured on the loaded corpus:
+**34 people were split; 149 identities were really 115.** Worst case `Wang|Zhongjie` had five
+identity buckets for one name (`23 DEC 1989`, `23/12/1989`, `1989-12-23`, `23rd Dec 1989`,
+`11th Nov 1986`).
+
+New `server/services/dobKey.ts` canonicalises to `YYYYMMDD`, handling alphabetic months,
+ordinals (`3rd Dec 1995`), compact forms (`16JUL2019`), month-first (`November 24, 1963`) and
+two-digit years (pivot at 30). Deliberately conservative: a numeric date whose first two
+components are both <= 12 is genuinely ambiguous (`09/02/1991`), so it keeps its raw digits
+rather than guessing an order — a wrong merge is worse than a conservative split. Day-first
+is only applied when day > 12 makes it certain, which this corpus does (`24/11/1963`).
+
+`identityService.ts` uses it; `build_local_index.py` and the new
+`build_headshots_index.py` import the same implementation, so the app, the local index and
+the headshot index all derive identical identityIds. Pinned by `tests/dobKey.test.mjs` (6)
+and `tests/python/test_dob_canonical.py` (8).
+
+### Defect 2: the headshot corpus was invisible to the app
+`headshotService` reads a flat index keyed by identityId; the desktop extractor writes a
+nested index keyed by person folder. `scripts/build_headshots_index.py` bridges them: maps
+each source file to its app document by `original_path`, recomputes the identityId from the
+document's own fields, groups crops by `(subdir, page)` into the flat records the app parses,
+and copies crop bytes into a separate output root. Read-only against the DB and the corpus;
+nothing is deleted or moved.
+
+### Verified after the fix (live server, measured)
+- identities **125** (was 149) — the 24 extra were DOB-spelling duplicates, not people
+- duplicate `family|given` buckets **34 -> 16**; survivors are genuinely ambiguous
+  (`07/04/1965`) or real conflicts (`Chen|Qingyun` 10 Nov vs 11 Nov 1986), which is correct
+- **22 identities carry photos**; `thumbnailUrl` serves HTTP 200 `image/jpeg`
+- retrieved crops are genuine identity-document photos (inspected 2)
+- `data/headshots/` built by the converter; point the app at it with `OCRDOCS_HEADSHOTS_DIR`
+- `tsc --noEmit` 0, `npm test` 232/232, `pytest` 289 passed / 1 skipped
+- `data/local_index.db` rebuilt with the corrected keys: 4,080 docs, 16,450 numbered
+  fields, 198 identities (was 218)
+
+### Still open
+- 1,134 unassigned documents. The 46 face-bearing corpus records that matched no app document
+  belong to files with no `verif=ok` fields; recovering them needs a re-parse, not code.
+- Remaining ambiguous-DOB duplicates should be reviewed by a human, never auto-merged.
+- **Unrelated uncommitted work was found in the tree and left untouched**: a Medicare feature
+  (`server/services/medicareService.ts`, `server/db/migrations/002_medicare_index.ts`,
+  `src/components/MedicareView.tsx`) plus edits to `server.ts`, `src/App.tsx`,
+  `src/components/Navbar.tsx`, `src/types.ts`, `README.md`, `server/db/database.ts`.
+  Someone else is working in this repo concurrently; it was not staged, reviewed or committed
+  here.
