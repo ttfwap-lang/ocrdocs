@@ -10,9 +10,10 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Download, User, Calendar, FileStack, CheckCircle2, Clock, XCircle } from 'lucide-react';
-import type { IdentityDetail, IdentityDocumentDetail, LocalJob } from '../types';
+import { ArrowLeft, Download, User, Calendar, FileStack, CheckCircle2, Clock, XCircle, Images, ExternalLink } from 'lucide-react';
+import type { IdentityDetail, IdentityDocumentDetail, IdentityPhoto, LocalJob } from '../types';
 import { DocumentCard } from './identity/DocumentCard';
+import { FaceThumb } from './identity/FaceThumb';
 
 export type DetailSelection = { type: 'identity'; id: string } | { type: 'document'; id: string };
 
@@ -21,10 +22,46 @@ interface IdentityDetailPageProps {
   onBack: () => void;
 }
 
+function HeadPhotoGrid({ photos }: { photos: IdentityPhoto[] }) {
+  if (photos.length === 0) {
+    return (
+      <div className="text-xs font-mono text-slate-500 py-2">
+        No head photos found in this person's documents yet. Re-upload an ID page and run{' '}
+        <code className="text-cyan-300">scripts/extract_headshots.py</code> to populate this gallery.
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
+      {photos.map((p, i) => (
+        <a
+          key={`${p.relPath}-${i}`}
+          href={p.url}
+          target="_blank"
+          rel="noreferrer"
+          title={`${p.document} · page ${p.page}${p.verified ? '' : ' · unverified'}`}
+          className="group relative block rounded-lg overflow-hidden border border-white/10 hover:border-cyan-500/50 transition-colors bg-black/40"
+        >
+          <img src={p.url} alt={`Head photo from ${p.document}`} loading="lazy" className="w-full aspect-square object-cover group-hover:scale-105 transition-transform" />
+          <span className="absolute bottom-1 left-1 right-1 flex items-center justify-between gap-1 px-1.5 py-0.5 bg-black/70 rounded text-[9px] font-mono text-slate-300 truncate">
+            <span className="truncate">{p.document.split(/[\\/]/).pop()}</span>
+            {p.verified ? (
+              <span className="shrink-0 text-matrix-400 font-bold" title="Face re-detected in crop">✓</span>
+            ) : (
+              <span className="shrink-0 text-amber-400" title="Unverified crop — flagged by the detector QA pass">?</span>
+            )}
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selection, onBack }) => {
   const [identity, setIdentity] = useState<IdentityDetail | null>(null);
   const [singleDoc, setSingleDoc] = useState<IdentityDocumentDetail | null>(null);
   const [singleDocJobs, setSingleDocJobs] = useState<LocalJob[]>([]);
+  const [singleDocPhotos, setSingleDocPhotos] = useState<IdentityPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +78,7 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
     const latest = body.extractions?.[0] ?? null;
     setSingleDoc({ document: body.document, extraction: latest });
     setSingleDocJobs(body.jobs ?? []);
+    setSingleDocPhotos(body.photos ?? []);
   }, []);
 
   const load = useCallback(async () => {
@@ -62,6 +100,7 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
     setLoading(true);
     setIdentity(null);
     setSingleDoc(null);
+    setSingleDocPhotos([]);
     load();
   }, [load]);
 
@@ -93,13 +132,28 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
       <div className="space-y-4">
         <BackButton onBack={onBack} />
         <div className="neon-card rounded-xl p-5">
-          <div className="text-[10px] font-mono font-bold text-amber-300 uppercase tracking-widest mb-1">Unassigned Document</div>
-          <p className="text-xs font-mono text-slate-500">
-            No family name + date of birth could be matched yet, so this document isn't grouped under a person. Once it's extracted (or
-            corrected below), re-uploading a related document will group them together automatically.
-          </p>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <div className="text-[10px] font-mono font-bold text-amber-300 uppercase tracking-widest mb-1">Unassigned Document</div>
+              <p className="text-xs font-mono text-slate-500">
+                No family name + date of birth could be matched yet, so this document isn't grouped under a person. Once it's extracted (or
+                corrected below), re-uploading a related document will group them together automatically.
+              </p>
+            </div>
+            {singleDoc && (
+              <FaceThumb url={singleDocPhotos[0]?.url ?? null} name={singleDoc.document.filename} size={64} rounded={false} />
+            )}
+          </div>
         </div>
-        <DocumentCard detail={singleDoc} jobs={singleDocJobs} onReprocessed={load} />
+        {singleDocPhotos.length > 0 && (
+          <div className="neon-card rounded-xl p-5">
+            <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-cyan-300 mb-3 flex items-center gap-2">
+              <Images className="w-4 h-4" /> Head Photos in This Document // {singleDocPhotos.length}
+            </h2>
+            <HeadPhotoGrid photos={singleDocPhotos} />
+          </div>
+        )}
+        <DocumentCard detail={singleDoc!} jobs={singleDocJobs} onReprocessed={load} />
       </div>
     );
   }
@@ -113,36 +167,48 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
       <div className="neon-card rounded-xl p-6 relative overflow-hidden">
         <div className="absolute inset-0 crt-scanlines" />
         <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-matrix-400 mb-1">
-              <User className="w-5 h-5" />
-              <h1 className="glitch-heading text-2xl sm:text-3xl font-bold tracking-wide uppercase">{identity.fullName}</h1>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-slate-400 mt-2">
-              <span className="flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                DOB {identity.dob}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <FileStack className="w-3.5 h-3.5 text-matrix-400" />
-                {identity.documentCount} document{identity.documentCount === 1 ? '' : 's'}
-              </span>
-              <span className="flex items-center gap-1.5 text-matrix-400">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {identity.extractedCount} extracted
-              </span>
-              {identity.pendingCount > 0 && (
-                <span className="flex items-center gap-1.5 text-amber-300">
-                  <Clock className="w-3.5 h-3.5" />
-                  {identity.pendingCount} pending
+          <div className="flex items-center gap-4">
+            <FaceThumb url={identity.thumbnailUrl} name={identity.fullName} size={96} rounded={false} className="hidden sm:flex" />
+            <div>
+              <div className="flex items-center gap-2 text-matrix-400 mb-1">
+                <User className="w-5 h-5" />
+                <h1 className="glitch-heading text-2xl sm:text-3xl font-bold tracking-wide uppercase">{identity.fullName}</h1>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-slate-400 mt-2">
+                <span className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                  DOB {identity.dob}
                 </span>
-              )}
-              {identity.failedCount > 0 && (
-                <span className="flex items-center gap-1.5 text-rose-400">
-                  <XCircle className="w-3.5 h-3.5" />
-                  {identity.failedCount} failed
+                <span className="flex items-center gap-1.5">
+                  <FileStack className="w-3.5 h-3.5 text-matrix-400" />
+                  {identity.documentCount} document{identity.documentCount === 1 ? '' : 's'}
                 </span>
-              )}
+                <span className="flex items-center gap-1.5 text-matrix-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {identity.extractedCount} extracted
+                </span>
+                {identity.pendingCount > 0 && (
+                  <span className="flex items-center gap-1.5 text-amber-300">
+                    <Clock className="w-3.5 h-3.5" />
+                    {identity.pendingCount} pending
+                  </span>
+                )}
+                {identity.failedCount > 0 && (
+                  <span className="flex items-center gap-1.5 text-rose-400">
+                    <XCircle className="w-3.5 h-3.5" />
+                    {identity.failedCount} failed
+                  </span>
+                )}
+                {identity.photoCount > 0 && (
+                  <a
+                    href="#head-photos"
+                    className="flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200 transition-colors underline decoration-cyan-500/40 underline-offset-2"
+                  >
+                    <Images className="w-3.5 h-3.5" />
+                    {identity.photoCount} head photo{identity.photoCount === 1 ? '' : 's'}
+                  </a>
+                )}
+              </div>
             </div>
           </div>
 
@@ -154,6 +220,25 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
             Export All (ZIP)
           </a>
         </div>
+      </div>
+
+      <div className="neon-card rounded-xl p-5" id="head-photos">
+        <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-cyan-300 mb-3 flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <Images className="w-4 h-4" /> Head Photos // {identity.photos.length}
+          </span>
+          {identity.photos.length > 0 && (
+            <a
+              href={identity.photos[0].url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 text-[10px] font-mono text-slate-400 hover:text-cyan-300 transition-colors"
+            >
+              Open full-res <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </h2>
+        <HeadPhotoGrid photos={identity.photos} />
       </div>
 
       <div className="neon-card rounded-xl p-5">

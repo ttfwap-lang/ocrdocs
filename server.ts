@@ -33,13 +33,21 @@ import { createExtractionRepo } from "./server/db/repositories/extractionRepo";
 import type { ExtractedField, ValidationStatus } from "./server/db/contracts";
 import { upload } from "./server/middleware/upload";
 import { createIdentityService } from "./server/services/identityService";
+import { createHeadshotService } from "./server/services/headshotService";
 import { createImportService, type PreparseShell, type UploadedFile } from "./server/services/importService";
 
 const db = initDb();
 const documentRepo = createDocumentRepo(db);
 const jobRepo = createJobRepo(db);
 const extractionRepo = createExtractionRepo(db);
-const identityService = createIdentityService(documentRepo, extractionRepo);
+// Head photos live next to the database (data/headshots by default): the same
+// identityId hash scheme as identityService, so photos attach to people with
+// zero guesswork. Overridable for deployments that keep originals elsewhere.
+const HEADSHOTS_ROOT =
+  process.env.OCRDOCS_HEADSHOTS_DIR ||
+  path.join(path.dirname(path.resolve(process.env.DATABASE_PATH || "data/app.db")), "headshots");
+const headshotService = createHeadshotService(HEADSHOTS_ROOT);
+const identityService = createIdentityService(documentRepo, extractionRepo, headshotService);
 
 // How long a claimed job may sit in 'processing' before its worker is presumed
 // dead, and how many times a job may be claimed before it is failed for good.
@@ -499,6 +507,7 @@ app.get("/api/documents/:id", (req, res) => {
     document,
     jobs,
     extractions: extractions.map((e) => extractionRepo.getFullResult(e.id)),
+    photos: headshotService.photosForDocument(document.id),
   });
 });
 
@@ -591,6 +600,10 @@ app.get("/api/imports/:id", requireImportAuth, (req: express.Request<{ id: strin
 app.get("/api/imports", requireImportAuth, (_req, res) => {
   return res.json({ imports: importService.listRecords() });
 });
+
+// Head photos (scripts/extract_headshots.py output) served so the identities
+// UI can show thumbnails/galleries. Mounted before the SPA catch-all below.
+app.use("/headshots", express.static(HEADSHOTS_ROOT));
 
 // Identities: documents grouped by their extracted given_names + family_name
 // + date_of_birth (see server/services/identityService.ts). No separate

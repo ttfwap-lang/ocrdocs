@@ -131,7 +131,24 @@ export interface IdentitySummary {
   extractedCount: number;
   pendingCount: number;
   failedCount: number;
+  /** URL of the first verified head photo for this person, or null when none exists yet. */
+  thumbnailUrl: string | null;
+  /** Number of extracted head photos attached to this identity. */
+  photoCount: number;
   previewDocuments: DocumentPreview[];
+}
+
+/** One extracted head photo (face crop) attributed to an identity or document. */
+export interface IdentityPhoto {
+  crop: string;
+  url: string;
+  relPath: string;
+  documentId: string;
+  document: string;
+  page: number;
+  bbox: number[];
+  verified: boolean;
+  source: string;
 }
 
 /** A queued/extracted document that has no reliable family_name + date_of_birth to group by yet. */
@@ -141,6 +158,8 @@ export interface UnassignedDocument {
   mimeType: string | null;
   status: string;
   uploadedAt: string;
+  /** Head photos found in this document (e.g. a passport scan with no name+DOB yet). */
+  photos: IdentityPhoto[];
 }
 
 export interface IdentityFieldEntry {
@@ -177,6 +196,8 @@ export interface IdentityDocumentDetail {
 export interface IdentityDetail extends IdentitySummary {
   documents: IdentityDocumentDetail[];
   fieldBreakdown: IdentityFieldEntry[];
+  /** Every head photo extracted across this person's documents (verified first). */
+  photos: IdentityPhoto[];
 }
 
 /** Raw `fields` row shape, as returned by GET /api/extractions/:id/fields. */

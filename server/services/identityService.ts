@@ -15,6 +15,7 @@ import { createHash } from 'crypto';
 import type { DocumentRepo } from '../db/repositories/documentRepo';
 import type { ExtractionRepo } from '../db/repositories/extractionRepo';
 import type { DocumentRow } from '../db/contracts';
+import type { HeadshotService, IdentityPhoto } from './headshotService';
 import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../../src/data/bankFields';
 
 /**
@@ -62,6 +63,10 @@ export interface IdentitySummary {
   extractedCount: number;
   pendingCount: number;
   failedCount: number;
+  /** URL of the first verified head photo for this person, or null when none exists yet. */
+  thumbnailUrl: string | null;
+  /** Number of extracted head photos attached to this identity. */
+  photoCount: number;
   previewDocuments: DocumentPreview[];
 }
 
@@ -71,6 +76,8 @@ export interface UnassignedDocument {
   mimeType: string | null;
   status: string;
   uploadedAt: string;
+  /** Head photos found in this document (e.g. a passport scan with no name+DOB yet). */
+  photos: IdentityPhoto[];
 }
 
 export interface IdentityDocumentDetail {
@@ -81,6 +88,8 @@ export interface IdentityDocumentDetail {
 export interface IdentityDetail extends IdentitySummary {
   documents: IdentityDocumentDetail[];
   fieldBreakdown: IdentityFieldEntry[];
+  /** Every head photo extracted across this person's documents (verified first). */
+  photos: IdentityPhoto[];
 }
 
 function normalizeText(value: string): string {
@@ -109,7 +118,7 @@ interface IdentityGroup {
   documents: DocumentRow[];
 }
 
-export function createIdentityService(documentRepo: DocumentRepo, extractionRepo: ExtractionRepo) {
+export function createIdentityService(documentRepo: DocumentRepo, extractionRepo: ExtractionRepo, headshotService: HeadshotService) {
   /**
    * `getExtractionsByDocument` is ORDER BY created_at DESC, so index 0 is the
    * latest extraction — this is the one grouping and the breakdown read from.
@@ -131,8 +140,9 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
 
     for (const doc of documentRepo.getAll()) {
       const extraction = latestExtraction(doc.id);
+      const photos = headshotService.photosForDocument(doc.id);
       if (!extraction) {
-        unassigned.push({ id: doc.id, filename: doc.filename, mimeType: doc.mime_type, status: doc.status, uploadedAt: doc.uploaded_at });
+        unassigned.push({ id: doc.id, filename: doc.filename, mimeType: doc.mime_type, status: doc.status, uploadedAt: doc.uploaded_at, photos });
         continue;
       }
 
@@ -142,7 +152,7 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
       const dob = fieldValue(fields, DATE_OF_BIRTH_FIELD);
 
       if (!familyName || !dob) {
-        unassigned.push({ id: doc.id, filename: doc.filename, mimeType: doc.mime_type, status: doc.status, uploadedAt: doc.uploaded_at });
+        unassigned.push({ id: doc.id, filename: doc.filename, mimeType: doc.mime_type, status: doc.status, uploadedAt: doc.uploaded_at, photos });
         continue;
       }
 
@@ -175,6 +185,8 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
     const { extractedCount, pendingCount, failedCount } = statusCounts(group.documents);
     const givenNames = titleCase(group.givenNames);
     const familyName = titleCase(group.familyName);
+    const photos = headshotService.photosForIdentity(identityId);
+    const primary = photos.find((p) => p.verified) ?? photos[0] ?? null;
     return {
       identityId,
       givenNames,
@@ -185,6 +197,8 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
       extractedCount,
       pendingCount,
       failedCount,
+      thumbnailUrl: primary?.url ?? null,
+      photoCount: photos.length,
       previewDocuments: group.documents
         .slice(0, 8)
         .map((d) => ({ id: d.id, filename: d.filename, mimeType: d.mime_type, status: d.status })),
@@ -245,6 +259,7 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
       ...toSummary(identityId, group),
       documents,
       fieldBreakdown: Array.from(bestByField.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      photos: headshotService.photosForIdentity(identityId),
     };
   }
 

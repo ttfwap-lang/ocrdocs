@@ -1,20 +1,28 @@
-"""Bulk LlamaCloud analysis (parse + classify + extract with the 100+ field regex-catalogue schema) through an AUSTRALIAN
-endpoint only. Run it from your desktop.
+"""Bulk LlamaCloud analysis (parse + classify + extract with the 100+ field regex-catalogue schema).
+Gateways in Australia, Europe, and USA are greenlighted; Africa gateway is banned. Run it from your desktop.
 
-Why it can only talk to the Australian endpoint: this script has no region option. It always uses region "au", whose URL
-you set from your LlamaIndex enterprise agreement (OCRDOCS_LLAMAPARSE_BASE_URL). If that is missing, or points at the
-public North America / Europe hosts, it stops before sending anything. Nothing is uploaded unless you also pass --run and
-type the endpoint's host name with --endpoint-host, so a wrong setting cannot start a bulk transfer.
+Supported regions:
+  - Australia ("au"): uses your LlamaIndex enterprise endpoint (OCRDOCS_LLAMAPARSE_BASE_URL).
+  - Europe ("eu"): uses https://api.cloud.eu.llamaindex.ai (or custom OCRDOCS_LLAMAPARSE_BASE_URL).
+  - USA ("us" / "usa" / "na"): uses https://api.cloud.llamaindex.ai (or custom OCRDOCS_LLAMAPARSE_BASE_URL).
+  - Africa ("af" / "africa"): BANNED.
 
 Setup (PowerShell):
   $env:LLAMA_CLOUD_API_KEY = "<your key>"
-  $env:OCRDOCS_LLAMAPARSE_BASE_URL = "https://<your australian endpoint>"      # when LlamaIndex gives you the details
+  # Optional / for custom enterprise endpoint (e.g. Sydney):
+  $env:OCRDOCS_LLAMAPARSE_BASE_URL = "https://<your endpoint>"
 
 Steps:
-  python llamaparse_bulk.py --check --endpoint-host <host>                     invented page only: proves endpoint + key work
-  python llamaparse_bulk.py --list files.txt --out results.jsonl                dry run: counts, sends nothing
-  python llamaparse_bulk.py --list files.txt --out results.jsonl --run --endpoint-host <host> --max-files 50
+  python llamaparse_bulk.py --check --region eu --endpoint-host api.cloud.eu.llamaindex.ai
+  python llamaparse_bulk.py --list files.txt --out results.jsonl
+  python llamaparse_bulk.py --list files.txt --out results.jsonl --run --region eu --endpoint-host api.cloud.eu.llamaindex.ai --max-files 50 --tier agentic_plus
   (raise --max-files gradually; re-running resumes and skips files already in results.jsonl)
+
+Files are sent in --list order: pair it with the page-sorted list from count_pages.py so the smallest documents
+go first ("in order of pages"). --max-files 0 sends every pending file in one run (no budget cap).
+--tier sets the parse tier (fast | cost_effective | agentic | agentic_plus; default OCRDOCS_LLAMAPARSE_TIER,
+usually cost_effective). --redo forgets earlier "ok" rows so previously done files are extracted again.
+Then run verify_fields.py over --out: that is the full regex verifier (valueSanity + APRA checks) for every field.
 
 files.txt is one file path per line; --folder <dir> takes a whole folder tree instead. Results (extracted personal data!)
 go to --out only: keep that file somewhere private. Each cloud job is submitted with disable_cache and deleted afterwards.
@@ -37,7 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ocr_llamacloud as llc  # noqa: E402
 import ocr_llamaparse as lp  # noqa: E402
 
-REGION = "au"
+DEFAULT_REGION = os.environ.get("OCRDOCS_LLAMAPARSE_REGION", "au")
 MAX_WORKERS = 8
 
 
@@ -75,10 +83,14 @@ def analyse_one(path: str, cloud) -> Dict:
         return {"file": path, "ok": False, "error": f"{type(e).__name__}: {e}"[:300], "secs": round(time.time() - t, 1)}
 
 
-def run(files: List[str], out: str, cloud, workers: int = 3, max_files: int = 50, log: Callable[[str], None] = print) -> Counter:
-    """Analyse up to max_files not-yet-done files, appending one JSON line per file. Resumable."""
-    done = already_done(out)
-    pending = [f for f in files if f not in done][:max_files]
+def run(files: List[str], out: str, cloud, workers: int = 3, max_files: int = 50, log: Callable[[str], None] = print,
+        done: Optional[set] = None) -> Counter:
+    """Analyse up to max_files not-yet-done files, appending one JSON line per file. Resumable.
+    max_files <= 0 means every pending file. `done` overrides the "already done" set (pass set() with --redo)."""
+    done = already_done(out) if done is None else done
+    pending = [f for f in files if f not in done]
+    if max_files and max_files > 0:
+        pending = pending[:max_files]
     counts: Counter = Counter()
     lock = threading.Lock()
     fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -101,13 +113,19 @@ def run(files: List[str], out: str, cloud, workers: int = 3, max_files: int = 50
     return counts
 
 
-def endpoint_or_exit(confirm_host: Optional[str], need_confirm: bool) -> str:
+def endpoint_or_exit(region: str, confirm_host: Optional[str], need_confirm: bool) -> str:
+    if lp.is_africa_region(region):
+        sys.exit(f"STOPPED, nothing sent: region '{region}' is banned (Africa gateway is banned)")
+    if confirm_host and lp.is_africa_host(confirm_host):
+        sys.exit(f"STOPPED, nothing sent: endpoint host '{confirm_host}' is in Africa, which is banned")
     try:
-        url = lp.base_url(REGION)
+        url = lp.base_url(region)
     except lp.LlamaParseUnavailable as e:
         sys.exit(f"STOPPED, nothing sent: {e}")
     host = urlparse(url).hostname or ""
-    print(f"Australian endpoint configured: {url}")
+    if lp.is_africa_host(host):
+        sys.exit(f"STOPPED, nothing sent: endpoint host '{host}' is in Africa, which is banned")
+    print(f"Gateway endpoint configured for region '{region}': {url}")
     if need_confirm and (confirm_host or "").lower() != host.lower():
         sys.exit(f"STOPPED, nothing sent: to proceed pass --endpoint-host {host} (typing the host confirms this is the endpoint you mean)")
     if not os.environ.get("LLAMA_CLOUD_API_KEY"):
@@ -115,8 +133,18 @@ def endpoint_or_exit(confirm_host: Optional[str], need_confirm: bool) -> str:
     return url
 
 
-def make_cloud(max_files: int):
-    return llc.LlamaCloud(lp.LlamaParse(region=REGION, max_calls=max(1, max_files)))
+def make_cloud(max_files: int, region: str = DEFAULT_REGION, tier: Optional[str] = None):
+    tier = tier or os.environ.get("OCRDOCS_LLAMAPARSE_TIER")
+    return llc.LlamaCloud(lp.LlamaParse(region=region, tier=tier, max_calls=max(1, max_files)))
+
+
+def _build_cloud(factory: Callable, max_files: int, region: str, tier: Optional[str] = None):
+    for args in ((max_files, region, tier), (max_files, region), (max_files,)):
+        try:
+            return factory(*args)
+        except TypeError:
+            continue
+    raise TypeError(f"cloud factory {getattr(factory, '__name__', factory)!r} accepts none of the expected signatures")
 
 
 def synthetic_page() -> bytes:
@@ -136,21 +164,28 @@ def synthetic_page() -> bytes:
     return buf.getvalue()
 
 
-def main(argv: Optional[List[str]] = None, cloud_factory: Callable[[int], object] = make_cloud) -> int:
-    ap = argparse.ArgumentParser(description="Bulk LlamaCloud analysis through the Australian endpoint only.")
+def main(argv: Optional[List[str]] = None, cloud_factory: Callable = make_cloud) -> int:
+    ap = argparse.ArgumentParser(
+        description="Bulk LlamaCloud analysis. Gateways in Australia, Europe, and USA are greenlighted; Africa gateway is banned."
+    )
     ap.add_argument("--list", help="text file with one document path per line")
     ap.add_argument("--folder", help="a folder tree of documents")
     ap.add_argument("--out", help="results file (JSON lines)")
     ap.add_argument("--run", action="store_true", help="actually send files (default is a dry run that sends nothing)")
     ap.add_argument("--check", action="store_true", help="send ONE invented page to prove the endpoint and key work")
-    ap.add_argument("--endpoint-host", help="the Australian endpoint's host name; required to send anything")
+    ap.add_argument("--region", default=DEFAULT_REGION, help="gateway region: au, eu, us/usa/na (Africa is banned; default: %(default)s)")
+    ap.add_argument("--endpoint-host", help="the gateway endpoint's host name; required to send anything")
     ap.add_argument("--workers", type=int, default=3)
-    ap.add_argument("--max-files", type=int, default=50, help="most files to send this run (default 50)")
+    ap.add_argument("--max-files", type=int, default=50, help="most files to send this run; 0 sends every pending file (default 50)")
+    ap.add_argument("--tier", choices=list(lp.TIERS), default=None,
+                    help=f"LlamaParse tier for every page of every file (default: OCRDOCS_LLAMAPARSE_TIER / {os.environ.get('OCRDOCS_LLAMAPARSE_TIER', 'cost_effective')})")
+    ap.add_argument("--redo", action="store_true", help="extract again the files already marked ok in --out")
     a = ap.parse_args(argv)
 
     if a.check:
-        endpoint_or_exit(a.endpoint_host, need_confirm=True)
-        r = cloud_factory(1).analyze(synthetic_page(), "invented_test_page.png")
+        endpoint_or_exit(a.region, a.endpoint_host, need_confirm=True)
+        cloud = _build_cloud(cloud_factory, 1, a.region, a.tier)
+        r = cloud.analyze(synthetic_page(), "invented_test_page.png")
         print(f"document type: {r.document_type} ({r.type_confidence}); {len(r.fields)} fields; credits {r.credits}; errors {r.errors}")
         for f in r.fields:
             print(f"  {f['subject']:<9} {f['name']:<24} {f['value']}")
@@ -159,15 +194,20 @@ def main(argv: Optional[List[str]] = None, cloud_factory: Callable[[int], object
     if not (a.list or a.folder) or not a.out:
         ap.error("give --list or --folder, and --out (or use --check)")
     files = collect(a.list, a.folder)
-    pending = [f for f in files if f not in already_done(a.out)]
-    to_send = min(len(pending), a.max_files)
+    done = set() if a.redo else already_done(a.out)
+    pending = [f for f in files if f not in done]
+    to_send = len(pending) if a.max_files <= 0 else min(len(pending), a.max_files)
     print(f"{len(files)} supported files found, {len(files) - len(pending)} already in {a.out}, {len(pending)} pending, "
-          f"this run would send {to_send}")
+          f"this run would send {to_send}"
+          + (f", parse tier: {a.tier}" if a.tier else ""))
+    if a.redo:
+        print("--redo: earlier 'ok' rows are ignored; everything listed will be extracted again.")
     if not a.run:
         print("DRY RUN: nothing was sent. Add --run --endpoint-host <host> to send.")
         return 0
-    endpoint_or_exit(a.endpoint_host, need_confirm=True)
-    counts = run(files, a.out, cloud_factory(to_send), a.workers, a.max_files)
+    endpoint_or_exit(a.region, a.endpoint_host, need_confirm=True)
+    cloud = _build_cloud(cloud_factory, to_send, a.region, a.tier)
+    counts = run(files, a.out, cloud, a.workers, a.max_files, done=done)
     print(f"finished: ok {counts['ok']}, failed {counts['failed']}, credits used {counts['credits']:.0f}; results in {a.out}")
     if counts["failed"]:
         print("failed files were recorded with their error and are retried on the next run (they are not skipped).")

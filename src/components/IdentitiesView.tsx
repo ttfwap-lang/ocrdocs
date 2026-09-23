@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import type { IdentitySummary, UnassignedDocument } from '../types';
 import { FlipStack } from './identity/FlipStack';
+import { FaceThumb } from './identity/FaceThumb';
 import { IdentityDetailPage, type DetailSelection } from './IdentityDetailPage';
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff'];
@@ -369,9 +370,12 @@ export const IdentitiesView: React.FC = () => {
                 onClick={() => setSelection({ type: 'identity', id: id.identityId })}
                 className="w-full text-left p-3 flex items-center justify-between gap-2 hover:bg-white/[0.03] transition-colors"
               >
-                <div className="min-w-0">
-                  <div className="text-xs font-mono font-semibold text-slate-200 truncate">{id.fullName}</div>
-                  <div className="text-[10px] font-mono text-slate-500 mt-0.5">DOB {id.dob}</div>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <FaceThumb url={id.thumbnailUrl} name={id.fullName} size={28} />
+                  <div className="min-w-0">
+                    <div className="text-xs font-mono font-semibold text-slate-200 truncate">{id.fullName}</div>
+                    <div className="text-[10px] font-mono text-slate-500 mt-0.5">DOB {id.dob}</div>
+                  </div>
                 </div>
                 <span className="shrink-0 text-[10px] font-mono font-bold text-matrix-400 bg-matrix-900/40 border border-matrix-500/30 rounded px-1.5 py-0.5">
                   {id.documentCount}
@@ -396,8 +400,18 @@ export const IdentitiesView: React.FC = () => {
                     onClick={() => setSelection({ type: 'document', id: doc.id })}
                     className="w-full text-left px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-white/[0.03] transition-colors"
                   >
-                    <span className="text-xs font-mono text-slate-300 truncate">{doc.filename}</span>
-                    <span className="shrink-0 text-[10px] font-mono text-slate-500 uppercase">{doc.status}</span>
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <FaceThumb url={doc.photos?.[0]?.url ?? null} name={doc.filename} size={30} rounded={false} />
+                      <span className="text-xs font-mono text-slate-300 truncate">{doc.filename}</span>
+                    </span>
+                    <span className="shrink-0 flex items-center gap-2">
+                      {doc.photos && doc.photos.length > 0 && (
+                        <span className="text-[10px] font-mono text-cyan-300" title={`${doc.photos.length} head photo(s) found`}>
+                          {doc.photos.length} photo{doc.photos.length === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      <span className="shrink-0 text-[10px] font-mono text-slate-500 uppercase">{doc.status}</span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -417,9 +431,17 @@ export const IdentitiesView: React.FC = () => {
               onClick={() => setSelection({ type: 'identity', id: id.identityId })}
               className="w-full neon-card rounded-xl p-4 flex items-center gap-4 text-left hover:border-matrix-500/40 transition-colors"
             >
+              <FaceThumb url={id.thumbnailUrl} name={id.fullName} size={56} rounded={false} />
               <FlipStack documents={id.previewDocuments} />
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-mono font-bold text-slate-100 truncate">{id.fullName}</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-mono font-bold text-slate-100 truncate">{id.fullName}</div>
+                  {id.photoCount > 0 && (
+                    <span className="shrink-0 text-[10px] font-mono font-bold text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 rounded-full px-2 py-0.5" title="Extracted head photos">
+                      {id.photoCount} photo{id.photoCount === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </div>
                 <div className="text-[11px] font-mono text-slate-500 mt-0.5">DOB {id.dob}</div>
                 <div className="flex items-center gap-3 mt-2 text-[10px] font-mono">
                   <span className="text-matrix-400">{id.extractedCount} extracted</span>
