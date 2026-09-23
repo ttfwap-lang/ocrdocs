@@ -65,22 +65,77 @@ def collect(list_file: Optional[str], folder: Optional[str]) -> List[str]:
     return out
 
 
+# Magic-byte headers per extension: files whose content does not match are junk from the recovered drive
+# (renamed/corrupt) and are rejected by the gateway anyway ("is not of a supported file type"). They get a
+# "fatal" row once and are never re-uploaded, instead of being retried every round forever.
+MAGIC: Dict[str, bytes] = {
+    ".pdf": b"%PDF", ".png": b"\x89PNG", ".jpg": b"\xff\xd8", ".jpeg": b"\xff\xd8",
+    ".webp": b"RIFF", ".bmp": b"BM", ".tif": b"II*\x00", ".tiff": b"II*\x00", ".docx": b"PK\x03\x04",
+}
+GATEWAY_FATAL_MARKERS = ("is not of a supported file type", "password or DRM protected",
+                         "appears to be broken or corrupted",
+                         "file is password protected", "could not be processed: file is encrypted")
+# Errors that are usually deterministic (corrupt image content) but are only treated as fatal after the
+# file has failed the same way across two rounds, so an unlucky transient never strikes a good file out.
+STRIKE_MARKER = "internal service error"
+STRIKE_LIMIT = 2
+
+
+def magic_mismatch(path: str) -> Optional[str]:
+    """Return a short reason if the file's content cannot be of its declared extension, else None."""
+    ext = os.path.splitext(path)[1].lower()
+    want = MAGIC.get(ext)
+    if want is None:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(8)
+    except OSError as e:
+        return f"unreadable ({type(e).__name__})"
+    if ext in (".tif", ".tiff") and head[:4] in (b"II*\x00", b"MM\x00*"):
+        return None
+    if not head.startswith(want):
+        return f"content mismatch: expected {want!r}, got {head[:4]!r}"
+
+
 def already_done(out: str) -> set:
     if not os.path.exists(out):
         return set()
-    # only successes count as done, so a file that failed (network, budget, bad file) is retried on the next run
-    return {r["file"] for r in (json.loads(l) for l in open(out, encoding="utf-8") if l.strip()) if r.get("ok")}
+    # only successes and fatal (junk/rejected) rows count as done, so a file that failed (network, budget,
+    # bad file) is retried on the next run while confirmed junk is not re-uploaded forever. Files that fail
+    # with the same deterministic gateway error across STRIKE_LIMIT rounds are also marked done so the
+    # resume loop converges instead of retrying corrupt files forever.
+    strikes: Dict[str, int] = {}
+    done: set = set()
+    for r in (json.loads(l) for l in open(out, encoding="utf-8") if l.strip()):
+        f = r["file"]
+        if r.get("ok") or r.get("fatal"):
+            done.add(f)
+            strikes[f] = 0
+        elif STRIKE_MARKER in (r.get("error") or ""):
+            strikes[f] = strikes.get(f, 0) + 1
+            if strikes[f] >= STRIKE_LIMIT:
+                done.add(f)
+    return done
 
 
 def analyse_one(path: str, cloud) -> Dict:
     t = time.time()
+    mm = magic_mismatch(path)
+    if mm:
+        return {"file": path, "ok": False, "fatal": True, "error": f"Fatal: {mm}", "secs": round(time.time() - t, 1)}
     try:
         r = cloud.analyze(Path(path).read_bytes(), Path(path).name)
         return {"file": path, "ok": True, "document_type": r.document_type, "type_confidence": r.type_confidence,
                 "type_reasoning": r.type_reasoning, "fields": r.fields, "pages": len(r.page_texts), "credits": r.credits,
                 "errors": r.errors, "secs": round(time.time() - t, 1)}
     except Exception as e:  # noqa: BLE001 - one bad file must never stop a bulk run; it is recorded and retried next run
-        return {"file": path, "ok": False, "error": f"{type(e).__name__}: {e}"[:300], "secs": round(time.time() - t, 1)}
+        msg = f"{type(e).__name__}: {e}"[:300]
+        fatal = any(m in msg for m in GATEWAY_FATAL_MARKERS)
+        row = {"file": path, "ok": False, "error": msg, "secs": round(time.time() - t, 1)}
+        if fatal:
+            row["fatal"] = True
+        return row
 
 
 def run(files: List[str], out: str, cloud, workers: int = 3, max_files: int = 50, log: Callable[[str], None] = print,

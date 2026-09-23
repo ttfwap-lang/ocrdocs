@@ -5,8 +5,8 @@ catalogue) both take that id as their input, so the file is uploaded and parsed 
 field dicts the local Qwen merge produces, so the worker, the question flags, the agent and the server treat them alike,
 and reconcile_fields() turns agreement between the two sources into confidence and disagreement into a flag.
 
-Requires OCRDOCS_LLAMAPARSE=full plus LLAMA_CLOUD_API_KEY. See ocr_llamaparse.py for the data warning: pages leave
-Australia (LlamaCloud has North America and Europe only). Every job is submitted with disable_cache and deleted after.
+Requires OCRDOCS_LLAMAPARSE=full plus LLAMA_CLOUD_API_KEY. Gateways in Australia, Europe, and USA
+are greenlighted as fine; Africa gateway is banned. Every job is submitted with disable_cache and deleted after.
 """
 from __future__ import annotations
 
@@ -190,7 +190,8 @@ class LlamaCloud:
             if state == ok:
                 return data
             if state in ("FAILED", "CANCELLED"):
-                raise lp.LlamaParseUnavailable(f"{path.split('/')[3]} job {state.lower()}: {data.get('error_message')}")
+                detail = (data.get("job") or {}).get("error_message") or data.get("error_message")
+                raise lp.LlamaParseUnavailable(f"{path.split('/')[3]} job {state.lower()}: {detail}")
             if self.c.clock() > deadline:
                 raise lp.LlamaParseUnavailable(f"{path.split('/')[3]} job still {state} after {lp.JOB_TIMEOUT_SECONDS:.0f}s")
             self.c.sleep(lp.POLL_SECONDS)
@@ -205,11 +206,13 @@ class LlamaCloud:
         ext = Path(filename).suffix.lower()
         if ext not in UPLOAD_EXTENSIONS:
             raise lp.LlamaParseUnavailable(f"{ext or 'this'} files are not sent to LlamaParse")
-        if lp.mode() != "full" and self.c._key is None:
-            raise lp.LlamaParseUnavailable("OCRDOCS_LLAMAPARSE is not 'full'")
+        if lp.is_africa_region(self.c.region):
+            raise lp.LlamaParseUnavailable(f"Gateway region '{self.c.region}' is banned (Africa is banned)")
         if self.c.region not in lp.REGIONS or self.c.tier not in lp.TIERS:
             raise lp.LlamaParseUnavailable("invalid LlamaParse region or tier")
-        lp.base_url(self.c.region)  # validates a configured Australian endpoint before anything is uploaded
+        lp.base_url(self.c.region)  # validates gateway is greenlighted (Australia, Europe, USA) and not banned (Africa)
+        if lp.mode() != "full" and self.c._key is None:
+            raise lp.LlamaParseUnavailable("OCRDOCS_LLAMAPARSE is not 'full'")
         with self.c._lock:
             if self.c.calls >= self.c.max_calls:
                 raise lp.LlamaParseUnavailable(f"call budget of {self.c.max_calls} reached for this worker")
