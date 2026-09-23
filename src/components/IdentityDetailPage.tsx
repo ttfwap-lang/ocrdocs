@@ -10,8 +10,8 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Download, User, Calendar, FileStack, CheckCircle2, Clock, XCircle, Images, ExternalLink } from 'lucide-react';
-import type { IdentityDetail, IdentityDocumentDetail, IdentityPhoto, LocalJob } from '../types';
+import { ArrowLeft, Download, User, Calendar, FileStack, CheckCircle2, Clock, XCircle, Images, ExternalLink, ShieldCheck, FileText } from 'lucide-react';
+import type { IdentityDetail, IdentityDocumentDetail, IdentityPhoto, KeyIdentifier, LocalJob } from '../types';
 import { DocumentCard } from './identity/DocumentCard';
 import { FaceThumb } from './identity/FaceThumb';
 
@@ -21,6 +21,82 @@ interface IdentityDetailPageProps {
   selection: DetailSelection;
   onBack: () => void;
 }
+
+/** Badge + colour for a key identifier's verification tier. */
+function TierBadge({ identifier }: { identifier: KeyIdentifier }) {
+  if (identifier.tier === 'triple_checked') {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider text-matrix-400 bg-matrix-950/60 border border-matrix-500/40 rounded-full"
+        title={identifier.explanation}
+      >
+        <ShieldCheck className="w-3 h-3" />
+        Triple-checked
+      </span>
+    );
+  }
+  if (identifier.tier === 'single_source') {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 rounded-full"
+        title={identifier.explanation}
+      >
+        <FileText className="w-3 h-3" />
+        Verified · 1 source
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider text-amber-300 bg-amber-950/40 border border-amber-500/30 rounded-full"
+      title={identifier.explanation}
+    >
+      <XCircle className="w-3 h-3" />
+      Format check failed
+    </span>
+  );
+}
+
+/**
+ * A promoted key identifier: passport or driver's licence. The value is rendered large
+ * because these are the details a reviewer looks up first, and every value is traceable
+ * back to the exact source file(s) it was read from.
+ */
+const KeyIdentifierPanel: React.FC<{ identifier: KeyIdentifier }> = ({ identifier }) => {  return (
+    <div className="neon-card rounded-xl p-5">
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <h3 className="text-[11px] font-mono font-bold uppercase tracking-widest text-slate-300">{identifier.label}</h3>
+        <TierBadge identifier={identifier} />
+      </div>
+      <div className="font-mono font-bold text-2xl sm:text-3xl tracking-wider text-matrix-300 text-glow-green break-all">{identifier.value}</div>
+      <div className="text-[10px] font-mono text-slate-500 mt-1">{identifier.explanation}</div>
+      {identifier.sources.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-white/5">
+          <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500 mb-1.5">
+            Source{identifier.sources.length === 1 ? '' : 's'} ({identifier.sourceCount})
+          </div>
+          <ul className="space-y-1">
+            {identifier.sources.map((s) => (
+              <li key={s.documentId} className="text-[11px] font-mono">
+                <a
+                  href={`/api/documents/${s.documentId}/file`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200 transition-colors hover:underline underline-offset-2"
+                  title="Open the exact source file this value came from"
+                >
+                  <FileText className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{s.filename}</span>
+                  <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
 
 function HeadPhotoGrid({ photos }: { photos: IdentityPhoto[] }) {
   if (photos.length === 0) {
@@ -160,65 +236,119 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
 
   if (!identity) return null;
 
+  const keyIds = identity.keyIdentifiers ?? [];
+  const passport = keyIds.filter((k) => k.kind === 'passport');
+  const licence = keyIds.filter((k) => k.kind === 'licence');
+  const score = identity.creditScore ?? null;
+
   return (
     <div className="space-y-6">
       <BackButton onBack={onBack} />
 
+      {/* ---- The three real headings: Name, Date of Birth, Credit Score ---- */}
       <div className="neon-card rounded-xl p-6 relative overflow-hidden">
         <div className="absolute inset-0 crt-scanlines" />
-        <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <FaceThumb url={identity.thumbnailUrl} name={identity.fullName} size={96} rounded={false} className="hidden sm:flex" />
-            <div>
-              <div className="flex items-center gap-2 text-matrix-400 mb-1">
-                <User className="w-5 h-5" />
-                <h1 className="glitch-heading text-2xl sm:text-3xl font-bold tracking-wide uppercase">{identity.fullName}</h1>
+        <div className="relative">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+            {/* Name */}
+            <div className="flex items-start gap-4 min-w-0">
+              <FaceThumb url={identity.thumbnailUrl} name={identity.fullName} size={96} rounded={false} className="hidden sm:flex" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-matrix-400 mb-1">
+                  <User className="w-5 h-5" />
+                  <h1 className="glitch-heading text-2xl sm:text-3xl font-bold tracking-wide uppercase">{identity.fullName}</h1>
+                </div>
+                {/* Date of Birth */}
+                <div className="mt-3">
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500 mb-1">
+                    <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                    Date of Birth
+                  </div>
+                  <div className="font-mono font-bold text-xl text-cyan-300">{identity.dob}</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-slate-500 mt-3">
+                  <span className="flex items-center gap-1.5">
+                    <FileStack className="w-3 h-3 text-matrix-400" />
+                    {identity.documentCount} document{identity.documentCount === 1 ? '' : 's'}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-matrix-400">
+                    <CheckCircle2 className="w-3 h-3" />
+                    {identity.extractedCount} extracted
+                  </span>
+                  {identity.pendingCount > 0 && (
+                    <span className="flex items-center gap-1.5 text-amber-300">
+                      <Clock className="w-3 h-3" />
+                      {identity.pendingCount} pending
+                    </span>
+                  )}
+                  {identity.failedCount > 0 && (
+                    <span className="flex items-center gap-1.5 text-rose-400">
+                      <XCircle className="w-3 h-3" />
+                      {identity.failedCount} failed
+                    </span>
+                  )}
+                  {identity.photoCount > 0 && (
+                    <a href="#head-photos" className="flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200 transition-colors underline underline-offset-2">
+                      <Images className="w-3 h-3" />
+                      {identity.photoCount} photo{identity.photoCount === 1 ? '' : 's'}
+                    </a>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-slate-400 mt-2">
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                  DOB {identity.dob}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <FileStack className="w-3.5 h-3.5 text-matrix-400" />
-                  {identity.documentCount} document{identity.documentCount === 1 ? '' : 's'}
-                </span>
-                <span className="flex items-center gap-1.5 text-matrix-400">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  {identity.extractedCount} extracted
-                </span>
-                {identity.pendingCount > 0 && (
-                  <span className="flex items-center gap-1.5 text-amber-300">
-                    <Clock className="w-3.5 h-3.5" />
-                    {identity.pendingCount} pending
-                  </span>
-                )}
-                {identity.failedCount > 0 && (
-                  <span className="flex items-center gap-1.5 text-rose-400">
-                    <XCircle className="w-3.5 h-3.5" />
-                    {identity.failedCount} failed
-                  </span>
-                )}
-                {identity.photoCount > 0 && (
+            </div>
+
+            {/* Credit Score */}
+            <div className="shrink-0 lg:text-right">
+              <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500 mb-1 lg:justify-end">
+                Credit Score
+              </div>
+              {score ? (
+                <>
+                  <div className="font-mono font-bold text-4xl text-matrix-300 text-glow-green">{score.value}</div>
                   <a
-                    href="#head-photos"
-                    className="flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200 transition-colors underline decoration-cyan-500/40 underline-offset-2"
+                    href={`/api/documents/${score.documentId}/file`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 mt-1.5 text-[10px] font-mono text-cyan-300 hover:text-cyan-200 transition-colors hover:underline underline-offset-2"
+                    title="Open the credit report this score was read from"
                   >
-                    <Images className="w-3.5 h-3.5" />
-                    {identity.photoCount} head photo{identity.photoCount === 1 ? '' : 's'}
+                    <FileText className="w-3 h-3 shrink-0" />
+                    <span className="truncate max-w-[220px]">{score.filename}</span>
+                    <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-70" />
                   </a>
-                )}
-              </div>
+                </>
+              ) : (
+                <div className="font-mono text-sm text-slate-600 py-3">No credit report on file</div>
+              )}
             </div>
           </div>
 
-          <a
-            href={`/api/identities/${identity.identityId}/export.zip`}
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-mono font-bold uppercase tracking-wider text-black bg-matrix-500 hover:bg-matrix-400 rounded-lg shadow-[0_0_18px_-4px_rgba(0,255,65,0.7)] transition-colors shrink-0"
-          >
-            <Download className="w-4 h-4" />
-            Export All (ZIP)
-          </a>
+          {/* ---- Key identifiers: large sub-headings under the three real ones ---- */}
+          {(passport.length > 0 || licence.length > 0) && (
+            <div className="mt-6 pt-5 border-t border-white/5">
+              <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500 mb-3">
+                Key Identifiers // trace-sourced &amp; triple-check verified
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {passport.map((k) => (
+                  <KeyIdentifierPanel key={`passport-${k.canonical}`} identifier={k} />
+                ))}
+                {licence.map((k) => (
+                  <KeyIdentifierPanel key={`licence-${k.canonical}`} identifier={k} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-5 pt-4 border-t border-white/5 flex justify-end">
+            <a
+              href={`/api/identities/${identity.identityId}/export.zip`}
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-mono font-bold uppercase tracking-wider text-black bg-matrix-500 hover:bg-matrix-400 rounded-lg shadow-[0_0_18px_-4px_rgba(0,255,65,0.7)] transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              Export All (ZIP)
+            </a>
+          </div>
         </div>
       </div>
 

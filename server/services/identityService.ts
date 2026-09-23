@@ -18,6 +18,7 @@ import type { DocumentRow } from '../db/contracts';
 import type { HeadshotService, IdentityPhoto } from './headshotService';
 import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../../src/data/bankFields';
 import { canonicalDob } from './dobKey';
+import { canonicaliseIdentifier, tierExplanation, verificationTier } from './identifierKey';
 
 /**
  * The `fields` table stores each row's human-readable display name (e.g.
@@ -104,11 +105,49 @@ export interface IdentityDocumentDetail {
   extraction: ReturnType<ExtractionRepo['getFullResult']> | null;
 }
 
+/**
+ * A key identifier (passport / driver's licence) for one person, with the evidence a
+ * reviewer needs to trust it: the verification tier, how many independent source
+ * documents produced the same value, and those exact files.
+ */
+export interface KeyIdentifier {
+  kind: 'passport' | 'licence';
+  /** Display label, e.g. "Passport Number". */
+  label: string;
+  /** The best value found, as extracted (may carry a country prefix or spaces). */
+  value: string;
+  /** `value` reduced to letters+digits, which is what the format check compares. */
+  canonical: string;
+  tier: 'triple_checked' | 'single_source' | 'format_fail';
+  /** What the tier means, ready to show. */
+  explanation: string;
+  /** How many distinct source documents produced this same canonical value. */
+  sourceCount: number;
+  /** The exact source files, so the value can be traced back and eyeballed. */
+  sources: Array<{ documentId: string; filename: string }>;
+}
+
+/** The credit score, which the owner treats as one of the three real headings. */
+export interface CreditScoreSummary {
+  value: string;
+  /** Source file the score was read from. */
+  documentId: string;
+  filename: string;
+}
+
 export interface IdentityDetail extends IdentitySummary {
   documents: IdentityDocumentDetail[];
   fieldBreakdown: IdentityFieldEntry[];
   /** Every head photo extracted across this person's documents (verified first). */
   photos: IdentityPhoto[];
+  /**
+   * Passport and driver's-licence values with their verification tier, corroboration
+   * count and exact source files. These are the key details the identity page promotes;
+   * every other field stays in `fieldBreakdown`.
+   */
+  keyIdentifiers: KeyIdentifier[];
+  /** The credit score, if any document for this person carried one. */
+  creditScore: CreditScoreSummary | null;
 }
 
 function normalizeText(value: string): string {
@@ -156,6 +195,104 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
     const row = fields.find((f) => f.field_name === name && (f.corrected_value ?? f.field_value));
     const value = row ? (row.corrected_value ?? row.field_value ?? '') : '';
     return value.trim();
+  }
+
+  // Display names of the identifier fields, resolved from the catalogue like the
+  // grouping fields above, so a rename in bankFields.ts cannot silently break this.
+  const PASSPORT_FIELD = displayNameFor('passport_details');
+  const LICENCE_FIELD = displayNameFor('drivers_licence');
+  const CREDIT_SCORE_FIELD = displayNameFor('credit_score');
+
+  /**
+   * Gather the passport and licence values across every document in a group and attach
+   * the evidence.
+   *
+   * Corroboration is computed LIVE from the documents that actually produced the value,
+   * rather than stored, so it can never drift out of date: if two documents carry
+   * `EH9692611` the count is 2, and the reviewer sees both filenames. A value seen in a
+   * single document is `single_source` (still qualifying under the owner's rule) and a
+   * value that fails the Australian shape is reported as `format_fail` rather than being
+   * hidden, so a masked or mis-OCR'd number stays visible for correction.
+   */
+  function keyIdentifiersFor(documents: IdentityDocumentDetail[]): KeyIdentifier[] {
+    const byKind: Record<'passport' | 'licence', {
+      field: string;
+      label: string;
+      /** canonical -> { best value, docs that produced it } */
+      seen: Map<string, { value: string; docs: Map<string, IdentityDocumentDetail> }>;
+    }> = {
+      passport: { field: PASSPORT_FIELD, label: 'Passport Number', seen: new Map() },
+      licence: { field: LICENCE_FIELD, label: "Driver's Licence Number", seen: new Map() },
+    };
+
+    for (const detail of documents) {
+      if (!detail.extraction) continue;
+      for (const kind of ['passport', 'licence'] as const) {
+        const bucket = byKind[kind];
+        for (const f of detail.extraction.fields) {
+          if (f.name !== bucket.field) continue;
+          const effective = (f.correctedValue ?? f.value ?? '').trim();
+          if (!effective) continue;
+          const canonical = canonicaliseIdentifier(effective);
+          if (!canonical) continue;
+          const existing = bucket.seen.get(canonical);
+          if (existing) {
+            existing.docs.set(detail.document.id, detail);
+          } else {
+            bucket.seen.set(canonical, {
+              value: effective,
+              docs: new Map([[detail.document.id, detail]]),
+            });
+          }
+        }
+      }
+    }
+
+    const out: KeyIdentifier[] = [];
+    for (const kind of ['passport', 'licence'] as const) {
+      const bucket = byKind[kind];
+      if (bucket.seen.size === 0) continue;
+      // Prefer the value with the most independent sources; tie-break on first seen so
+      // the result is stable across requests.
+      const ranked = Array.from(bucket.seen.entries()).sort(
+        (a, b) => b[1].docs.size - a[1].docs.size || a[0].localeCompare(b[0]),
+      );
+      for (const [canonical, entry] of ranked) {
+        const sources = Array.from(entry.docs.values()).map((d) => ({
+          documentId: d.document.id,
+          filename: d.document.filename,
+        }));
+        // An entry only exists here when a value was found, so a format failure is the
+        // only non-qualifying outcome; narrow away the 'absent' tier the helper also models.
+        const tier = verificationTier(kind, canonical, sources.length);
+        const reportedTier = tier === 'absent' ? 'format_fail' : tier;
+        out.push({
+          kind,
+          label: bucket.label,
+          value: entry.value,
+          canonical,
+          tier: reportedTier,
+          explanation: tierExplanation(reportedTier, sources.length),
+          sourceCount: sources.length,
+          sources,
+        });
+      }
+    }
+    // Passport first, then licence; within a kind, strongest evidence first (already ranked).
+    return out.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'passport' ? -1 : 1));
+  }
+
+  /** The person's credit score, with the exact document it was read from. */
+  function creditScoreFor(documents: IdentityDocumentDetail[]): CreditScoreSummary | null {
+    for (const detail of documents) {
+      if (!detail.extraction) continue;
+      const row = detail.extraction.fields.find((f) => f.name === CREDIT_SCORE_FIELD);
+      const effective = (row?.correctedValue ?? row?.value ?? '').trim();
+      if (effective) {
+        return { value: effective, documentId: detail.document.id, filename: detail.document.filename };
+      }
+    }
+    return null;
   }
 
   function buildGroups(): { groups: Map<string, IdentityGroup>; unassigned: UnassignedDocument[] } {
@@ -289,6 +426,8 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
       documents,
       fieldBreakdown: Array.from(bestByField.values()).sort(byCatalogueOrder),
       photos: headshotService.photosForIdentity(identityId),
+      keyIdentifiers: keyIdentifiersFor(documents),
+      creditScore: creditScoreFor(documents),
     };
   }
 

@@ -757,6 +757,102 @@ app.get("/api/export/consolidated.csv", (_req, res) => {
 });
 
 /**
+ * Export a reviewer-chosen set of identities as CSV: ONE ROW PER IDENTITY.
+ *
+ * This is the "add to cart" export. The identities list lets a reviewer tick the people
+ * they care about, and this endpoint turns that selection into a single row each, led by
+ * the three real headings (name, DOB, credit score) and the trace-sourced key identifiers
+ * (passport / driver's licence) with their verification tier, then the remaining extracted
+ * fields.
+ *
+ * `ids` is a comma-separated list of identityIds. Unknown ids are ignored rather than
+ * erroring, so a stale selection cannot fail the whole export. With no `ids`, it exports
+ * every identity, matching the "Export All" behaviour.
+ */
+app.get("/api/export/identities.csv", (req: express.Request<{ ids?: string }>, res) => {
+  const all = identityService.listIdentities();
+  // Express types a query param as string | ParsedQs | array; only strings (or an array
+  // of them) are meaningful here.
+  const rawIds = req.query.ids;
+  const requested = (Array.isArray(rawIds) ? rawIds.join(",") : typeof rawIds === "string" ? rawIds : "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const wanted = new Set(requested);
+  const selected = wanted.size === 0 ? all : all.filter((i) => wanted.has(i.identityId));
+
+  // Lead with the promoted headings and key identifiers, then every other field name
+  // that actually appears, so the export reflects real data.
+  const detailCache = new Map<string, ReturnType<typeof identityService.getIdentityDetail>>();
+  for (const identity of selected) {
+    detailCache.set(identity.identityId, identityService.getIdentityDetail(identity.identityId));
+  }
+
+  const leading = [
+    "identity_id",
+    "full_name",
+    "family_name",
+    "given_names",
+    "dob",
+    "credit_score",
+    "credit_score_source",
+    "passport_number",
+    "passport_tier",
+    "passport_sources",
+    "licence_number",
+    "licence_tier",
+    "licence_sources",
+    "document_count",
+  ];
+
+  const otherFieldNames: string[] = [];
+  for (const identity of selected) {
+    const detail = detailCache.get(identity.identityId);
+    if (!detail) continue;
+    for (const entry of detail.fieldBreakdown) {
+      if (!otherFieldNames.includes(entry.name)) otherFieldNames.push(entry.name);
+    }
+  }
+
+  const header = [...leading, ...otherFieldNames];
+  const lines = [header.map(csvEscape).join(",")];
+
+  for (const identity of selected) {
+    const detail = detailCache.get(identity.identityId);
+    const identifiers = detail?.keyIdentifiers ?? [];
+    const passport = identifiers.find((k) => k.kind === "passport");
+    const licence = identifiers.find((k) => k.kind === "licence");
+    const byName = new Map((detail?.fieldBreakdown ?? []).map((f) => [f.name, f.value]));
+
+    const row: unknown[] = [
+      identity.identityId,
+      identity.fullName,
+      identity.familyName,
+      identity.givenNames,
+      identity.dob,
+      detail?.creditScore?.value ?? "",
+      detail?.creditScore?.filename ?? "",
+      passport?.value ?? "",
+      passport?.tier ?? "",
+      (passport?.sources ?? []).map((s) => s.filename).join(" | "),
+      licence?.value ?? "",
+      licence?.tier ?? "",
+      (licence?.sources ?? []).map((s) => s.filename).join(" | "),
+      identity.documentCount,
+      ...otherFieldNames.map((name) => byName.get(name) ?? ""),
+    ];
+    lines.push(row.map(csvEscape).join(","));
+  }
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="ocrdocs_identities_${selected.length}_${Date.now()}.csv"`,
+  );
+  return res.send(lines.join("\n"));
+});
+
+/**
  * Queue an existing document for another OCR pass. Useful after the worker's
  * engines change, or to retry a document that failed. Each run produces a new
  * extraction version; prior extractions and any approvals on them are left

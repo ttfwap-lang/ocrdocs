@@ -1,12 +1,12 @@
 {
   "source": "generated from src/data/bankFields.ts and src/data/fields/* via esbuild bundling",
-  "generatedAt": "2026-09-16T04:53:27.563Z",
-  "total": 99,
-  "applicationFields": 90,
+  "generatedAt": "2026-09-23T21:09:29.195Z",
+  "total": 100,
+  "applicationFields": 91,
   "coreIdentifiers": 9,
   "criticalIdentifiers": 9,
   "categoryCounts": {
-    "identity": 22,
+    "identity": 23,
     "residential": 13,
     "contact": 9,
     "employment": 14,
@@ -14,15 +14,6 @@
     "expenses": 8,
     "assets_liabilities": 10,
     "facility": 11
-  },
-  "dataTypeCounts": {
-    "text": 45,
-    "date": 4,
-    "number": 1,
-    "phone": 5,
-    "email": 1,
-    "identifier": 12,
-    "currency": 31
   },
   "fields": [
     {
@@ -32,16 +23,7 @@
       "label": "title_salutation",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Title",
-        "Salutation",
-        "Prefix",
-        "Mr.",
-        "Honorific"
-      ],
-      "sampleExtractedValue": "Mr.",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 2,
@@ -50,15 +32,7 @@
       "label": "given_names",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Given Name(s)",
-        "First Name",
-        "Forename",
-        "1st Name"
-      ],
-      "sampleExtractedValue": "Oliver Benjamin",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 3,
@@ -67,15 +41,7 @@
       "label": "middle_name",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Middle Name",
-        "Other Name",
-        "Initials",
-        "Mid Name"
-      ],
-      "sampleExtractedValue": "Benjamin",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 4,
@@ -84,15 +50,7 @@
       "label": "family_name",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Family Name",
-        "Surname",
-        "Last Name",
-        "Maiden Name"
-      ],
-      "sampleExtractedValue": "Fitzgerald",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 5,
@@ -101,15 +59,7 @@
       "label": "date_of_birth",
       "category": "identity",
       "targetDataType": "date",
-      "criticality": "standard",
-      "exampleLabels": [
-        "DOB",
-        "Date of Birth",
-        "Birthdate",
-        "Born On"
-      ],
-      "sampleExtractedValue": "14/08/1988",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 6,
@@ -118,15 +68,7 @@
       "label": "residency_status",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Residency Status",
-        "Citizenship",
-        "PR Status",
-        "Visa Holder"
-      ],
-      "sampleExtractedValue": "Australian Citizen",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 7,
@@ -135,15 +77,7 @@
       "label": "marital_status",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Marital Status",
-        "Relationship Status",
-        "De Facto",
-        "Married"
-      ],
-      "sampleExtractedValue": "De Facto",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 8,
@@ -152,15 +86,7 @@
       "label": "dependants_count",
       "category": "identity",
       "targetDataType": "number",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Dependants",
-        "Number of Dependents",
-        "Children",
-        "Deps"
-      ],
-      "sampleExtractedValue": "2",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 9,
@@ -169,15 +95,7 @@
       "label": "residential_address",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Residential Address",
-        "Street Address",
-        "Addr Line 1",
-        "Suburb/State"
-      ],
-      "sampleExtractedValue": "42 Collins Street, Melbourne VIC 3000",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 10,
@@ -186,15 +104,7 @@
       "label": "address_tenure",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Time at Address",
-        "Years at Address",
-        "Tenure",
-        "Address Yrs"
-      ],
-      "sampleExtractedValue": "4 Years 6 Months",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 11,
@@ -203,15 +113,7 @@
       "label": "previous_address",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Previous Address",
-        "Prior Address",
-        "Former Residence",
-        "Prev Address"
-      ],
-      "sampleExtractedValue": "18 Barangaroo Ave, Sydney NSW 2000",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 12,
@@ -220,15 +122,7 @@
       "label": "housing_situation",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Housing Status",
-        "Accommodation",
-        "Renting",
-        "Owned Outright"
-      ],
-      "sampleExtractedValue": "Mortgaged",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 13,
@@ -237,15 +131,7 @@
       "label": "mobile_number",
       "category": "contact",
       "targetDataType": "phone",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Mobile",
-        "Contact Number",
-        "Telephone",
-        "Mob No"
-      ],
-      "sampleExtractedValue": "0412 987 654",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 14,
@@ -254,15 +140,7 @@
       "label": "email_address",
       "category": "contact",
       "targetDataType": "email",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Email",
-        "E-mail Address",
-        "Electronic Mail",
-        "Contact Email"
-      ],
-      "sampleExtractedValue": "oliver.fitzgerald@apexfinance.com.au",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 15,
@@ -271,15 +149,7 @@
       "label": "drivers_licence",
       "category": "identity",
       "targetDataType": "identifier",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Driver Licence No",
-        "DL Number",
-        "Card No",
-        "Drivers License"
-      ],
-      "sampleExtractedValue": "83920194 VIC",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 16,
@@ -288,15 +158,7 @@
       "label": "passport_details",
       "category": "identity",
       "targetDataType": "identifier",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Passport Number",
-        "Travel Document",
-        "Passpt No",
-        "Document Expiry"
-      ],
-      "sampleExtractedValue": "PA9283710",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 17,
@@ -305,15 +167,7 @@
       "label": "employment_status",
       "category": "employment",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Employment Status",
-        "Job Type",
-        "Full-time",
-        "Emp Status"
-      ],
-      "sampleExtractedValue": "Permanent Full-Time",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 18,
@@ -322,15 +176,7 @@
       "label": "occupation_industry",
       "category": "employment",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Occupation",
-        "Job Title",
-        "Industry",
-        "Profession"
-      ],
-      "sampleExtractedValue": "Senior Cloud Engineer / Technology",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 19,
@@ -339,15 +185,7 @@
       "label": "employer_details",
       "category": "employment",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Employer Name",
-        "Company Name",
-        "Workplace",
-        "Business Name"
-      ],
-      "sampleExtractedValue": "Atlassian Australia Pty Ltd (ABN 53 102 443 916)",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 20,
@@ -356,15 +194,7 @@
       "label": "employment_tenure",
       "category": "employment",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Job Tenure",
-        "Years Employed",
-        "Employment Duration",
-        "Emp Yrs"
-      ],
-      "sampleExtractedValue": "3 Years 2 Months",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 21,
@@ -373,15 +203,7 @@
       "label": "gross_annual_income",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Gross Annual Income",
-        "Base Pay (p.a.)",
-        "Annual Package",
-        "Before Tax"
-      ],
-      "sampleExtractedValue": "$165,000.00 p.a.",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 22,
@@ -390,15 +212,7 @@
       "label": "net_monthly_income",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Net Monthly Income",
-        "Take-Home Pay",
-        "After Tax Pay",
-        "Net Pay"
-      ],
-      "sampleExtractedValue": "$9,820.00 / month",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 23,
@@ -407,15 +221,7 @@
       "label": "additional_income",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Bonus / Commission",
-        "Rental Income",
-        "Variable Income",
-        "Allowance"
-      ],
-      "sampleExtractedValue": "$18,500.00 (Annual Bonus)",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 24,
@@ -424,15 +230,7 @@
       "label": "monthly_living_expenses",
       "category": "expenses",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Living Expenses",
-        "Monthly Spend",
-        "Groceries & Utilities",
-        "Living Cost"
-      ],
-      "sampleExtractedValue": "$3,400.00 / month",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 25,
@@ -441,15 +239,7 @@
       "label": "asset_holdings",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Total Assets",
-        "Savings Balance",
-        "Superannuation",
-        "Property Value"
-      ],
-      "sampleExtractedValue": "$820,000.00 (Property + Super + Savings)",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 26,
@@ -458,14 +248,7 @@
       "label": "liability_mortgages",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Home Loan Balance",
-        "Mortgage Repayment",
-        "Housing Loan Debt"
-      ],
-      "sampleExtractedValue": "$485,000.00 ($2,780/mo)",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 27,
@@ -474,15 +257,7 @@
       "label": "liability_credit_cards",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Credit Card Limit",
-        "CC Balance",
-        "Store Cards",
-        "Revolving Credit"
-      ],
-      "sampleExtractedValue": "$12,000.00 (Limit across 2 cards)",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 28,
@@ -491,15 +266,7 @@
       "label": "liability_other_loans",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Personal Loan",
-        "Car Loan",
-        "HECS / HELP Debt",
-        "BNPL / Afterpay"
-      ],
-      "sampleExtractedValue": "$14,200.00 (Car Loan: $390/mo)",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 29,
@@ -508,15 +275,7 @@
       "label": "credit_limit_requested",
       "category": "facility",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Requested Credit Limit",
-        "Limit Requested",
-        "Req Limit",
-        "Facility Limit"
-      ],
-      "sampleExtractedValue": "$25,000.00",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 30,
@@ -525,15 +284,7 @@
       "label": "balance_transfer",
       "category": "facility",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Balance Transfer Amount",
-        "Biller Code",
-        "BT Facility",
-        "Transfer Balance"
-      ],
-      "sampleExtractedValue": "$6,500.00 (Biller: 84920)",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 31,
@@ -542,16 +293,7 @@
       "label": "preferred_name",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Preferred Name",
-        "Known As",
-        "Alias",
-        "Pref Name",
-        "Chosen Name"
-      ],
-      "sampleExtractedValue": "Ollie",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 32,
@@ -560,15 +302,7 @@
       "label": "previous_name",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Previous Name",
-        "Prior Name",
-        "Maiden Name",
-        "Former Name"
-      ],
-      "sampleExtractedValue": "Oliver Vance",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 33,
@@ -577,15 +311,7 @@
       "label": "gender",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Gender",
-        "Sex",
-        "Gender Identity",
-        "Biological Sex"
-      ],
-      "sampleExtractedValue": "Male",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 34,
@@ -594,15 +320,7 @@
       "label": "country_of_birth",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Country of Birth",
-        "Birth Country",
-        "Place of Birth",
-        "COB"
-      ],
-      "sampleExtractedValue": "Australia",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 35,
@@ -611,15 +329,7 @@
       "label": "visa_subclass",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Visa Subclass",
-        "Subclass 482",
-        "Visa Type",
-        "VEVO Status"
-      ],
-      "sampleExtractedValue": "Subclass 186",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 36,
@@ -628,15 +338,7 @@
       "label": "visa_expiry",
       "category": "identity",
       "targetDataType": "date",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Visa Expiry",
-        "Valid To",
-        "Permit Expiry Date",
-        "Visa End Date"
-      ],
-      "sampleExtractedValue": "28/02/2028",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 37,
@@ -645,15 +347,7 @@
       "label": "licence_state",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Licence State",
-        "Issuing State",
-        "DL State",
-        "State of Issue"
-      ],
-      "sampleExtractedValue": "VIC",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 38,
@@ -662,15 +356,7 @@
       "label": "licence_expiry",
       "category": "identity",
       "targetDataType": "date",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Licence Expiry",
-        "DL Expiry Date",
-        "Licence Valid To",
-        "Card Expiry"
-      ],
-      "sampleExtractedValue": "19/11/2027",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 39,
@@ -679,15 +365,7 @@
       "label": "joint_applicant",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Joint Applicant",
-        "Applicant 2",
-        "Co-Borrower",
-        "Co-Applicant"
-      ],
-      "sampleExtractedValue": "Yes - Secondary Applicant",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 40,
@@ -696,15 +374,7 @@
       "label": "applicant_role",
       "category": "identity",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Applicant Role",
-        "Borrower Type",
-        "Primary Borrower",
-        "Guarantor"
-      ],
-      "sampleExtractedValue": "Primary Borrower",
-      "sourcePath": "src/data/fields/identityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 41,
@@ -713,15 +383,7 @@
       "label": "postal_address",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Postal Address",
-        "Mailing Address",
-        "PO Box",
-        "Delivery Address"
-      ],
-      "sampleExtractedValue": "PO Box 842, Melbourne VIC 3001",
-      "sourcePath": "src/data/fields/residentialExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 42,
@@ -730,16 +392,7 @@
       "label": "unit_level",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Unit Number",
-        "Apartment",
-        "Suite No",
-        "Level",
-        "Flat"
-      ],
-      "sampleExtractedValue": "Suite 14",
-      "sourcePath": "src/data/fields/residentialExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 43,
@@ -748,15 +401,7 @@
       "label": "street_number",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Street Number",
-        "House Number",
-        "Street No",
-        "Building Number"
-      ],
-      "sampleExtractedValue": "452",
-      "sourcePath": "src/data/fields/residentialExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 44,
@@ -765,15 +410,7 @@
       "label": "street_name_type",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Street Name",
-        "Road Name",
-        "Thoroughfare",
-        "Street Type"
-      ],
-      "sampleExtractedValue": "Flinders Street",
-      "sourcePath": "src/data/fields/residentialExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 45,
@@ -782,15 +419,7 @@
       "label": "suburb_locality",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Suburb",
-        "Locality",
-        "Town/City",
-        "Residential Suburb"
-      ],
-      "sampleExtractedValue": "Melbourne",
-      "sourcePath": "src/data/fields/residentialExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 46,
@@ -799,15 +428,7 @@
       "label": "state_territory",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "State",
-        "Territory",
-        "State/Territory",
-        "Region"
-      ],
-      "sampleExtractedValue": "VIC",
-      "sourcePath": "src/data/fields/residentialExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 47,
@@ -816,15 +437,7 @@
       "label": "previous_address_tenure",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Time at Previous Address",
-        "Previous Tenure",
-        "Prior Address Duration",
-        "Past Residence Yrs"
-      ],
-      "sampleExtractedValue": "2 Years 4 Months",
-      "sourcePath": "src/data/fields/residentialExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 48,
@@ -833,15 +446,7 @@
       "label": "address_verification_doc",
       "category": "residential",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Proof of Address",
-        "Rates Notice",
-        "Utility Bill",
-        "Tenancy Agreement"
-      ],
-      "sampleExtractedValue": "City of Melbourne Council Rates Notice",
-      "sourcePath": "src/data/fields/residentialExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 49,
@@ -850,15 +455,7 @@
       "label": "home_phone",
       "category": "contact",
       "targetDataType": "phone",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Home Phone",
-        "Landline",
-        "Fixed Line",
-        "Home Telephone"
-      ],
-      "sampleExtractedValue": "(03) 9482 1049",
-      "sourcePath": "src/data/fields/contactExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 50,
@@ -867,15 +464,7 @@
       "label": "work_phone",
       "category": "contact",
       "targetDataType": "phone",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Work Phone",
-        "Business Phone",
-        "Office Telephone",
-        "Direct Line"
-      ],
-      "sampleExtractedValue": "(03) 8614 2000",
-      "sourcePath": "src/data/fields/contactExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 51,
@@ -884,15 +473,7 @@
       "label": "preferred_contact_method",
       "category": "contact",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Preferred Contact",
-        "Contact Method",
-        "Communication Preference",
-        "Contact Via"
-      ],
-      "sampleExtractedValue": "Email",
-      "sourcePath": "src/data/fields/contactExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 52,
@@ -901,15 +482,7 @@
       "label": "contact_time",
       "category": "contact",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Best Time to Call",
-        "Contact Time",
-        "Preferred Hours",
-        "Call Window"
-      ],
-      "sampleExtractedValue": "Morning (9am - 12pm)",
-      "sourcePath": "src/data/fields/contactExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 53,
@@ -918,15 +491,7 @@
       "label": "emergency_contact_name",
       "category": "contact",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Emergency Contact",
-        "Next of Kin",
-        "NOK Name",
-        "Nominated Contact"
-      ],
-      "sampleExtractedValue": "Sarah Sterling",
-      "sourcePath": "src/data/fields/contactExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 54,
@@ -935,15 +500,7 @@
       "label": "emergency_phone",
       "category": "contact",
       "targetDataType": "phone",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Emergency Phone",
-        "Next of Kin Mobile",
-        "NOK Phone",
-        "Emergency Number"
-      ],
-      "sampleExtractedValue": "0418 234 567",
-      "sourcePath": "src/data/fields/contactExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 55,
@@ -952,15 +509,7 @@
       "label": "language_interpreter",
       "category": "contact",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Interpreter Required",
-        "Language Spoken",
-        "Preferred Language",
-        "TIS National"
-      ],
-      "sampleExtractedValue": "English (No Interpreter Needed)",
-      "sourcePath": "src/data/fields/contactExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 56,
@@ -969,15 +518,7 @@
       "label": "employer_address",
       "category": "employment",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Employer Address",
-        "Workplace Location",
-        "Company Address",
-        "Office Address"
-      ],
-      "sampleExtractedValue": "Level 29, 341 George Street, Sydney NSW 2000",
-      "sourcePath": "src/data/fields/employmentExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 57,
@@ -986,15 +527,7 @@
       "label": "employer_phone",
       "category": "employment",
       "targetDataType": "phone",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Employer Phone",
-        "Company Telephone",
-        "Workplace Switchboard",
-        "Office Phone"
-      ],
-      "sampleExtractedValue": "(02) 9283 4000",
-      "sourcePath": "src/data/fields/employmentExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 58,
@@ -1003,15 +536,7 @@
       "label": "payroll_contact",
       "category": "employment",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Payroll Contact",
-        "HR Officer",
-        "Human Resources",
-        "Paymaster"
-      ],
-      "sampleExtractedValue": "Jane Caldwell (HR Business Partner)",
-      "sourcePath": "src/data/fields/employmentExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 59,
@@ -1020,15 +545,7 @@
       "label": "employment_start_date",
       "category": "employment",
       "targetDataType": "date",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Start Date",
-        "Commencement Date",
-        "Hire Date",
-        "Date Commenced"
-      ],
-      "sampleExtractedValue": "01/07/2019",
-      "sourcePath": "src/data/fields/employmentExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 60,
@@ -1037,15 +554,7 @@
       "label": "previous_employer",
       "category": "employment",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Previous Employer",
-        "Prior Employer",
-        "Former Company",
-        "Past Workplace"
-      ],
-      "sampleExtractedValue": "Telstra Operations Ltd",
-      "sourcePath": "src/data/fields/employmentExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 61,
@@ -1054,15 +563,7 @@
       "label": "previous_employment_tenure",
       "category": "employment",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Previous Job Tenure",
-        "Prior Employment Duration",
-        "Years at Prior Job",
-        "Past Job Time"
-      ],
-      "sampleExtractedValue": "4 Years 1 Month",
-      "sourcePath": "src/data/fields/employmentExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 62,
@@ -1071,16 +572,7 @@
       "label": "business_structure",
       "category": "employment",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Business Structure",
-        "Entity Type",
-        "Pty Ltd",
-        "Sole Trader",
-        "Partnership"
-      ],
-      "sampleExtractedValue": "Proprietary Limited (Pty Ltd)",
-      "sourcePath": "src/data/fields/employmentExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 63,
@@ -1089,15 +581,7 @@
       "label": "anzsic_code",
       "category": "employment",
       "targetDataType": "identifier",
-      "criticality": "standard",
-      "exampleLabels": [
-        "ANZSIC Code",
-        "Industry Code",
-        "ANZSIC Class",
-        "Industry Classification"
-      ],
-      "sampleExtractedValue": "7000",
-      "sourcePath": "src/data/fields/employmentExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 64,
@@ -1106,15 +590,7 @@
       "label": "income_frequency",
       "category": "income",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Income Frequency",
-        "Pay Frequency",
-        "Pay Cycle",
-        "Salary Frequency"
-      ],
-      "sampleExtractedValue": "Fortnightly",
-      "sourcePath": "src/data/fields/incomeExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 65,
@@ -1123,15 +599,7 @@
       "label": "gross_monthly_income",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Gross Monthly Income",
-        "Monthly Gross",
-        "Base Monthly Pay",
-        "Pre-tax Monthly"
-      ],
-      "sampleExtractedValue": "$13,750.00 / month",
-      "sourcePath": "src/data/fields/incomeExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 66,
@@ -1140,15 +608,7 @@
       "label": "salary_sacrifice",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Salary Sacrifice",
-        "Novated Lease",
-        "Salary Packaging",
-        "Pre-tax Deduction"
-      ],
-      "sampleExtractedValue": "$1,200.00 / month",
-      "sourcePath": "src/data/fields/incomeExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 67,
@@ -1157,15 +617,7 @@
       "label": "overtime_income",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Overtime",
-        "OT Earnings",
-        "Shift Allowance",
-        "Penalty Rates"
-      ],
-      "sampleExtractedValue": "$850.00 / month",
-      "sourcePath": "src/data/fields/incomeExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 68,
@@ -1174,15 +626,7 @@
       "label": "bonus_commission",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Bonus / Commission",
-        "Annual Bonus",
-        "Sales Commission",
-        "Performance Pay"
-      ],
-      "sampleExtractedValue": "$24,000.00 p.a.",
-      "sourcePath": "src/data/fields/incomeExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 69,
@@ -1191,15 +635,7 @@
       "label": "rental_income",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Rental Income",
-        "Gross Rent",
-        "Investment Property Rent",
-        "Lease Income"
-      ],
-      "sampleExtractedValue": "$2,400.00 / month",
-      "sourcePath": "src/data/fields/incomeExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 70,
@@ -1208,15 +644,7 @@
       "label": "investment_income",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Investment Income",
-        "Dividends",
-        "Trust Distribution",
-        "Interest Income"
-      ],
-      "sampleExtractedValue": "$6,800.00 p.a.",
-      "sourcePath": "src/data/fields/incomeExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 71,
@@ -1225,15 +653,7 @@
       "label": "government_benefit",
       "category": "income",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Government Benefit",
-        "Centrelink",
-        "Family Tax Benefit",
-        "FTB"
-      ],
-      "sampleExtractedValue": "$420.00 / fortnight",
-      "sourcePath": "src/data/fields/incomeExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 72,
@@ -1242,15 +662,7 @@
       "label": "income_verification_doc",
       "category": "income",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Payslip",
-        "Notice of Assessment",
-        "PAYG Summary",
-        "Income Statement"
-      ],
-      "sampleExtractedValue": "ATO Notice of Assessment 2021 Financial Year",
-      "sourcePath": "src/data/fields/incomeExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 73,
@@ -1259,15 +671,7 @@
       "label": "rent_board_payment",
       "category": "expenses",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Rent Paid",
-        "Board Paid",
-        "Rental Payment",
-        "Housing Rent"
-      ],
-      "sampleExtractedValue": "$650.00 / week",
-      "sourcePath": "src/data/fields/expenseExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 74,
@@ -1276,15 +680,7 @@
       "label": "utilities_expense",
       "category": "expenses",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Utilities",
-        "Electricity & Gas",
-        "Water Rates",
-        "Internet Bills"
-      ],
-      "sampleExtractedValue": "$380.00 / month",
-      "sourcePath": "src/data/fields/expenseExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 75,
@@ -1293,15 +689,7 @@
       "label": "insurance_expense",
       "category": "expenses",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Insurance Premiums",
-        "Health Insurance",
-        "Home & Contents",
-        "Vehicle Insurance"
-      ],
-      "sampleExtractedValue": "$520.00 / month",
-      "sourcePath": "src/data/fields/expenseExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 76,
@@ -1310,15 +698,7 @@
       "label": "transport_fuel_expense",
       "category": "expenses",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Transport Costs",
-        "Fuel & Petrol",
-        "Vehicle Registration",
-        "Public Transport"
-      ],
-      "sampleExtractedValue": "$340.00 / month",
-      "sourcePath": "src/data/fields/expenseExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 77,
@@ -1327,15 +707,7 @@
       "label": "childcare_education_expense",
       "category": "expenses",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Childcare Fees",
-        "School Fees",
-        "Tuition",
-        "Education Costs"
-      ],
-      "sampleExtractedValue": "$1,150.00 / month",
-      "sourcePath": "src/data/fields/expenseExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 78,
@@ -1344,15 +716,7 @@
       "label": "child_support_paid",
       "category": "expenses",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Child Support Paid",
-        "Spousal Maintenance",
-        "CSA Payment",
-        "Family Maintenance"
-      ],
-      "sampleExtractedValue": "$600.00 / month",
-      "sourcePath": "src/data/fields/expenseExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 79,
@@ -1361,16 +725,7 @@
       "label": "hem_benchmark_expense",
       "category": "expenses",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "HEM Benchmark",
-        "HEM Living Expenses",
-        "HEM Amount",
-        "Household Expenditure Measure",
-        "HEM Baseline"
-      ],
-      "sampleExtractedValue": "$2,850.00 / month",
-      "sourcePath": "src/data/fields/expenseExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 80,
@@ -1379,15 +734,7 @@
       "label": "savings_balance",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Savings Balance",
-        "Offset Account",
-        "Cash at Bank",
-        "Term Deposit"
-      ],
-      "sampleExtractedValue": "$48,500.00",
-      "sourcePath": "src/data/fields/assetLiabilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 81,
@@ -1396,15 +743,7 @@
       "label": "superannuation_balance",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Superannuation Balance",
-        "Super Fund",
-        "SMSF Balance",
-        "Retirement Savings"
-      ],
-      "sampleExtractedValue": "$184,200.00",
-      "sourcePath": "src/data/fields/assetLiabilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 82,
@@ -1413,15 +752,7 @@
       "label": "vehicle_value",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Vehicle Value",
-        "Car Value",
-        "Motor Vehicle Asset",
-        "Redbook Value"
-      ],
-      "sampleExtractedValue": "$32,000.00",
-      "sourcePath": "src/data/fields/assetLiabilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 83,
@@ -1430,15 +761,7 @@
       "label": "investment_property_value",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Investment Property Value",
-        "Real Estate Portfolio",
-        "Rental Property Value",
-        "Property Valuation"
-      ],
-      "sampleExtractedValue": "$680,000.00",
-      "sourcePath": "src/data/fields/assetLiabilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 84,
@@ -1447,15 +770,7 @@
       "label": "bnpl_commitments",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "BNPL Commitments",
-        "Afterpay",
-        "Zip Pay",
-        "Buy Now Pay Later"
-      ],
-      "sampleExtractedValue": "$650.00 limit ($120.00 owing)",
-      "sourcePath": "src/data/fields/assetLiabilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 85,
@@ -1464,15 +779,7 @@
       "label": "hecs_help_debt",
       "category": "assets_liabilities",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "HECS Debt",
-        "HELP Student Loan",
-        "Higher Education Loan",
-        "Student Debt"
-      ],
-      "sampleExtractedValue": "$21,400.00",
-      "sourcePath": "src/data/fields/assetLiabilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 86,
@@ -1481,15 +788,7 @@
       "label": "product_type_requested",
       "category": "facility",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Product Type",
-        "Facility Type",
-        "Loan Product",
-        "Product Requested"
-      ],
-      "sampleExtractedValue": "Principal and Interest Variable Home Loan",
-      "sourcePath": "src/data/fields/facilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 87,
@@ -1498,15 +797,7 @@
       "label": "loan_amount_requested",
       "category": "facility",
       "targetDataType": "currency",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Loan Amount Requested",
-        "Borrowing Amount",
-        "Finance Amount",
-        "Principal Amount"
-      ],
-      "sampleExtractedValue": "$520,000.00",
-      "sourcePath": "src/data/fields/facilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 88,
@@ -1515,15 +806,7 @@
       "label": "loan_purpose",
       "category": "facility",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Loan Purpose",
-        "Purpose of Loan",
-        "Borrowing Purpose",
-        "Credit Purpose"
-      ],
-      "sampleExtractedValue": "Refinance of Existing Home Loan",
-      "sourcePath": "src/data/fields/facilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 89,
@@ -1532,15 +815,7 @@
       "label": "repayment_frequency",
       "category": "facility",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Repayment Frequency",
-        "Payment Frequency",
-        "Repayment Cycle",
-        "Payment Interval"
-      ],
-      "sampleExtractedValue": "Monthly",
-      "sourcePath": "src/data/fields/facilityExtendedFields.ts"
+      "criticality": "standard"
     },
     {
       "number": 90,
@@ -1549,15 +824,16 @@
       "label": "direct_debit_account",
       "category": "facility",
       "targetDataType": "text",
-      "criticality": "standard",
-      "exampleLabels": [
-        "Direct Debit Account",
-        "Settlement Account",
-        "Nominated Account",
-        "Repayment Account"
-      ],
-      "sampleExtractedValue": "Commonwealth Bank of Australia (BSB 063-001 Acc 10293847)",
-      "sourcePath": "src/data/fields/facilityExtendedFields.ts"
+      "criticality": "standard"
+    },
+    {
+      "number": 91,
+      "id": "credit_score",
+      "name": "Credit Score",
+      "label": "credit_score",
+      "category": "identity",
+      "targetDataType": "number",
+      "criticality": "standard"
     },
     {
       "number": 101,
@@ -1566,13 +842,7 @@
       "label": "abn",
       "category": "employment",
       "targetDataType": "identifier",
-      "criticality": "critical",
-      "exampleLabels": [
-        "ABN",
-        "Australian Business Number"
-      ],
-      "sampleExtractedValue": "53 102 443 916",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "critical"
     },
     {
       "number": 102,
@@ -1581,13 +851,7 @@
       "label": "bsb",
       "category": "facility",
       "targetDataType": "identifier",
-      "criticality": "critical",
-      "exampleLabels": [
-        "BSB",
-        "Bank State Branch"
-      ],
-      "sampleExtractedValue": "083-004",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "critical"
     },
     {
       "number": 103,
@@ -1596,13 +860,7 @@
       "label": "postcode",
       "category": "residential",
       "targetDataType": "identifier",
-      "criticality": "critical",
-      "exampleLabels": [
-        "Postcode",
-        "Postal Code"
-      ],
-      "sampleExtractedValue": "3000",
-      "sourcePath": "src/data/bankFields.ts"
+      "criticality": "critical"
     },
     {
       "number": 104,
@@ -1611,14 +869,7 @@
       "label": "account_number",
       "category": "facility",
       "targetDataType": "identifier",
-      "criticality": "critical",
-      "exampleLabels": [
-        "Account Number",
-        "Bank Account No",
-        "Acc Number"
-      ],
-      "sampleExtractedValue": "492019482",
-      "sourcePath": "src/data/fields/structuralIdentifierFields.ts"
+      "criticality": "critical"
     },
     {
       "number": 105,
@@ -1627,13 +878,7 @@
       "label": "acn",
       "category": "employment",
       "targetDataType": "identifier",
-      "criticality": "critical",
-      "exampleLabels": [
-        "ACN",
-        "Australian Company Number"
-      ],
-      "sampleExtractedValue": "102 443 916",
-      "sourcePath": "src/data/fields/structuralIdentifierFields.ts"
+      "criticality": "critical"
     },
     {
       "number": 106,
@@ -1642,13 +887,7 @@
       "label": "tfn",
       "category": "identity",
       "targetDataType": "identifier",
-      "criticality": "critical",
-      "exampleLabels": [
-        "TFN",
-        "Tax File Number"
-      ],
-      "sampleExtractedValue": "123 456 782",
-      "sourcePath": "src/data/fields/structuralIdentifierFields.ts"
+      "criticality": "critical"
     },
     {
       "number": 107,
@@ -1657,13 +896,7 @@
       "label": "medicare_number",
       "category": "identity",
       "targetDataType": "identifier",
-      "criticality": "critical",
-      "exampleLabels": [
-        "Medicare Number",
-        "Medicare Card No"
-      ],
-      "sampleExtractedValue": "2123 45678 1",
-      "sourcePath": "src/data/fields/structuralIdentifierFields.ts"
+      "criticality": "critical"
     },
     {
       "number": 108,
@@ -1672,14 +905,7 @@
       "label": "bpay_biller_code",
       "category": "facility",
       "targetDataType": "identifier",
-      "criticality": "critical",
-      "exampleLabels": [
-        "Biller Code",
-        "BPAY Biller Code",
-        "BPAY Code"
-      ],
-      "sampleExtractedValue": "84920",
-      "sourcePath": "src/data/fields/structuralIdentifierFields.ts"
+      "criticality": "critical"
     },
     {
       "number": 109,
@@ -1688,15 +914,7 @@
       "label": "card_number_masked",
       "category": "facility",
       "targetDataType": "identifier",
-      "criticality": "critical",
-      "exampleLabels": [
-        "Card Number (Masked)",
-        "Masked Card Number",
-        "Card PAN",
-        "Credit Card No"
-      ],
-      "sampleExtractedValue": "4532 **** **** 1234",
-      "sourcePath": "src/data/fields/structuralIdentifierFields.ts"
+      "criticality": "critical"
     }
   ]
 }

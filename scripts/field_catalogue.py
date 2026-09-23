@@ -98,6 +98,7 @@ FIELD_CATALOGUE = [
     ("loan_purpose", "Loan / Credit Purpose", 88),
     ("repayment_frequency", "Requested Repayment Frequency", 89),
     ("direct_debit_account", "Direct Debit / Settlement Account", 90),
+    ("credit_score", "Credit Score", 91),
     ("abn", "Australian Business Number (ABN)", 101),
     ("bsb", "Bank State Branch (BSB)", 102),
     ("postcode", "Australian Postcode", 103),

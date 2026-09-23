@@ -96,8 +96,8 @@ function validateUniqueAndContiguousNumbers(appDefs, coreDefs) {
   const appNumbers = appDefs.map((d) => d.number);
   assert.deepEqual(
     appNumbers,
-    Array.from({ length: 90 }, (_, i) => i + 1),
-    'Application fields must be contiguously numbered 1 to 90'
+    Array.from({ length: appDefs.length }, (_, i) => i + 1),
+    `Application fields must be contiguously numbered 1 to ${appDefs.length}`
   );
 
   const coreNumbers = coreDefs.map((d) => d.number);
@@ -171,23 +171,24 @@ function validateNoForbiddenClaims(definitions) {
   }
 }
 
-test('inventory: catalogue contains at least 99 definitions (90 application fields + 9 structural identifiers)', async () => {
+test('inventory: catalogue contains at least 100 definitions (91 application fields + 9 structural identifiers)', async () => {
   const { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } = await loadDefinitions();
 
-  assert.equal(BANK_FIELD_DEFINITIONS.length, 90, 'Application fields count must equal 90');
+  // 91 application fields (the credit_score promotion added one at number 91) + 9 core.
+  assert.equal(BANK_FIELD_DEFINITIONS.length, 91, 'Application fields count must equal 91');
   assert.equal(CORE_IDENTIFIER_DEFINITIONS.length, 9, 'Core identifiers count must equal 9');
   assert.ok(
-    BANK_FIELD_DEFINITIONS.length + CORE_IDENTIFIER_DEFINITIONS.length >= 99,
-    'Combined catalogue inventory must be >= 99 definitions'
+    BANK_FIELD_DEFINITIONS.length + CORE_IDENTIFIER_DEFINITIONS.length >= 100,
+    'Combined catalogue inventory must be >= 100 definitions'
   );
   assert.equal(
     BANK_FIELD_DEFINITIONS.length + CORE_IDENTIFIER_DEFINITIONS.length,
-    99,
-    'Combined catalogue inventory must equal exactly 99 definitions'
+    100,
+    'Combined catalogue inventory must equal exactly 100 definitions'
   );
 });
 
-test('numbering and IDs: contiguous 1..90 and 101..109 with unique IDs and numbers', async () => {
+test('numbering and IDs: contiguous 1..91 and 101..109 with unique IDs and numbers', async () => {
   const { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } = await loadDefinitions();
   const allDefinitions = [...BANK_FIELD_DEFINITIONS, ...CORE_IDENTIFIER_DEFINITIONS];
 

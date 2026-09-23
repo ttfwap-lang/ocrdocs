@@ -198,6 +198,60 @@ export interface IdentityDetail extends IdentitySummary {
   fieldBreakdown: IdentityFieldEntry[];
   /** Every head photo extracted across this person's documents (verified first). */
   photos: IdentityPhoto[];
+  /**
+   * Passport and driver's-licence values with their verification tier, corroboration
+   * count and exact source files. Promoted on the identity page; every other extracted
+   * field stays in `fieldBreakdown`.
+   */
+  keyIdentifiers: KeyIdentifier[];
+  /** The credit score, if any document for this person carried one. */
+  creditScore: CreditScoreSummary | null;
+}
+
+/**
+ * Verification tier for a key identifier (passport / driver's licence).
+ * `triple_checked` means the value passed the Australian format check AND was read from
+ * two or more independent source documents; `single_source` passed the format check but
+ * was only seen once; `format_fail` did not match the expected shape and is shown so a
+ * reviewer can correct it rather than having it silently hidden.
+ */
+export type IdentifierTier = 'triple_checked' | 'single_source' | 'format_fail';
+
+export interface KeyIdentifier {
+  kind: 'passport' | 'licence';
+  label: string;
+  /** The value exactly as extracted (may include a country prefix or spaces). */
+  value: string;
+  /** `value` reduced to letters+digits: what the format check compares. */
+  canonical: string;
+  tier: IdentifierTier;
+  /** Plain-English meaning of the tier, ready to display. */
+  explanation: string;
+  /** How many distinct source documents produced this same canonical value. */
+  sourceCount: number;
+  /** The exact source files, so the value can be traced back and eyeballed. */
+  sources: Array<{ documentId: string; filename: string }>;
+}
+
+/** The credit score the identity page promotes to a top-level heading. */
+export interface CreditScoreSummary {
+  value: string;
+  documentId: string;
+  filename: string;
+}
+
+export interface IdentityDetail extends IdentitySummary {
+  documents: IdentityDocumentDetail[];
+  fieldBreakdown: IdentityFieldEntry[];
+  /** Every head photo extracted across this person's documents (verified first). */
+  photos: IdentityPhoto[];
+  /**
+   * Passport and driver's-licence values with their verification tier, corroboration
+   * count and exact source files. Promoted on the identity page; every other extracted
+   * field stays in `fieldBreakdown`.
+   */
+  keyIdentifiers: KeyIdentifier[];
+  creditScore: CreditScoreSummary | null;
 }
 
 /** Raw `fields` row shape, as returned by GET /api/extractions/:id/fields. */

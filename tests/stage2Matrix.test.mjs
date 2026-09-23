@@ -53,7 +53,7 @@ function readJson(p) {
   return JSON.parse(fs.readFileSync(p, 'utf8'));
 }
 
-test('field-inventory.json matches the live catalogue (99 fields: 90 app + 9 core)', async () => {
+test('field-inventory.json matches the live catalogue (100 fields: 91 app + 9 core)', async () => {
   for (const [, p] of Object.entries(ARTIFACTS)) {
     assert.ok(fs.existsSync(p), `artifact missing: ${p}`);
   }
@@ -64,8 +64,8 @@ test('field-inventory.json matches the live catalogue (99 fields: 90 app + 9 cor
   );
 
   const inventory = readJson(ARTIFACTS.inventory);
-  assert.equal(inventory.total, 99, 'inventory.total === 99');
-  assert.equal(inventory.applicationFields, 90, '90 application fields');
+  assert.equal(inventory.total, 100, 'inventory.total === 100');
+  assert.equal(inventory.applicationFields, 91, '91 application fields');
   assert.equal(inventory.coreIdentifiers, 9, '9 core identifiers');
   assert.equal(inventory.criticalIdentifiers, 9, '9 critical identifiers (structural)');
 
@@ -89,8 +89,8 @@ test('field-inventory.json matches the live catalogue (99 fields: 90 app + 9 cor
   }
 
   const nums = inventory.fields.map((f) => f.number).sort((a, b) => a - b);
-  assert.deepEqual(nums.slice(0, 90), Array.from({ length: 90 }, (_, i) => i + 1), 'app field numbers contiguous 1..90');
-  assert.deepEqual(nums.slice(90), [101, 102, 103, 104, 105, 106, 107, 108, 109], 'core numbers 101..109');
+  assert.deepEqual(nums.slice(0, 91), Array.from({ length: 91 }, (_, i) => i + 1), 'app field numbers contiguous 1..91');
+  assert.deepEqual(nums.slice(91), [101, 102, 103, 104, 105, 106, 107, 108, 109], 'core numbers 101..109');
 });
 
 test('format-matrix.json covers all formats x applicants within declared limits', () => {

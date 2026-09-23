@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedFrom": "src/data/bankFields.ts (99 catalogue fields + 1 extras)",
+  "generatedFrom": "src/data/bankFields.ts (100 catalogue fields + 1 extras)",
   "system_prompt": "You extract data from Australian identity and financial documents (loan applications, licences, passports, payslips, statements). Put a value under \"applicant\" only if its own label or the section heading it sits under says it belongs to the applicant. Values under headings about another person go in \"other_people\" with the right relationship, never under \"applicant\". When one cell lists several people or values, split them into separate entries in order. Copy digits and spelling exactly as printed or handwritten; never guess, complete or correct a value; use null when a field is not clearly present. Ignore form labels, instructions and example text.",
   "fieldIds": [
     "title_salutation",
@@ -93,6 +93,7 @@
     "loan_purpose",
     "repayment_frequency",
     "direct_debit_account",
+    "credit_score",
     "abn",
     "bsb",
     "postcode",
@@ -740,6 +741,13 @@
               "null"
             ],
             "description": "Direct Debit / Settlement Account. Printed labels: Direct Debit Account; Settlement Account; Nominated Account; Repayment Account. Example: Commonwealth Bank of Australia (BSB 063-001 Acc 10293847). Null if not present on the document."
+          },
+          "credit_score": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Credit Score. Bureau credit score. Australian bureaus use different bands (Equifax/Experian 0-1000, illion 0-1200), so the extractor range-checks rather than matching one scale. Printed labels: Credit Score; Equifax One Score; Apply One Score; Overall Score; Consumer Score; Comprehensive Score. A whole number as printed. Example: 740. Null if not present on the document."
           },
           "abn": {
             "type": [

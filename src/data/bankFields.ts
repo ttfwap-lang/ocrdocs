@@ -371,6 +371,24 @@ export const BANK_FIELD_DEFINITIONS: BankFieldDefinition[] = [
     sampleExtractedValue: '$6,500.00 (Biller: 84920)',
   },
   ...EXTENDED_BANK_FIELD_DEFINITIONS,
+  {
+    // Numbered 91, i.e. after the whole 1-90 application block, so adding this field does
+    // not renumber any existing contract position -- visa_expiry=36, licence_expiry=38,
+    // card_number_masked=109 and the rest are pinned by tests/bankFields.test.mjs. It also
+    // sits last in file order so the array stays contiguously numbered 1..91. The identity
+    // page promotes the credit score to a top-level heading regardless, so catalogue
+    // position only affects where it falls in the consolidated breakdown.
+    id: 'credit_score',
+    number: 91,
+    name: 'Credit Score',
+    label: 'credit_score',
+    category: 'identity',
+    maxToleranceRegex: '(credit[_-]?score|equifax[_-]?one[_-]?score|apply[_-]?one[_-]?score|overall[_-]?score|consumer[_-]?score|experian[_-]?score|bureau[_-]?score|credit[_-]?rating|comprehensive[_-]?score|vedascore)',
+    description: 'Bureau credit score. Australian bureaus use different bands (Equifax/Experian 0-1000, illion 0-1200), so the extractor range-checks rather than matching one scale.',
+    targetDataType: 'number',
+    exampleLabels: ['Credit Score', 'Equifax One Score', 'Apply One Score', 'Overall Score', 'Consumer Score', 'Comprehensive Score'],
+    sampleExtractedValue: '740',
+  },
 ];
 
 export const CORE_IDENTIFIER_DEFINITIONS: BankFieldDefinition[] = [

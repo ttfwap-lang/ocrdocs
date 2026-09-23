@@ -85,9 +85,9 @@ Card_Number: **** **** **** 1234
 `;
 
 /* ── Structural / contract tests ──────────────────────────────── */
-test('extractBankFieldsFromText: returns exactly 99 results (90 app + 9 core)', () => {
+test('extractBankFieldsFromText: returns exactly 100 results (91 app + 9 core)', () => {
   const results = engine.extractBankFieldsFromText(SAMPLE_TEXT);
-  assert.equal(results.length, 99, `Expected 99 results, got ${results.length}`);
+  assert.equal(results.length, 100, `Expected 100 results, got ${results.length}`);
 });
 
 test('every result has the required ExtractionResult structure', () => {
@@ -264,9 +264,9 @@ test('parseAustralianAddress: returns null for too-short input', () => {
 });
 
 /* ── Error resilience / edge cases ────────────────────────────── */
-test('extractBankFieldsFromText: empty string does not throw and returns 99 missing results', () => {
+test('extractBankFieldsFromText: empty string does not throw and returns 100 missing results', () => {
   const results = engine.extractBankFieldsFromText('');
-  assert.equal(results.length, 99);
+  assert.equal(results.length, 100);
   for (const r of results) {
     assert.equal(r.status, 'missing');
     assert.equal(r.confidence, 0);
@@ -275,14 +275,14 @@ test('extractBankFieldsFromText: empty string does not throw and returns 99 miss
 
 test('extractBankFieldsFromText: whitespace-only text does not throw', () => {
   const results = engine.extractBankFieldsFromText('   \n\n\t  ');
-  assert.equal(results.length, 99);
+  assert.equal(results.length, 100);
   assert.ok(results.every(r => r.status === 'missing' || r.status === 'matched'));
 });
 
 test('extractBankFieldsFromText: very long text does not throw', () => {
   const longText = 'Field: value\n'.repeat(10000);
   const results = engine.extractBankFieldsFromText(longText);
-  assert.equal(results.length, 99);
+  assert.equal(results.length, 100);
 });
 
 test('extractBankFieldsFromText: results are deterministic (same input → same output)', () => {
@@ -297,7 +297,7 @@ test('extractBankFieldsFromText: results are deterministic (same input → same 
   }
 });
 
-test('extractBankFieldsFromText: fieldIds are unique across all 99 results', () => {
+test('extractBankFieldsFromText: fieldIds are unique across all 100 results', () => {
   const results = engine.extractBankFieldsFromText(SAMPLE_TEXT);
   const ids = results.map(r => r.fieldId);
   const uniqueIds = new Set(ids);
