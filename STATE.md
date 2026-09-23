@@ -312,3 +312,50 @@ nothing is deleted or moved.
   `src/components/Navbar.tsx`, `src/types.ts`, `README.md`, `server/db/database.ts`.
   Someone else is working in this repo concurrently; it was not staged, reviewed or committed
   here.
+
+## 2026-09-24 verified key identifiers, credit score, identity page redesign, add-to-cart CSV
+
+Owner requirement: the Australian passport number and the driver's-licence number are the most
+important key details. They must be triple-check verified, trace-sourced to the exact source
+file, and appear much larger on the individual identity page as sub-headings to the only real
+headings (name, DOB, credit score). Plus a multi-identity "add to cart" that adds rows to a
+CSV export.
+
+### What was measured first
+- Passport: 172 values / 72 distinct; licence: 134 / 78. Both were only SINGLE-verified
+  (`verify_fields.py` gives one `verif` verdict), so triple-check was new verification work.
+- Credit score did not exist as a field, BUT the Equifax PDFs have a text layer, so the score
+  was recoverable with no re-parse. The extraction schema had simply never captured it.
+
+### Delivered
+- `server/services/identifierKey.ts` (TS) + `scripts/verify_identifiers.py` (Python, the
+  offline twin). AU passport = 1-2 letters + 6-8 digits (covers modern PA/PB/R); AU licence
+  = 7-10 alphanumerics, >=1 digit, <=2 letters. Country prefixes (`CHN`/`AUS`), separators and
+  multi-value cells are canonicalised first because the corpus stores them glued to the number.
+- Corroboration is computed LIVE in `identityService` from the documents that actually produced
+  a value, so the count cannot drift. Tier: `triple_checked` (format-valid AND >=2 independent
+  source documents), `single_source` (format-valid, one source), `format_fail` (reported, never
+  hidden). Every value carries its exact source files.
+- `scripts/extract_credit_score.py`: heading-aware Equifax One Score extractor. It refuses the
+  neighbouring Comprehensive Score and VedaScore — verified returning 740 for a report that also
+  shows 785 and 697. Recovered 14; 12 joined to already-loaded documents by exact `original_path`
+  and inserted as real `Credit Score` fields (`scripts/load_credit_scores.py`, idempotent, never
+  overwrites a human correction).
+- `credit_score` added to the catalogue at number **91**, after the 1-90 block, so NO existing
+  contract position is renumbered (visa_expiry=36, licence_expiry=38, card_number_masked=109 all
+  stay put). The snapshot `docs/stage2/field-inventory.json` had no generator, which is how it
+  drifted; `scripts/generate_field_inventory.mjs` now regenerates it from the live catalogue.
+- Identity page: **Name, DOB and Credit Score are the only top-level headings**; Passport and
+  Licence are large sub-headings with a tier badge, the corroboration count, and every source
+  file as a link to the exact original.
+- Add to cart: per-identity checkboxes in the sidebar and gallery, a selection tray
+  (count / Select all / Clear), and `GET /api/export/identities.csv?ids=...` returning ONE ROW
+  PER IDENTITY led by the promoted headings and identifiers, then every other field. Unknown ids
+  are ignored, not fatal; no `ids` exports all.
+
+### Verified live (measured)
+- 26 identities carry a triple-checked identifier; 12 carry a credit score; all traced to exact
+  source files (e.g. Chai Diana score 1052 <- `CHAI DIANA LIEW - Equifax Apply One Score.pdf`).
+- Single-id export returns exactly 1 row; no-ids returns all 125. CSV leads with
+  full_name, dob, credit_score(+source), passport_number/tier/sources, licence_number/tier/sources.
+- `tsc --noEmit` 0, `npm test` 241/241, `pytest` 320 passed / 1 skipped, `npm run build` ok.
