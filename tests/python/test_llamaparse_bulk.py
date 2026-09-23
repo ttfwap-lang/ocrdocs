@@ -1,4 +1,6 @@
-"""The bulk script and the Australian-endpoint setting: it cannot send unless an AU endpoint is configured and confirmed."""
+"""The bulk script and the gateway-region setting: nothing is sent until an endpoint, key and confirmation
+are in place; Australia/Europe/USA regions are greenlighted and Africa is banned; junk (magic-mismatched)
+files are recorded fatal and never re-uploaded."""
 import json
 from pathlib import Path
 
@@ -9,11 +11,12 @@ import ocr_llamacloud as llc
 import ocr_llamaparse as lp
 
 AU = "https://api.syd.example-llamaindex.au"
+NA = "https://api.cloud.llamaindex.ai"
 
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    for k in ("OCRDOCS_LLAMAPARSE_BASE_URL", "LLAMA_CLOUD_API_KEY", "OCRDOCS_LLAMAPARSE"):
+    for k in ("OCRDOCS_LLAMAPARSE_BASE_URL", "OCRDOCS_LLAMAPARSE_REGION", "LLAMA_CLOUD_API_KEY", "OCRDOCS_LLAMAPARSE"):
         monkeypatch.delenv(k, raising=False)
 
 
@@ -34,11 +37,21 @@ class FakeCloud:
                                fields=[{"name": "given_names", "value": "Jane", "subject": "applicant"}])
 
 
+# Magic-byte headers per extension, matching the bulk script's fatal pre-check: a fixture whose bytes do
+# not match its extension is treated as junk. `notes.txt` carries no header because .txt is not uploadable.
+MAGIC_HEADS = {
+    ".pdf": b"%PDF-1.4\n",
+    ".png": b"\x89PNG\r\n\x1a\n",
+    ".jpg": b"\xff\xd8\xff\xe0",
+    ".docx": b"PK\x03\x04\x14\x00",
+}
+
+
 def make_files(tmp_path, names=("a.pdf", "b.png", "c.jpg", "notes.txt", "d.docx")):
     out = []
     for n in names:
         p = tmp_path / n
-        p.write_bytes(b"x")
+        p.write_bytes(MAGIC_HEADS.get(Path(n).suffix.lower(), b"x"))
         out.append(str(p))
     return out
 
@@ -54,11 +67,26 @@ def test_au_region_needs_a_configured_https_endpoint(monkeypatch):
     assert lp.base_url("au") == AU
 
 
-@pytest.mark.parametrize("url", ["https://api.cloud.llamaindex.ai", "https://api.cloud.eu.llamaindex.ai/", "https://CLOUD.llamaindex.ai"])
-def test_au_can_never_be_pointed_at_the_public_north_america_or_europe_hosts(monkeypatch, url):
+@pytest.mark.parametrize("region,url", [
+    ("us", NA), ("us", NA + "/"), ("eu", "https://api.cloud.eu.llamaindex.ai/"),
+    ("na", NA), ("usa", NA),
+])
+def test_public_greenlighted_hosts_are_allowed(monkeypatch, region, url):
+    # Australia/Europe/USA regions are greenlighted and may use their public gateway base URLs, with
+    # or without a trailing slash. Only Africa is banned.
     monkeypatch.setenv("OCRDOCS_LLAMAPARSE_BASE_URL", url)
-    with pytest.raises(lp.LlamaParseUnavailable, match="public North America/Europe host"):
-        lp.base_url("au")
+    assert lp.base_url(region) == url.rstrip("/")
+
+
+@pytest.mark.parametrize("url", [
+    "https://api.africa.example-llamaindex.io",
+    "https://gateway.af-south-1.llamaindex.example",
+    "https://southafrica.example-llamaindex.io",
+])
+def test_african_endpoints_are_banned(monkeypatch, url):
+    monkeypatch.setenv("OCRDOCS_LLAMAPARSE_BASE_URL", url)
+    with pytest.raises(lp.LlamaParseUnavailable, match="Africa"):
+        lp.base_url("us")
 
 
 def test_the_client_uses_the_configured_australian_endpoint_for_every_call(monkeypatch):
@@ -146,14 +174,23 @@ def test_dry_run_sends_nothing_and_needs_no_endpoint(tmp_path, capsys):
 def test_run_stops_when_no_australian_endpoint_is_configured(tmp_path):
     make_files(tmp_path)
     with pytest.raises(SystemExit, match="STOPPED, nothing sent.*OCRDOCS_LLAMAPARSE_BASE_URL"):
-        bulk.main(["--folder", str(tmp_path), "--out", str(tmp_path / "o.jsonl"), "--run", "--endpoint-host", "x"], factory_that_must_not_be_used)
+        bulk.main(["--folder", str(tmp_path), "--out", str(tmp_path / "o.jsonl"), "--run", "--region", "au",
+                   "--endpoint-host", "x"], factory_that_must_not_be_used)
 
 
-def test_run_stops_at_a_public_northamerica_or_europe_url(tmp_path, monkeypatch):
-    configure(monkeypatch, "https://api.cloud.llamaindex.ai")
+def test_run_stops_at_an_african_endpoint(tmp_path, monkeypatch):
+    configure(monkeypatch, "https://gateway.af-south-1.example-llamaindex.io")
     make_files(tmp_path)
-    with pytest.raises(SystemExit, match="public North America/Europe host"):
-        bulk.main(["--folder", str(tmp_path), "--out", str(tmp_path / "o.jsonl"), "--run", "--endpoint-host", "api.cloud.llamaindex.ai"], factory_that_must_not_be_used)
+    with pytest.raises(SystemExit, match="Africa"):
+        bulk.main(["--folder", str(tmp_path), "--out", str(tmp_path / "o.jsonl"), "--run",
+                   "--endpoint-host", "gateway.af-south-1.example-llamaindex.io"], factory_that_must_not_be_used)
+
+
+def test_run_stops_at_an_african_region(tmp_path):
+    make_files(tmp_path)
+    with pytest.raises(SystemExit, match="Africa"):
+        bulk.main(["--folder", str(tmp_path), "--out", str(tmp_path / "o.jsonl"), "--run",
+                   "--region", "af-south-1", "--endpoint-host", "gateway.example.io"], factory_that_must_not_be_used)
 
 
 def test_run_needs_the_endpoint_host_typed_to_confirm(tmp_path, monkeypatch):

@@ -16,10 +16,15 @@ What it indexes (per ok record in --in):
     bucket, still searchable by any of their fields.
 
 Output: a SQLite database (default results/local_index.db) with
-    fields(file, identity_id, subject, name, value, evidence, section, source, confidence, origin)
+    fields(file, identity_id, subject, name, value, evidence, section, source, confidence, origin, number)
     docs(file, pages, document_type, credits, errors, ok)
     identities(identity_id, given_names, family_name, dob, doc_count, field_count)
     fields_fts  (FTS5 over value/evidence/name/subject),  docs_fts  (FTS5 over file)
+
+Ordering matches the app: identities rows are written family-name-first (then
+given names, then dob), mirroring listIdentities; each fields row carries its
+catalogue `number` so a breakdown can be reproduced in the same logical order
+identityService.fieldBreakdown sorts by.
 
 Run:
     python build_local_index.py --in results\\rc_extract.jsonl --out results\\local_index.db
@@ -51,6 +56,15 @@ DOB = "date_of_birth"
 # subject values in the extraction domain (also used by headshot corpus indexing)
 SUBJECTS = {"parent", "spouse", "dependant", "employer", "referee", "other"}
 
+# Pipeline field names that differ from the catalogue id -- same aliasing as
+# verify_fields.py FIELD_ID and scripts/load_corpus_into_app.py, so the local
+# index and the app agree on which catalogue entry a field is.
+LEGACY_ALIASES = {
+    "drivers_licence_number": "drivers_licence",
+    "tax_file_number": "tfn",
+    "occupation": "occupation_industry",
+}
+
 
 def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().lower())
@@ -58,6 +72,27 @@ def normalize_text(value: str) -> str:
 
 def normalize_digits(value: str) -> str:
     return re.sub(r"[^0-9]", "", value or "")
+
+
+def _load_catalogue() -> Dict[str, Tuple[str, int]]:
+    """short id -> (display name, catalogue number) from the generated field_catalogue module."""
+    try:
+        import field_catalogue as fc
+    except ImportError:
+        # Running from another cwd: the module lives next to this script.
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import field_catalogue as fc  # type: ignore
+    return dict(fc.BY_ID)
+
+
+_CATALOGUE = _load_catalogue()
+
+
+def catalogue_number(name: str) -> Optional[int]:
+    """Logical order number for a pipeline field name (None for unknown ids)."""
+    fid = LEGACY_ALIASES.get(name, name)
+    entry = _CATALOGUE.get(fid)
+    return entry[1] if entry else None
 
 
 def identity_id_for(family: str, given: str, dob: str) -> str:
@@ -93,7 +128,8 @@ def build_index(src: str, dst: str, subject_filter: Optional[str] = None) -> Dic
                 id INTEGER PRIMARY KEY,
                 file TEXT NOT NULL, identity_id TEXT,
                 subject TEXT, name TEXT, value TEXT, evidence TEXT,
-                section TEXT, source TEXT, confidence REAL, origin TEXT
+                section TEXT, source TEXT, confidence REAL, origin TEXT,
+                number INTEGER
             );
             CREATE TABLE docs(
                 file TEXT PRIMARY KEY, pages INTEGER, document_type TEXT,
@@ -151,11 +187,12 @@ def build_index(src: str, dst: str, subject_filter: Optional[str] = None) -> Dic
                 source = f.get("source") or ""
                 confidence = f.get("confidence")
                 origin = f.get("origin") or ""
+                number = catalogue_number(name)
                 cur = con.execute(
-                    "INSERT INTO fields(file, identity_id, subject, name, value, evidence, section, source, confidence, origin) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO fields(file, identity_id, subject, name, value, evidence, section, source, confidence, origin, number) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (file, None, subject, name, value, evidence, section, source,
-                     float(confidence) if isinstance(confidence, (int, float)) else None, origin))
+                     float(confidence) if isinstance(confidence, (int, float)) else None, origin, number))
                 fid = cur.lastrowid
                 try:
                     con.execute("INSERT INTO fields_fts(rowid, value, evidence, name, subject, file) VALUES (?,?,?,?,?,?)",
@@ -166,6 +203,7 @@ def build_index(src: str, dst: str, subject_filter: Optional[str] = None) -> Dic
                 by_file.setdefault(file, {}).setdefault("fields", []).append({
                     "name": name, "value": value, "subject": subject, "evidence": evidence,
                     "section": section, "source": source, "confidence": confidence, "origin": origin,
+                    "number": number,
                 })
 
             # identity grouping: family + given + dob -> identityId
@@ -181,8 +219,11 @@ def build_index(src: str, dst: str, subject_filter: Optional[str] = None) -> Dic
             else:
                 counts["unassigned_docs"] += 1
 
-        # identity summaries need the latest family/given/dob per identity (same "latest extraction" rule)
+        # identity summaries need the latest family/given/dob per identity (same "latest extraction" rule).
+        # Ordered family-name-first (then given names, then dob) so a plain `SELECT * FROM identities`
+        # reproduces the identity list order of server/services/identityService.ts.
         seen_iid = set()
+        identity_rows: List[Tuple[str, str, str, str, int, int]] = []
         for file, doc in by_file.items():
             fam = given = dob = ""
             for f in doc["fields"]:
@@ -197,9 +238,11 @@ def build_index(src: str, dst: str, subject_filter: Optional[str] = None) -> Dic
                 if iid not in seen_iid:
                     doc_count = len(ids_of_doc.get(iid, {file}))
                     field_count = len(identity_fields.get(iid, []))
-                    con.execute("INSERT INTO identities VALUES (?,?,?,?,?,?)",
-                                (iid, given, fam, dob, doc_count, field_count))
+                    identity_rows.append((iid, given, fam, dob, doc_count, field_count))
                     seen_iid.add(iid)
+        identity_rows.sort(key=lambda r: (r[2].lower(), r[1].lower(), r[3]))
+        for row in identity_rows:
+            con.execute("INSERT INTO identities VALUES (?,?,?,?,?,?)", row)
 
         con.commit()
         return dict(counts)

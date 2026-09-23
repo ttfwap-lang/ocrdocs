@@ -37,6 +37,24 @@ const GIVEN_NAMES_FIELD = displayNameFor('given_names');
 const FAMILY_NAME_FIELD = displayNameFor('family_name');
 const DATE_OF_BIRTH_FIELD = displayNameFor('date_of_birth');
 
+/**
+ * The field catalogue's logical order (title → given → middle → family → dob →
+ * … → structural identifiers 104+), keyed by the display name that `fields`
+ * rows actually store. `fieldBreakdown` is sorted by this so every identity's
+ * lines read in the catalogue's order instead of alphabetically.
+ */
+const FIELD_ORDER = new Map<string, number>();
+for (const def of [...BANK_FIELD_DEFINITIONS, ...CORE_IDENTIFIER_DEFINITIONS]) {
+  FIELD_ORDER.set(def.name, def.number);
+}
+
+/** Unknown names sort after every catalogue field, alphabetically among themselves. */
+function byCatalogueOrder(a: { name: string }, b: { name: string }): number {
+  const an = FIELD_ORDER.get(a.name) ?? Number.MAX_SAFE_INTEGER;
+  const bn = FIELD_ORDER.get(b.name) ?? Number.MAX_SAFE_INTEGER;
+  return an - bn || a.name.localeCompare(b.name);
+}
+
 export interface IdentityFieldEntry {
   name: string;
   value: string;
@@ -208,7 +226,12 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
   function listIdentities(): IdentitySummary[] {
     const { groups } = buildGroups();
     const summaries = Array.from(groups.entries()).map(([id, group]) => toSummary(id, group));
-    summaries.sort((a, b) => a.fullName.localeCompare(b.fullName) || a.dob.localeCompare(b.dob));
+    summaries.sort(
+      (a, b) =>
+        a.familyName.localeCompare(b.familyName) ||
+        a.givenNames.localeCompare(b.givenNames) ||
+        a.dob.localeCompare(b.dob),
+    );
     return summaries;
   }
 
@@ -258,7 +281,7 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
     return {
       ...toSummary(identityId, group),
       documents,
-      fieldBreakdown: Array.from(bestByField.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      fieldBreakdown: Array.from(bestByField.values()).sort(byCatalogueOrder),
       photos: headshotService.photosForIdentity(identityId),
     };
   }

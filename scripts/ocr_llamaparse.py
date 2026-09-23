@@ -1,10 +1,10 @@
 """LlamaParse (LlamaCloud v2) client: an optional CLOUD reader for flagged pages or regions.
 
-DATA WARNING. This sends page images to LlamaIndex's servers. Managed LlamaCloud has only two regions, North America
-(us-east-1) and Europe (eu-central-1); there is no Australian region, so every page sent leaves Australia. The vendor
-states files are cached for 48 hours then deleted, and are never used for model training. Nothing here is on by default:
-OCRDOCS_LLAMAPARSE must be "region", "page" or "full" and LLAMA_CLOUD_API_KEY must be set in the worker's environment (never in
-the repo). The owner should decide whether sending identity documents offshore is acceptable (Privacy Act, APP 8).
+DATA WARNING. This sends page images to LlamaIndex's servers. Gateways in Australia, Europe, and USA
+are greenlighted as fine; Africa gateway is banned. The vendor states files are cached for 48 hours then
+deleted, and are never used for model training. Nothing here is on by default: OCRDOCS_LLAMAPARSE must be
+"region", "page" or "full" and LLAMA_CLOUD_API_KEY must be set in the worker's environment (never in
+the repo).
 
 Data-minimising defaults, all in code:
   * mode "region": only crops the agent asks to re-read are sent (a BSB or account-number box carries little context);
@@ -32,11 +32,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PIL import Image
 
-BASES = {"na": "https://api.cloud.llamaindex.ai", "eu": "https://api.cloud.eu.llamaindex.ai"}
-REGIONS = ("na", "eu", "au")
-# "au" is the Australian (Sydney) endpoint LlamaIndex offers enterprise customers. Its URL comes from the customer's own
-# agreement, so it is a setting (OCRDOCS_LLAMAPARSE_BASE_URL), never a guess in code.
-PUBLIC_HOSTS = {"api.cloud.llamaindex.ai", "api.cloud.eu.llamaindex.ai", "cloud.llamaindex.ai", "cloud.eu.llamaindex.ai"}
+BASES = {
+    "na": "https://api.cloud.llamaindex.ai",
+    "us": "https://api.cloud.llamaindex.ai",
+    "usa": "https://api.cloud.llamaindex.ai",
+    "eu": "https://api.cloud.eu.llamaindex.ai",
+}
+GREENLIGHTED_REGIONS = ("au", "eu", "na", "us", "usa")
+BANNED_REGIONS = ("af", "africa", "za", "af-south-1")
+REGIONS = GREENLIGHTED_REGIONS
 TIERS = ("fast", "cost_effective", "agentic", "agentic_plus")
 POLL_SECONDS = 3.0
 JOB_TIMEOUT_SECONDS = float(os.environ.get("OCRDOCS_LLAMAPARSE_TIMEOUT_SECONDS", "180"))
@@ -46,6 +50,33 @@ Http = Callable[[str, str, Dict[str, str], Optional[bytes], float], Tuple[int, A
 
 class LlamaParseUnavailable(RuntimeError):
     """Disabled, unconfigured, over its call budget, or the service failed; callers continue without it."""
+
+
+def is_africa_region(region: Optional[str]) -> bool:
+    """Check if a region string refers to an African gateway."""
+    r = (region or "").lower().strip()
+    if not r:
+        return False
+    if r in BANNED_REGIONS:
+        return True
+    if "africa" in r or r.startswith("af-") or r.startswith("af_"):
+        return True
+    return False
+
+
+def is_africa_host(host: Optional[str]) -> bool:
+    """Check if a host name points to an African gateway or endpoint."""
+    h = (host or "").lower().strip()
+    if not h:
+        return False
+    if any(kw in h for kw in ("africa", "af-south", "af-north", "af-east", "af-west", "southafrica", "capetown", "johannesburg", "nairobi", "cairo", "lagos")):
+        return True
+    parts = h.split(".")
+    if parts:
+        tld = parts[-1]
+        if tld == "africa" or (len(parts) > 1 and tld in ("za", "eg", "ng", "ke", "gh", "ma", "dz", "tn", "ug", "tz", "zw", "rw", "et")):
+            return True
+    return False
 
 
 @dataclass
@@ -63,18 +94,31 @@ class ParsedPage:
 
 
 def base_url(region: str) -> str:
-    """API base URL for a region. "au" must be configured and must not point at the public North America/Europe hosts."""
-    if region in BASES:
-        return BASES[region]
-    if region != "au":
-        raise LlamaParseUnavailable(f"unknown region '{region}' (na|eu|au)")
-    url = os.environ.get("OCRDOCS_LLAMAPARSE_BASE_URL", "").strip().rstrip("/")
-    if not url.startswith("https://"):
+    """API base URL for a region.
+    
+    Gateways in Australia (au), Europe (eu), and USA/North America (us/usa/na) are greenlighted.
+    Africa gateways are banned.
+    """
+    r = (region or "").lower().strip()
+    if is_africa_region(r):
+        raise LlamaParseUnavailable(f"Gateway region '{region}' is banned (Africa is banned)")
+    if r not in GREENLIGHTED_REGIONS:
+        raise LlamaParseUnavailable(f"unknown or unapproved region '{region}' (greenlighted: au, eu, usa/na; Africa is banned)")
+
+    custom_url = os.environ.get("OCRDOCS_LLAMAPARSE_BASE_URL", "").strip().rstrip("/")
+    if custom_url:
+        if not custom_url.startswith("https://"):
+            raise LlamaParseUnavailable("OCRDOCS_LLAMAPARSE_BASE_URL must be an https:// URL")
+        host = (urllib.parse.urlparse(custom_url).hostname or "").lower()
+        if is_africa_host(host):
+            raise LlamaParseUnavailable(f"Gateway host '{host}' is in Africa, which is banned")
+        return custom_url
+
+    if r in BASES:
+        return BASES[r]
+    if r == "au":
         raise LlamaParseUnavailable("region 'au' needs OCRDOCS_LLAMAPARSE_BASE_URL (an https:// URL from your LlamaIndex enterprise agreement)")
-    host = (urllib.parse.urlparse(url).hostname or "").lower()
-    if host in PUBLIC_HOSTS:
-        raise LlamaParseUnavailable(f"'{host}' is a public North America/Europe host, not an Australian endpoint")
-    return url
+    raise LlamaParseUnavailable(f"unknown region '{region}'")
 
 
 def mode() -> str:
@@ -150,11 +194,13 @@ class LlamaParse:
 
     def parse_page(self, image: Image.Image) -> ParsedPage:
         """Upload one page or crop, wait for the result, read it, then delete the job. Raises LlamaParseUnavailable."""
+        if is_africa_region(self.region):
+            raise LlamaParseUnavailable(f"Gateway region '{self.region}' is banned (Africa is banned)")
+        if self.region not in REGIONS:
+            raise LlamaParseUnavailable(f"unknown region '{self.region}' (greenlighted: au, eu, usa/na; Africa is banned)")
+        base_url(self.region)  # validates gateway is greenlighted and not banned before anything is uploaded
         if mode() == "off" and self._key is None:
             raise LlamaParseUnavailable("OCRDOCS_LLAMAPARSE is off")
-        if self.region not in REGIONS:
-            raise LlamaParseUnavailable(f"unknown region '{self.region}' (na|eu|au)")
-        base_url(self.region)  # an "au" region without a valid configured endpoint fails here, before anything is uploaded
         if self.tier not in TIERS:
             raise LlamaParseUnavailable(f"unknown tier '{self.tier}'")
         with self._lock:

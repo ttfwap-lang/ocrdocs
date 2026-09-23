@@ -168,6 +168,7 @@ test('Identities — grouping, breakdown, file serving, and zip export', async (
   let johnDocB;
   let unassignedDocId;
   let johnIdentityId;
+  let smithDocId;
 
   await t.test('two documents with the same name+DOB (different DOB punctuation) group into one identity', async () => {
     johnDocA = await uploadAndExtract(
@@ -196,6 +197,36 @@ test('Identities — grouping, breakdown, file serving, and zip export', async (
     assert.deepEqual(filenames, ['john-id-card.png', 'john-statement.png']);
 
     johnIdentityId = john.identityId;
+  });
+
+  await t.test('identities are listed family-name-first (then given names, then DOB), not by full name', async () => {
+    // "Zoe Adams" (family=Adams) must sort before "John Doe"; "Alice Smith"
+    // (family=Smith) must sort after "John Doe". A full-name sort would also
+    // put Adams first but "Alice Smith" before "John Doe" -- the family-first
+    // contract is what pins Smith after Doe.
+    smithDocId = await uploadAndExtract(
+      baseUrl,
+      'alice-smith.png',
+      'd',
+      'Given Name: ALICE\nFamily Name: SMITH\nDOB: 09/02/1991\nTFN: 123 456 789',
+    );
+    await uploadAndExtract(
+      baseUrl,
+      'zoe-adams.png',
+      'e',
+      'Given Name: ZOE\nFamily Name: ADAMS\nDOB: 30/11/1985\nABN: 53 102 443 916',
+    );
+
+    const res = await fetch(`${baseUrl}/api/identities`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+
+    const ordered = body.identities.map((i) => `${i.familyName}, ${i.givenNames}`);
+    assert.deepEqual(
+      ordered.filter((n) => /adams|doe|smith/i.test(n)),
+      ['Adams, Zoe', 'Doe, John', 'Smith, Alice'],
+      `identities must be family-name-first: ${JSON.stringify(ordered)}`,
+    );
   });
 
   await t.test('a document missing family_name/date_of_birth is reported as unassigned, not guessed into a group', async () => {
@@ -228,6 +259,22 @@ test('Identities — grouping, breakdown, file serving, and zip export', async (
     const abn = detail.fieldBreakdown.find((f) => f.name.includes('ABN') || f.name.toLowerCase().includes('business number'));
     assert.ok(abn, `ABN field from document B should be in the merged breakdown: ${JSON.stringify(detail.fieldBreakdown.map((f) => f.name))}`);
     assert.equal(abn.documentId, johnDocB);
+
+    // The breakdown must follow the field catalogue's logical order, not
+    // alphabetical: given names < family name < DOB < ABN. Alphabetical order
+    // would put "Australian Business Number" before "Given Names".
+    const breakdownNames = detail.fieldBreakdown.map((f) => f.name);
+    const givenIdx = breakdownNames.indexOf('Given Names / First Name');
+    const familyIdx = breakdownNames.indexOf('Family Name / Surname');
+    const dobIdx = breakdownNames.indexOf('Date of Birth (DOB)');
+    const abnIdx = breakdownNames.findIndex((n) => n.includes('ABN') || n.toLowerCase().includes('business number'));
+    for (const [name, idx] of [['Given Names / First Name', givenIdx], ['Family Name / Surname', familyIdx], ['Date of Birth (DOB)', dobIdx], ['ABN/Business Number', abnIdx]]) {
+      assert.ok(idx >= 0, `${name} should be present in the breakdown: ${JSON.stringify(breakdownNames)}`);
+    }
+    assert.ok(
+      givenIdx < familyIdx && familyIdx < dobIdx && dobIdx < abnIdx,
+      `field breakdown must be in catalogue order (given=${givenIdx}, family=${familyIdx}, dob=${dobIdx}, abn=${abnIdx}): ${JSON.stringify(breakdownNames)}`,
+    );
   });
 
   await t.test('unknown identityId returns 404', async () => {

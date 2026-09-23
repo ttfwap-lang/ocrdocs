@@ -198,3 +198,47 @@ Not verified: accuracy of any of it on real pages; that the containers start wit
   (identity hashing matches; FTS search retrieves names/addresses/phones). Output lives under gitignored paths.
 - Reminder flagged to owner: rotate the LlamaCloud API key (`llx-UJF...`), which has been used across
   session restarts and has been pasted/serialized in this project''s logs.
+
+## 2026-09-24 LlamaParse queue watcher + identity restructure (autonomous; not committed data)
+
+- **Queue watcher is LIVE.** `scripts/ocr_queue_watch.py` watches `C:\mnt\nvme\ocr_pipeline\input`,
+  reuses the desktop bulk machinery (`llamaparse_bulk.analyse_one`/`make_cloud`/`magic_mismatch`,
+  tier=agentic_plus, region from `OCRDOCS_LLAMAPARSE_REGION`), and pre-filters each file at the PAGE
+  level with a vision schema (kind-based, fail-open): identity/personal/handwriting pages are kept,
+  confident photo/blank pages (`>=0.85`, `contains_readable_text=false`) are quarantined to the file's
+  `noocr/` folder with a manifest — nothing is ever deleted. Remainder goes to LlamaParse. Runs under
+  `resume_ocr_queue.ps1` via ONLOGON scheduled task `ocrdocs_ocr_queue_watch` (Ready, PID 16492,
+  `--poll 30`, log `output\ocr_queue_watch.log`). Vision tunnel `localhost:8000` (qwen-abliterated)
+  hosts the kind schema.
+- **Bulk parse finished:** 4,085 ok / 809 fatal / 216 two-strike, 16,450 fields verified. The JPG
+  shrink/repack fixes were committed (`23f7857`).
+- **Identity restructure (code ordering, committed in-stage before data load):**
+  - `server/services/identityService.ts` now builds the field breakdown from the field catalogue
+    (`FIELD_ORDER`), lists identities family-name-first, and orders the breakdown by catalogue number.
+    `tsc --noEmit` clean, `npm test` 226/226, `tests/identities.test.mjs` updated and passing.
+  - `scripts/export_field_catalogue.py` generated `scripts/field_catalogue.py`: 99 fields, `BY_ID`
+    maps id -> (display name, catalogue number). Legacy aliases (`drivers_licence_number` ->
+    `drivers_licence`, `tax_file_number` -> `tfn`, `occupation` -> `occupation_industry`) keep the
+    loader/index and app concordant.
+- **Verified corpus identities loaded into the app DB (data/ is gitignored, never committed).**
+  `scripts/load_corpus_into_app.py` wrote `data/app.db` directly (server down): docs 1,443 (4 demo +
+  1,439 corpus), `loaded_docs 1,439 / skipped_dup_hash 195 / skipped_dup_path 3 / no_ok_fields
+  2,448 / fields_loaded 13,008 / unknown_field 0 / missing_file 0`. Only `verif=ok` fields are
+  loaded, `status=extracted`, the full source row lives in `extraction_json`, and the real
+  Recovered_C file path is `original_path` (confirmed on disk). Verified through the real app:
+  `identityService.listIdentities()` -> 149 identities (family-name-first, all with DOB), breakdown
+  catalogue-ordered, 1,134 unassigned docs, zero duplicate `content_hash`.
+- **Local index rebuilt with the same corrected ordering.** `scripts/build_local_index.py` now writes
+  the `identities` table family-first (matching `listIdentities`) and gives every `fields` row a
+  catalogue `number`. Rebuilt from `rc_extract_verified.jsonl` into `data/local_index.db`: 4,080 docs,
+  16,450 fields (all numbered, 0 unnumbered), 218 distinct identities, family-first verified.
+- **Headshots corpus pipeline completed and reconciled.** Extraction already covered 308 crops; the
+  QA CSV predated the final extraction pass, so `verify_headshots_qa.py` was re-run over the final
+  index (308 crops, 218 re-detected) and `quarantine_unverified.py`'s stale-CSV over-move was
+  corrected by `reconcile_headshots.py` (desktop, idempotent, never deletes): verified crops restored
+  to person folders, unverified to `_unverified_review/` (89 crops). Final index state: 308 headshots,
+  218 verified, 0 missing paths, all unverified entries point into review.
+- Reminder repeated to owner: rotate the LlamaCloud API key (`llx-UJF...`) — it has been live across
+  session restarts and serialized in logs.
+- Desktop temp scripts (`_tmp_*.py`, `_tmp_watch.py`) remain from interactive debugging; none are part
+  of the live watcher.
