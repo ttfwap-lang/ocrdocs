@@ -74,11 +74,69 @@ MAGIC: Dict[str, bytes] = {
 }
 GATEWAY_FATAL_MARKERS = ("is not of a supported file type", "password or DRM protected",
                          "appears to be broken or corrupted",
-                         "file is password protected", "could not be processed: file is encrypted")
+                         "file is password protected", "could not be processed: file is encrypted",
+                         # corrupt/mislabeled images from the recovered drive: the gateway rejects them with
+                         # this on every attempt, so without this marker they would be re-uploaded forever
+                         "our image decoder cannot read")
 # Errors that are usually deterministic (corrupt image content) but are only treated as fatal after the
 # file has failed the same way across two rounds, so an unlucky transient never strikes a good file out.
 STRIKE_MARKER = "internal service error"
 STRIKE_LIMIT = 2
+
+# Files over this size are re-encoded as a downscaled JPEG before upload. The gateway dropped 120 MB JPGs
+# from the recovered drive every time (URLError / HTTP 499 -- upload cap), and those failures never count as
+# strikes, so they would be retried forever. Downscaling to <=MAX_IMAGE_EDGE px keeps every document readable
+# while dropping the payload to a few MB. Originals are never modified on disk.
+UPLOAD_BYTES_CAP = 20 * 1024 * 1024  # 20 MB
+MAX_IMAGE_EDGE = 4000
+
+def maybe_shrink_image(path: str, data: bytes):
+    """Return uploadable bytes, or None when the oversized image cannot be reduced.
+
+    Unchanged bytes when small; a downscaled JPEG when PIL can decode the image; a cv2-repacked
+    JPEG of the FIRST decodable frame when PIL chokes (recovered-drive blobs that concatenate many
+    files -- the 120 MB JPGs above); None when over-cap and undecodable (caller records fatal).
+    """
+    if len(data) <= UPLOAD_BYTES_CAP:
+        return data
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".bmp"):  # TIFF/PDF left alone (multi-frame)
+        return data
+    from io import BytesIO
+    try:
+        from PIL import Image
+        im = Image.open(BytesIO(data))
+        im.load()
+        if im.width > MAX_IMAGE_EDGE or im.height > MAX_IMAGE_EDGE:
+            im.thumbnail((MAX_IMAGE_EDGE, MAX_IMAGE_EDGE))
+        if im.mode in ("RGBA", "LA", "P"):
+            rgba = im.convert("RGBA")
+            bg = Image.new("RGB", rgba.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[3])
+            im = bg
+        elif im.mode != "RGB":
+            im = im.convert("RGB")
+        buf = BytesIO()
+        im.save(buf, "JPEG", quality=88, optimize=True)
+        return buf.getvalue()
+    except Exception:  # PIL broke on the stream (corrupt/concatenated blob) -- try cv2 first frame
+        pass
+    try:
+        import cv2  # noqa: N813
+        import numpy as np
+        frame = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return None
+        h, w = frame.shape[:2]
+        if max(w, h) > MAX_IMAGE_EDGE:
+            scale = MAX_IMAGE_EDGE / max(w, h)
+            frame = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 88])
+        if not ok:
+            return None
+        return buf.tobytes()
+    except Exception:  # noqa: BLE001 - neither decoder can touch it; let the caller mark it fatal
+        return None
 
 
 def magic_mismatch(path: str) -> Optional[str]:
@@ -125,10 +183,19 @@ def analyse_one(path: str, cloud) -> Dict:
     if mm:
         return {"file": path, "ok": False, "fatal": True, "error": f"Fatal: {mm}", "secs": round(time.time() - t, 1)}
     try:
-        r = cloud.analyze(Path(path).read_bytes(), Path(path).name)
-        return {"file": path, "ok": True, "document_type": r.document_type, "type_confidence": r.type_confidence,
-                "type_reasoning": r.type_reasoning, "fields": r.fields, "pages": len(r.page_texts), "credits": r.credits,
-                "errors": r.errors, "secs": round(time.time() - t, 1)}
+        data = Path(path).read_bytes()
+        shrunk = maybe_shrink_image(path, data)
+        if shrunk is None:
+            return {"file": path, "ok": False, "fatal": True,
+                    "error": f"Fatal: image {len(data) // (1024 * 1024)}MB is over the upload cap and cannot be decoded",
+                    "secs": round(time.time() - t, 1)}
+        r = cloud.analyze(shrunk, Path(path).name)
+        row = {"file": path, "ok": True, "document_type": r.document_type, "type_confidence": r.type_confidence,
+               "type_reasoning": r.type_reasoning, "fields": r.fields, "pages": len(r.page_texts), "credits": r.credits,
+               "errors": r.errors, "secs": round(time.time() - t, 1)}
+        if len(shrunk) != len(data):
+            row["shrunk"] = f"{len(data) // 1024}KB->{len(shrunk) // 1024}KB"
+        return row
     except Exception as e:  # noqa: BLE001 - one bad file must never stop a bulk run; it is recorded and retried next run
         msg = f"{type(e).__name__}: {e}"[:300]
         fatal = any(m in msg for m in GATEWAY_FATAL_MARKERS)
