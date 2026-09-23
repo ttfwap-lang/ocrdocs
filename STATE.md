@@ -242,3 +242,33 @@ Not verified: accuracy of any of it on real pages; that the containers start wit
   session restarts and serialized in logs.
 - Desktop temp scripts (`_tmp_*.py`, `_tmp_watch.py`) remain from interactive debugging; none are part
   of the live watcher.
+
+## 2026-09-24 completion verification (live server, measured — not declared)
+
+- **LlamaParse bulk run is COMPLETE.** `results\rc_extract.jsonl` holds 9,816 rows covering
+  5,110 distinct files; taking each file's LAST row gives a terminal verdict for every file:
+  4,080 ok / 809 fatal (magic-sniffed junk) / 221 "internal service error" (2-strike budget
+  exhausted). `results\resume.log` ends with `ALL DONE: every file extracted`. The
+  `ocrdocs_llamacloud_resume` ONLOGON task is Ready with no pending run.
+- **App verified over live HTTP** (server started, queried, stopped; port 3000 free again):
+  `GET /api/identities` -> 149 identities in family-name-first order, 1,134 unassigned.
+  `GET /api/identities/:id` -> `fieldBreakdown` in catalogue order (Given → Family → DOB →
+  Residency → Address → Driver's Licence → Passport → Gender …) with documents hydrated.
+  `GET /api/documents/:id/file` -> HTTP 206 PartialContent, `application/pdf`, serving real
+  bytes from the Recovered_C path. Zero duplicate `content_hash`; 0 corpus fields with an
+  empty value (363 empty rows are all pre-existing demo data).
+- **Identity grouping is now reproduced exactly offline** by a Python re-implementation of
+  `identityService.ts` (same sha256(`family|given|dob`)[:16], same first-match field
+  semantics, same `normalizeDob`): 309 grouped documents -> 149 identities, matching the
+  live API. This reference is what any headshot converter must use.
+
+### Known remaining gap (the only work left to make identities complete)
+Identity **photos** are not wired: `server/services/headshotService.ts` expects a FLAT
+`index.jsonl` (`{docId, identityId, subdir, doc, page, source, headshots:[{crop, relPath,
+bbox, verified}]}`), but the desktop corpus index is NESTED
+(`{file, note, record:{subjects:[…], headshots:[{page,crop,bbox,verified,path}]}}`) and keys
+people by folder name (`applicant_Aihua_Chen`), not by the app's sha256 `identityId`.
+Measured ceiling if converted as-is: 121 face-bearing records -> 75 match an app document ->
+36 match an app identity -> **26 of 149 identities (17.4%)** would gain >=1 verified photo
+(64 of 218 verified crops). The 46 unmatched face-records belong to documents that had no
+`verif=ok` fields and were therefore never loaded into the app DB.
