@@ -85,6 +85,12 @@ def _load_catalogue() -> Dict[str, Tuple[str, int]]:
     return dict(fc.BY_ID)
 
 
+# The identity hash is shared with the app and the headshot index; import it
+# rather than reimplementing the DOB key a third time (see build_headshots_index).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from build_headshots_index import app_identity_id  # noqa: E402
+
+
 _CATALOGUE = _load_catalogue()
 
 
@@ -96,8 +102,13 @@ def catalogue_number(name: str) -> Optional[int]:
 
 
 def identity_id_for(family: str, given: str, dob: str) -> str:
-    key = f"{normalize_text(family)}|{normalize_text(given)}|{normalize_digits(dob)}"
-    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+    """Same key the app uses (identityService.ts + dobKey.ts).
+
+    app_identity_id is imported from build_headshots_index so the local index,
+    the headshot index and the app all derive identical identityIds. A digits-only
+    strip here would split `24 NOV 1963` from `24/11/1963` into two identities.
+    """
+    return app_identity_id(family, given, dob)
 
 
 def load_rows(path: str) -> List[Dict[str, Any]]:

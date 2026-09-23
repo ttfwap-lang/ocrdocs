@@ -17,6 +17,7 @@ import type { ExtractionRepo } from '../db/repositories/extractionRepo';
 import type { DocumentRow } from '../db/contracts';
 import type { HeadshotService, IdentityPhoto } from './headshotService';
 import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../../src/data/bankFields';
+import { canonicalDob } from './dobKey';
 
 /**
  * The `fields` table stores each row's human-readable display name (e.g.
@@ -114,9 +115,14 @@ function normalizeText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-/** Compares DOBs by digit sequence only, so 14/08/1988 and 14-08-1988 match. */
+/**
+ * Compares DOBs by their canonical key, so `24/11/1963` and `24 NOV 1963` are
+ * the same person. Ambiguous numeric dates (both leading parts <= 12) keep their
+ * raw digits rather than guessing an ordering, so distinct values never merge.
+ * See ./dobKey.ts for the measured failure this replaces.
+ */
 function normalizeDob(value: string): string {
-  return value.replace(/[^0-9]/g, '');
+  return canonicalDob(value);
 }
 
 function titleCase(value: string): string {
