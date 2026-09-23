@@ -175,3 +175,26 @@ Still open and honest about it:
 What exists and was run locally: Paddle-VL and Chandra HTTP clients, the Qwen classify/merge with owner (applicant/parent/spouse/...), section, entry and document type, S1 low-res probe + orientation, S2 regex clear (parks, audit-sampled, never deletes), S4 question-flag rules, a tool-using S5 agent verifier that cannot accept a correction no reader supports, server-side owner routing and agent annotations, `scripts/vllm_services.sh`, and `docs/PIPELINE_V2.md`. The Surya engine and its GPL dependency were removed. Every optional stage is off by default (`OCRDOCS_PIPELINE=legacy`).
 Verified by running: `npm run lint` clean, Node and Python test suites green (see the commit log for counts), `bash -n` on the shell scripts.
 Not verified: accuracy of any of it on real pages; that the containers start with the chosen flags (Qwen3-VL-8B is not downloaded); throughput of the whole pipeline; how many files each S4 rule flags; the DenseNet triage (no trained weights).
+
+## 2026-09-23 LlamaCloud bulk parse checkpoint (desktop pipeline; not committed data)
+
+- Bulk agentic_plus parse of `C:\Users\lnxzf\Desktop\Recovered_C` (5,110 files) via US gateway
+  (`api.cloud.llamaindex.ai`) is converging on a resumable run (`llamaparse_bulk\resume_llamacloud.ps1` +
+  ONLOGON scheduled task; the JSONL result file is the source of truth, not process state).
+  At last check: ~3,47x ok / ~793 fatal (magic-sniffed junk) / ~215 two-strike internal-service-error /
+  ~630 true pending. Roughly 42% of the recovered drive turned out to be corrupt/mislabeled junk that the
+  gateway rejects; the fatal+strike logic in `scripts/llamaparse_bulk.py` stops those from being re-uploaded
+  every resume round.
+- Two pipeline bugs were fixed on the desktop and mirrored into this repo (commit 5f35b20):
+  (1) `ocr_llamacloud.py::_poll` now reads `data.job.error_message` so real gateway errors are surfaced
+  instead of masked; (2) `llamaparse_bulk.py` magic-pre-checks files (`fatal` rows with no upload),
+  GATEWAY_FATAL_MARKERS, and a 2-strike rule for deterministic "internal service error".
+- Search/index decision (recommendation, owner +1 pending on follow-up): do NOT hook up a hosted LlamaCloud
+  Index or LlamaParse MCP for this corpus. Rationale: a hosted index would re-parse every document (extra
+  credits) and keep a persistent, queryable copy of personal data on the vendor; the project is explicitly
+  privacy-first and 100% of parse output already lives on the desktop. `scripts/build_local_index.py` builds
+  a private SQLite FTS5 index straight off `rc_extract.jsonl` using the same sha256 identity key as
+  `server/services/identityService.ts`, so the existing identities UI can consume it. Verified working
+  (identity hashing matches; FTS search retrieves names/addresses/phones). Output lives under gitignored paths.
+- Reminder flagged to owner: rotate the LlamaCloud API key (`llx-UJF...`), which has been used across
+  session restarts and has been pasted/serialized in this project''s logs.
