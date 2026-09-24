@@ -114,7 +114,13 @@ test('a two-digit year is read as this century', () => {
 // The owner defines the expiry at MONTH granularity and the store pins the day to 01, so
 // every relative measure must be in whole months. A day count would report a card
 // expiring "09/2026" as expired on 3 September, which is false.
-const SEP_24_2026 = new Date(Date.UTC(2026, 8, 24));
+//
+// Built with the LOCAL constructor (new Date(y, m, d)) because monthsUntilExpiry reads
+// local year/month. Using Date.UTC here would make the fixture depend on the runner's
+// timezone: in a UTC+ zone Date.UTC(2026, 8, 24) is already 25 Sep local, which would
+// silently shift the expected month counts.
+const SEP_24_2026 = new Date(2026, 8, 24);
+const DEC_15_2026 = new Date(2026, 11, 15);
 
 test('monthsUntilExpiry measures whole months, not days', () => {
   assert.equal(monthsUntilExpiry('2026-09-01', SEP_24_2026), 0, 'the current month is month 0');
@@ -132,8 +138,8 @@ test('the current month is not expired, the previous one is', () => {
   // Once the month has actually passed, the same value is expired. The window floor is
   // 09/2026, so there is no in-window month earlier than 09/2026 -- the only way an
   // expiry can be both in-window and expired is for time to have moved on.
-  assert.equal(isExpiredMonth('2026-09-01', new Date(Date.UTC(2026, 11, 15))), true);
-  assert.equal(monthsUntilExpiry('2026-09-01', new Date(Date.UTC(2026, 11, 15))), -3);
+  assert.equal(isExpiredMonth('2026-09-01', DEC_15_2026), true);
+  assert.equal(monthsUntilExpiry('2026-09-01', DEC_15_2026), -3);
 });
 
 test('an out-of-window month is rejected, never reported as expired', () => {
@@ -150,4 +156,19 @@ test('expiresWithinMonths includes the current month and excludes the past', () 
   assert.equal(expiresWithinMonths('2026-12-01', 3, SEP_24_2026), true, 'three months out still counts');
   assert.equal(expiresWithinMonths('2027-01-01', 3, SEP_24_2026), false, 'four months out does not');
   assert.equal(expiresWithinMonths('2026-08-01', 3, SEP_24_2026), false, 'the past is not "soon"');
+});
+
+test('month counts use the LOCAL calendar month, not UTC', () => {
+  // An expiry is a calendar month with no timezone. Reading UTC would disagree with the
+  // reader for most of the day in a UTC+ zone: in Sydney, 1 Oct 09:00 local is still
+  // 30 Sep UTC, so a card expiring October would read as current month. monthsUntilExpiry
+  // must therefore use getFullYear()/getMonth(), which is what the local-constructed
+  // fixture below exercises.
+  const localOct1Morning = new Date(2026, 9, 1, 9, 0, 0);
+  assert.equal(localOct1Morning.getMonth(), 9, 'fixture really is local October');
+  assert.equal(monthsUntilExpiry('2026-10-01', localOct1Morning), 0, 'the card is in its expiry month');
+  assert.equal(isExpiredMonth('2026-10-01', localOct1Morning), false);
+  // And the same is true at the very end of the previous local month.
+  const localSep30Late = new Date(2026, 8, 30, 23, 30, 0);
+  assert.equal(monthsUntilExpiry('2026-10-01', localSep30Late), 1, 'not yet the expiry month');
 });

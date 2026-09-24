@@ -163,11 +163,21 @@ export function monthsUntilExpiry(raw: string | number | null | undefined, today
   const v = classifyExpiry(raw);
   if (!v.valid || v.yearMonth === null) return null;
   const [y, m] = v.yearMonth.split('-').map(Number);
-  const months = (y - today.getUTCFullYear()) * 12 + (m - (today.getUTCMonth() + 1));
+  // LOCAL year/month on purpose. An expiry is a calendar month with no timezone: "09/2026"
+  // means September 2026 for whoever reads the card. Using getUTC*() here would disagree
+  // with the reader by a month for most of each day in UTC+ zones (in Sydney, 1 Oct 09:00
+  // local is still 30 Sep UTC), so "expiring this month" would be wrong for part of the day.
+  const months = (y - today.getFullYear()) * 12 + (m - (today.getMonth() + 1));
   return months;
 }
 
-/** True when the expiry month is the current month or earlier. */
+/**
+ * True when the expiry month is strictly BEFORE the current month.
+ *
+ * Deliberately strict: a card expiring in the current month has NOT expired, because the
+ * month is not over. That is why this is `months < 0` and not `<= 0` -- a card expiring
+ * "09/2026" on 24 September is current, not 23 days expired.
+ */
 export function isExpiredMonth(raw: string | number | null | undefined, today = new Date()): boolean {
   const months = monthsUntilExpiry(raw, today);
   return months !== null && months < 0;

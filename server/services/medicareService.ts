@@ -17,7 +17,7 @@
  */
 
 import { createHash } from 'crypto';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import {
@@ -337,7 +337,12 @@ function countBy(db: DatabaseType, column: string): Record<string, number> {
  * Read from the file rather than the database, because the database already has the
  * rejected values cleared -- counting there would report them as merely absent and the
  * summary would understate how many detections the rule threw out.
+ *
+ * Cached on the file's mtime + size. The dashboard polls the summary, and re-parsing 3.3 MB
+ * of JSON on every poll was pure waste; the census only changes when the file does.
  */
+let censusCache: { key: string; census: ExpiryCensus } | null = null;
+
 function readExpiryCensus(): ExpiryCensus {
   const empty: ExpiryCensus = {
     valid: 0, absent: 0, malformed: 0, beforeWindow: 0, afterWindow: 0, rejected: 0,
@@ -345,11 +350,16 @@ function readExpiryCensus(): ExpiryCensus {
   const path = indexPath();
   if (!existsSync(path)) return empty;
   try {
+    const stat = statSync(path);
+    const key = `${stat.mtimeMs}:${stat.size}`;
+    if (censusCache && censusCache.key === key) return censusCache.census;
     const parsed = JSON.parse(readFileSync(path, 'utf8'));
     if (!Array.isArray(parsed)) return empty;
-    return censusExpiries(
+    const census = censusExpiries(
       (parsed as MedicareIndexRow[]).map((r) => r?.expiry_best_date ?? ''),
     );
+    censusCache = { key, census };
+    return census;
   } catch {
     return empty;
   }
