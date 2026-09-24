@@ -95,6 +95,15 @@ async function domState() {
   })()`);
 }
 
+async function waitForDom(expression, description, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await evaluate(`Boolean(${expression})`)) return;
+    await sleep(400);
+  }
+  throw new Error(`Timed out waiting for ${description}`);
+}
+
 async function clickNav(index) {
   const clicked = await evaluate(`(() => { const button = document.querySelectorAll('nav button')[${index}]; if (!button) return false; button.click(); return true; })()`);
   if (!clicked) throw new Error(`navigation button ${index} is not present`);
@@ -105,13 +114,22 @@ const report = { targetUrl, cycles: [] };
 for (let cycle = 1; cycle <= cycles; cycle++) {
   events.length = 0;
   await command('Page.reload', { ignoreCache: true });
-  await sleep(1_800);
+  await waitForDom(
+    `document.querySelector('[data-testid="identities-loading"]') === null && /DGX WORKER: LIVE/.test(document.body.innerText)`,
+    'initial identity data',
+  );
   const initial = await domState();
   await clickNav(1); // Medicare
-  await sleep(1_000);
+  await waitForDom(
+    `/INDEX \\/\\/\\s*[\\d,]+\\s+PATIENTS/.test(document.body.innerText) && !document.body.innerText.includes('Querying index')`,
+    'Medicare index',
+  );
   const medicare = await domState();
   await clickNav(0); // Identities
-  await sleep(1_000);
+  await waitForDom(
+    `document.querySelector('[data-testid="identities-loading"]') === null && /PEOPLE\\s+[\\d,]+/.test(document.body.innerText)`,
+    'identity data after tab switch',
+  );
   const identities = await domState();
   report.cycles.push({ cycle, initial, medicare, identities });
 }

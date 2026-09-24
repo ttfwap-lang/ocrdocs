@@ -117,6 +117,7 @@ export const IdentitiesView: React.FC = () => {
   const [unassignedTotal, setUnassignedTotal] = useState(0);
   const [unassignedByStatus, setUnassignedByStatus] = useState<Record<string, number>>({});
   const [unassignedHasMore, setUnassignedHasMore] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -176,6 +177,7 @@ export const IdentitiesView: React.FC = () => {
           : unassignedLengthRef.current < total,
       );
       setError(null);
+      setHasLoaded(true);
       // Drop anything the refresh no longer knows about. An identityId is a hash of
       // name+given+DOB, so re-processing a document can change it; without this the tray
       // would keep counting a person who no longer exists and the CSV would come back
@@ -329,6 +331,15 @@ export const IdentitiesView: React.FC = () => {
           fetchIdentities();
         }}
       />
+    );
+  }
+
+  if (!hasLoaded && !error) {
+    return (
+      <div data-testid="identities-loading" className="min-h-[50vh] flex items-center justify-center gap-3 text-sm font-mono text-slate-400">
+        <Loader2 className="w-5 h-5 animate-spin text-matrix-400" />
+        Loading live identity index…
+      </div>
     );
   }
 

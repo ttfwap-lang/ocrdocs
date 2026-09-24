@@ -20,6 +20,7 @@ export default function App() {
     documentCount: 0,
   });
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusLoaded, setStatusLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +43,7 @@ export default function App() {
           documentCount: typeof documents.count === 'number' ? documents.count : 0,
         });
         setStatusError(null);
+        setStatusLoaded(true);
       }
     };
 
@@ -72,14 +74,14 @@ export default function App() {
         <div className="bg-black/70 backdrop-blur-sm border-b border-matrix-500/15 py-1.5 px-4 text-[10px] font-mono tracking-widest uppercase">
           <div className="max-w-screen-2xl mx-auto flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-4 flex-wrap">
-              <span className={`flex items-center gap-1.5 font-bold ${statusBar.dgxWorkerAvailable ? 'text-matrix-400 text-glow-green' : 'text-amber-400'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full glow-pulse ${statusBar.dgxWorkerAvailable ? 'bg-matrix-500' : 'bg-amber-400'}`} />
-                DGX WORKER: {statusBar.dgxWorkerAvailable ? 'LIVE' : 'UNCONFIGURED'}
+              <span className={`flex items-center gap-1.5 font-bold ${!statusLoaded ? 'text-slate-400' : statusBar.dgxWorkerAvailable ? 'text-matrix-400 text-glow-green' : 'text-amber-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full glow-pulse ${!statusLoaded ? 'bg-slate-500' : statusBar.dgxWorkerAvailable ? 'bg-matrix-500' : 'bg-amber-400'}`} />
+                DGX WORKER: {!statusLoaded ? 'CHECKING' : statusBar.dgxWorkerAvailable ? 'LIVE' : 'UNCONFIGURED'}
               </span>
             </div>
 
             <div className="flex items-center gap-3 text-cyan-400 font-bold text-glow-cyan">
-              <span>{statusBar.documentCount} DOCUMENTS</span>
+              <span>{statusLoaded ? `${statusBar.documentCount} DOCUMENTS` : 'STATUS CHECK…'}</span>
                {statusError && (
                  <span className="text-rose-300 normal-case tracking-normal" title={statusError}>
                    status unavailable
