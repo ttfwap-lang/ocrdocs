@@ -312,6 +312,8 @@ nothing is deleted or moved.
   `src/components/Navbar.tsx`, `src/types.ts`, `README.md`, `server/db/database.ts`.
   Someone else is working in this repo concurrently; it was not staged, reviewed or committed
   here.
+  **RESOLVED:** that concurrent Medicare work has since been committed to this branch
+  (`e1e9e55`) together with the owner's expiry rule, and the tree is now clean.
 
 ## 2026-09-24 verified key identifiers, credit score, identity page redesign, add-to-cart CSV
 
@@ -396,3 +398,55 @@ They were deliberately left unstaged rather than committed on another session's 
 session then committed them itself as `f383cf6`. Typecheck, the full 255-test suite and the
 build were re-run against the combined HEAD and all pass. Six duplicate dev-server processes
 accumulated during this review and were reduced to the single listener on 5178.
+
+## 2026-09-24 full line-by-line review + E2E polish (whole-app)
+
+Reviewed every file touched this session line by line, and swept the live app end to end.
+
+### Bugs found and fixed
+1. **A doc comment that contradicted its own code.** `isExpiredMonth` said "the current month
+   or earlier" while the body is `months < 0` (strictly before) -- the exact bug the function
+   exists to prevent. Fixed so the wrong sentence cannot invite it back.
+2. **A real timezone bug in the month arithmetic.** `monthsUntilExpiry` used
+   `getUTCFullYear()/getUTCMonth()` against a `new Date()` default, mixing a local-time
+   instant with UTC accessors. An expiry is a calendar month, so in a UTC+ zone the two
+   disagree for most of each day (Sydney 1 Oct 09:00 local is still 30 Sep UTC), which made
+   an October card read as already in its expiry month. Switched to local getters; the test
+   fixture was timezone-dependent in the same way and is now local-constructed, with a
+   regression test for both ends of a month boundary. Verified green under
+   TZ=Australia/Sydney, TZ=UTC and the default.
+3. **The medicare summary re-parsed 3.3 MB of JSON on every poll.** Cached on the file's
+   mtime + size. (Was on the E2E backlog; closed.)
+4. **The add-to-cart was never reconciled.** An identityId is a hash of name+given+DOB, so
+   re-processing a document changes it; a stale id stayed in the cart, the tray counted a
+   person who no longer existed, and the CSV returned fewer rows than the tray promised.
+   `fetchIdentities` now prunes ids the refreshed list no longer knows.
+5. **Two buttons both said "Export All (CSV)" and did different things** (one row per
+   document vs one row per identity). Now "Per Document (CSV)" and "Export All Identities",
+   with tooltips naming the row shape.
+6. **The three "real headings" were not peers.** Name was text-3xl, DOB was text-xl and
+   nested inside the name's block (reading as a sub-item), and credit score was text-4xl.
+   They are now a 3-column grid of equal cells.
+7. **The pre-existing VLM test failure** was a non-hermetic test, not a logic bug: ambient
+   `OCRDOCS_LLAMAPARSE=full` attached the real cloud classifier, whose document_type overrode
+   the local majority while the page kept the local value. Fixed with an autouse fixture;
+   the Python suite also dropped from ~66s to ~12s because the test had been making a real
+   network call on every run.
+
+### Audited, nothing to fix
+- No SQL injection: the four interpolated-SQL sites are all allowlisted via `SORTABLE` or
+  are string literals.
+- No silent empty catches in TypeScript; every `setInterval` / `setTimeout` /
+  `addEventListener` clears itself.
+- The `TODO`/`stub` grep hits are all test doubles and optional-feature guards, not dead code.
+
+### E2E sweep against a live server: 133 checks, 0 failures
+- 125 identities family-name-first, every one with a DOB; 99 carry key identifiers, 12 carry
+  a credit score, 33 identifiers triple-checked, all with well-formed tiers and sources.
+- Exports: identities CSV 125 rows (one per identity), a single-id selection returns exactly
+  one row, consolidated document CSV 1,450 rows.
+- Owner rules hold in served data: no out-of-window expiry is ever served; the medicare CSV
+  leaks no rejected raw expiry and every exported expiry is `MM/YYYY` or empty.
+- Files serve (HTTP 206 application/pdf) and headshot assets serve (HTTP 200 image/jpeg).
+
+npm 256/256, pytest 320 passed / 1 skipped, tsc 0, production build ok.
