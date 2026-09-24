@@ -169,7 +169,10 @@ report.network = {
   failures: events.filter((event) => event.method === 'Network.loadingFailed').length,
   apiResponses: events
     .filter((event) => event.method === 'Network.responseReceived' && event.params.response.url.includes('/api/'))
-    .map((event) => ({ path: new URL(event.params.response.url).pathname, status: event.params.response.status })),
+    .map((event) => ({
+      path: new URL(event.params.response.url).pathname.replace(/^\/api\/identities\/[^/]+$/, '/api/identities/:id'),
+      status: event.params.response.status,
+    })),
   errors: events.filter((event) =>
     event.method === 'Runtime.exceptionThrown' ||
     (event.method === 'Runtime.consoleAPICalled' && ['error', 'assert'].includes(event.params.type)) ||
