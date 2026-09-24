@@ -151,14 +151,20 @@ wait_for_worker_idle() {
 restart_worker_when_safe() {
   local commit="$1"
   local pending_file="$STATE_ROOT/worker-pending-commit"
-  local was_active=0
+
+  # A no-op timer pass must not bounce a healthy worker every 15 minutes. A
+  # pending marker is written only when a new release was switched (or an
+  # earlier worker refresh failed), so this is both cheaper and safer for jobs.
+  if [[ ! -f "$pending_file" ]]; then
+    log INFO "worker is already marked current; no restart needed"
+    return 0
+  fi
 
   if ! systemctl is-active --quiet "$WORKER_SERVICE"; then
     rm -f "$pending_file"
     log INFO "worker service is not active; leaving it stopped"
     return 0
   fi
-  was_active=1
   printf '%s\n' "$commit" >"$pending_file"
 
   if ! wait_for_worker_idle; then
