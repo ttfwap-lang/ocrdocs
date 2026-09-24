@@ -388,10 +388,11 @@ but are not used as a display fallback and are not exported.
 - Medicare is unaffected by the 65 rejected expiries: the number, DOB, address and source files
   are still stored and searchable, only the expiry is cleared.
 
-### Not committed, deliberately
-`src/components/IdentitiesView.tsx` and `src/components/IdentityDetailPage.tsx` are modified in
+### Concurrent work, resolved
+`src/components/IdentitiesView.tsx` and `src/components/IdentityDetailPage.tsx` were modified in
 the working tree by a concurrent session (a selection-tray/CSV-export change in the former, a
-Name/DOB/Credit-Score equal-cell layout change in the latter, the latter appearing first and the
-former changing mid-review). Both typecheck and build, but they are in-flight work from another
-session, so they were left unstaged rather than committed on its behalf. Six duplicate dev-server
-processes accumulated during this review and were reduced to the single listener on 5178.
+Name/DOB/Credit-Score equal-cell layout change in the latter — the former changed mid-review).
+They were deliberately left unstaged rather than committed on another session's behalf; that
+session then committed them itself as `f383cf6`. Typecheck, the full 255-test suite and the
+build were re-run against the combined HEAD and all pass. Six duplicate dev-server processes
+accumulated during this review and were reduced to the single listener on 5178.
