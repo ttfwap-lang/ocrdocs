@@ -67,10 +67,6 @@ function expandTwoDigitYear(twoDigit: string): number {
 }
 
 /**
- * Reduce a DOB string to a canonical `YYYYMMDD` key when the format is
- * unambiguous, otherwise to its raw digits so distinct values cannot collide.
- */
-/**
  * Whether a DOB is a recognised, date-like value suitable for identity
  * grouping. `canonicalDob` intentionally preserves distinct junk strings for
  * safe keying, but a field containing only words or several dates must not be
@@ -108,6 +104,10 @@ export function isReliableDob(value: string): boolean {
   return false;
 }
 
+/**
+ * Reduce a DOB string to a canonical `YYYYMMDD` key when the format is
+ * unambiguous, otherwise to its raw digits so distinct values cannot collide.
+ */
 export function canonicalDob(value: string): string {
   const raw = (value || '').trim();
   if (!raw) return '';

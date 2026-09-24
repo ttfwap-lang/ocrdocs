@@ -319,7 +319,7 @@ export const IdentitiesView: React.FC = () => {
         + Object.entries(unassignedByStatus).reduce((sum, [status, count]) => sum + (status === 'failed' ? 0 : Number(count) || 0), 0),
       failed: identities.reduce((sum, i) => sum + i.failedCount, 0) + (unassignedByStatus.failed ?? 0),
     }),
-    [identities, unassigned],
+    [identities, unassignedTotal, unassignedByStatus],
   );
 
   if (selection) {
