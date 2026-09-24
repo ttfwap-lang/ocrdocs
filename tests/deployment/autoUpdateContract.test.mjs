@@ -13,6 +13,8 @@ async function read(relativePath) {
 test('automatic GX10 updates are atomic, locked, and fail closed', async () => {
   const updater = await read('scripts/ocrdocs-auto-update.sh');
   assert.match(updater, /flock -n/);
+  assert.match(updater, /BUILD_USER/);
+  assert.match(updater, /run_as_builder/);
   assert.match(updater, /git archive/);
   assert.match(updater, /npm --prefix .* ci/);
   assert.match(updater, /npm --prefix .* run lint/);
@@ -22,6 +24,10 @@ test('automatic GX10 updates are atomic, locked, and fail closed', async () => {
   assert.match(updater, /refresh_control_plane/);
   assert.match(updater, /bash -n/);
   assert.match(updater, /processing_jobs/);
+  assert.match(updater, /refresh_lite_workers/);
+  assert.match(updater, /database_backup/);
+  assert.match(updater, /PREVIOUS_LINK/);
+  assert.match(updater, /LAST_GOOD_LINK/);
   assert.match(updater, /DATA_ROOT\/\.env/);
   assert.doesNotMatch(updater, /DGX_WORKER_TOKEN\s*=\s*['"][^'"]+['"]/);
 });
@@ -36,6 +42,9 @@ test('systemd timer and installer are present and use the release symlink', asyn
   assert.match(timer, /OnUnitActiveSec=15min/);
   assert.match(timer, /Persistent=true/);
   assert.match(installer, /ocrdocs-current/);
+  assert.match(installer, /OCRDOCS_BUILD_USER/);
+  assert.doesNotMatch(installer, /Environment=OCRDOCS_QUEUE_WATCH=true/);
+  assert.doesNotMatch(installer, /Environment=OCRDOCS_PURGE_UNVERIFIED=true/);
   assert.match(installer, /systemctl enable --now ocrdocs-update\.timer/);
   assert.doesNotMatch(installer, /DGX_WORKER_TOKEN\s*=\s*['"][^'"]+['"]/);
 });

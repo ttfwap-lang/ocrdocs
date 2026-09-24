@@ -28,6 +28,9 @@ SOURCE_ROOT="${OCRDOCS_UPDATE_SOURCE_ROOT:-/home/flak3dd/ocrdocs-update-source}"
 STATE_ROOT="${OCRDOCS_UPDATE_STATE_ROOT:-/var/lib/ocrdocs-updater}"
 SERVICE_USER="${OCRDOCS_SERVICE_USER:-flak3dd}"
 SERVICE_HOME="${OCRDOCS_SERVICE_HOME:-/home/flak3dd}"
+BUILD_USER="${OCRDOCS_BUILD_USER:-nobody}"
+BUILD_HOME="${OCRDOCS_BUILD_HOME:-/tmp/ocrdocs-builder-home}"
+BUILD_ROOT="${OCRDOCS_BUILD_ROOT:-/tmp/ocrdocs-builds}"
 SERVER_SERVICE="${OCRDOCS_SERVER_SERVICE:-ocrdocs-server.service}"
 WORKER_SERVICE="${OCRDOCS_WORKER_SERVICE:-ocrdocs-worker.service}"
 HEALTH_URL="${OCRDOCS_HEALTH_URL:-http://127.0.0.1:3000/api/health}"
@@ -44,6 +47,10 @@ if [[ -r /etc/default/ocrdocs-update ]]; then
   # shellcheck disable=SC1091
   source /etc/default/ocrdocs-update
 fi
+
+PREVIOUS_LINK="${OCRDOCS_PREVIOUS_LINK:-$STATE_ROOT/previous-release}"
+LAST_GOOD_LINK="${OCRDOCS_LAST_GOOD_LINK:-$STATE_ROOT/last-good-release}"
+BACKUP_ROOT="${OCRDOCS_BACKUP_ROOT:-$STATE_ROOT/backups}"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "ocrdocs-auto-update must run as root" >&2
@@ -79,9 +86,23 @@ done
 [[ -r "$DATA_ROOT/.env" ]] || fail "runtime environment file is missing: $DATA_ROOT/.env"
 [[ -r "$DATA_ROOT/.env.worker" ]] || fail "worker environment file is missing: $DATA_ROOT/.env.worker"
 id "$SERVICE_USER" >/dev/null 2>&1 || fail "service user does not exist: $SERVICE_USER"
+id "$BUILD_USER" >/dev/null 2>&1 || fail "build user does not exist: $BUILD_USER"
+[[ "$BUILD_USER" != "root" && "$BUILD_USER" != "$SERVICE_USER" ]] || fail "build user must be isolated from the service and root accounts"
+BUILD_GROUP="$(id -gn "$BUILD_USER")"
 git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || fail "invalid update branch: $BRANCH"
 
-install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$RELEASES_ROOT" "$SOURCE_ROOT" "$STATE_ROOT"
+# Code and updater state are root-owned. Only the service account can read the
+# persistent data tree; the isolated builder cannot read that tree at all.
+install -d -m 0750 -o root -g root "$RELEASES_ROOT" "$SOURCE_ROOT" "$STATE_ROOT"
+install -d -m 0700 -o root -g root "$BACKUP_ROOT"
+install -d -m 0711 -o root -g root "$BUILD_ROOT"
+install -d -m 0700 -o "$BUILD_USER" -g "$BUILD_GROUP" "$BUILD_HOME"
+# Migrate the first version of the layout as well as future releases: the
+# service account must not be able to rewrite code that the root updater will
+# execute on its next pass.
+chown -R root:root "$RELEASES_ROOT" "$SOURCE_ROOT" "$STATE_ROOT"
+chmod -R a+rX "$RELEASES_ROOT" "$SOURCE_ROOT"
+chmod -R a-w "$RELEASES_ROOT" "$SOURCE_ROOT"
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA_ROOT/data" "$DATA_ROOT/storage"
 
 # Only one updater may build or switch a release.
@@ -90,6 +111,10 @@ flock -n 9 || { log INFO "another updater is already running; skipping"; exit 0;
 
 run_as_service() {
   runuser -u "$SERVICE_USER" -- env HOME="$SERVICE_HOME" PATH="/usr/local/bin:/usr/bin:/bin" "$@"
+}
+
+run_as_builder() {
+  runuser -u "$BUILD_USER" -- env HOME="$BUILD_HOME" PATH="/usr/local/bin:/usr/bin:/bin" "$@"
 }
 
 atomic_link() {
@@ -113,6 +138,77 @@ current_commit() {
   fi
 }
 
+state_link_target() {
+  readlink -f "$1" 2>/dev/null || true
+}
+
+atomic_state_link() {
+  local target="$1"
+  local link_path="$2"
+  local temporary="${link_path}.next.$$"
+  [[ -d "$target" ]] || return 1
+  rm -f "$temporary"
+  ln -s "$target" "$temporary"
+  mv -Tf "$temporary" "$link_path"
+}
+
+health_available() {
+  curl -fsS --max-time 4 "$HEALTH_URL" >/dev/null 2>&1
+}
+
+database_backup() {
+  local stamp backup
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  backup="$BACKUP_ROOT/app-$stamp.db"
+  rm -f "$backup"
+  python3 - "$DATA_ROOT/data/app.db" "$backup" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+
+source_path = Path(sys.argv[1])
+backup_path = Path(sys.argv[2])
+if not source_path.is_file():
+    raise SystemExit("database file is missing")
+source_uri = source_path.resolve().as_uri() + "?mode=ro"
+source = sqlite3.connect(source_uri, uri=True, timeout=10)
+destination = sqlite3.connect(str(backup_path), timeout=10)
+try:
+    source.backup(destination, pages=1000, sleep=0.1)
+    check = destination.execute("PRAGMA integrity_check").fetchone()
+    if not check or check[0] != "ok":
+        raise RuntimeError(f"integrity_check failed: {check!r}")
+finally:
+    destination.close()
+    source.close()
+PY
+  chmod 0600 "$backup"
+  # Keep a small local recovery window without allowing database backups to
+  # grow without bound.
+  find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'app-*.db' -printf '%T@ %p\n' 2>/dev/null \
+    | sort -nr | tail -n +4 | cut -d' ' -f2- | while IFS= read -r old_backup; do
+        [[ -n "$old_backup" ]] && rm -f -- "$old_backup"
+      done
+  log INFO "SQLite backup verified before release switch: $backup"
+}
+
+recover_previous_if_unhealthy() {
+  local current previous commit
+  current="$(current_target)"
+  commit="$(current_commit)"
+  [[ -n "$current" && -n "$commit" ]] || return 0
+  health_matches_commit "$commit" && return 0
+  previous="$(state_link_target "$PREVIOUS_LINK")"
+  if [[ -z "$previous" || ! -d "$previous" || "$previous" == "$current" ]]; then
+    return 0
+  fi
+  log WARN "current release ${commit} is not healthy; restoring durable previous release"
+  atomic_link "$previous" || fail "could not restore previous release"
+  systemctl restart "$SERVER_SERVICE" || fail "previous release server did not restart"
+  health_available || fail "previous release did not become healthy"
+  log INFO "previous release restored successfully"
+}
+
 processing_jobs() {
   # The updater uses the standard-library SQLite client rather than exposing
   # the worker bearer token or adding another database dependency.
@@ -121,8 +217,9 @@ import sqlite3
 import sys
 
 path = sys.argv[1]
+uri = "file:" + path + "?mode=ro"
 try:
-    connection = sqlite3.connect(path, timeout=2)
+    connection = sqlite3.connect(uri, uri=True, timeout=2)
     try:
         row = connection.execute(
             "SELECT COUNT(*) FROM jobs WHERE status = 'processing'"
@@ -147,6 +244,32 @@ wait_for_worker_idle() {
     sleep "$WORKER_DRAIN_INTERVAL_SECONDS"
   done
   return 1
+}
+
+refresh_lite_workers() {
+  local force_refresh="${1:-0}"
+  local unit count
+  if [[ "$force_refresh" != "1" && ! -f "$STATE_ROOT/worker-pending-commit" ]]; then
+    return 0
+  fi
+  while IFS= read -r unit; do
+    [[ -n "$unit" ]] || continue
+    if systemctl is-active --quiet "$unit"; then
+      count="$(processing_jobs)"
+      if [[ "$count" == "0" ]]; then
+        if systemctl restart "$unit"; then
+          log INFO "refreshed lite worker ${unit}"
+        else
+          log WARN "lite worker ${unit} failed to restart; it remains on its previous release"
+        fi
+      else
+        log WARN "lite worker ${unit} has active work; refresh deferred"
+      fi
+    fi
+  done < <(
+    systemctl list-units --all --type=service --no-legend 'ocrdocs-worker-lite@*.service' 2>/dev/null \
+      | awk '{print $1}'
+  )
 }
 
 restart_worker_when_safe() {
@@ -210,12 +333,14 @@ wait_for_health() {
 prune_releases() {
   local keep="$KEEP_RELEASES"
   [[ "$keep" =~ ^[1-9][0-9]*$ ]] || keep=3
-  local current
+  local current previous last_good
   current="$(current_target)"
+  previous="$(state_link_target "$PREVIOUS_LINK")"
+  last_good="$(state_link_target "$LAST_GOOD_LINK")"
   local old
   while IFS= read -r old; do
     [[ -n "$old" ]] || continue
-    [[ "$old" == "$current" ]] && continue
+    [[ "$old" == "$current" || "$old" == "$previous" || "$old" == "$last_good" ]] && continue
     # Only remove directories whose names are full commit hashes. Never let a
     # malformed path turn housekeeping into an unbounded delete.
     if [[ "$old" =~ /[0-9a-f]{40}$ ]]; then
@@ -267,6 +392,10 @@ refresh_control_plane() {
   systemctl daemon-reload || log WARN "systemd daemon-reload failed after unit refresh"
 }
 
+# If a previous power loss left an unverified release selected, recover from
+# the durable pointer before attempting another update.
+recover_previous_if_unhealthy
+
 # Keep a shell-safe record of the last successful run without putting secrets
 # in the repository or in the updater's command line.
 printf '%s\n' "$(date --iso-8601=seconds)" >"$STATE_ROOT/last-run-started"
@@ -295,44 +424,55 @@ trap on_exit EXIT
 # can therefore be reset/fetched without touching runtime data or user files.
 if [[ ! -d "$SOURCE_ROOT/.git" ]]; then
   rm -rf -- "$SOURCE_ROOT"
-  install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$SOURCE_ROOT"
+  install -d -m 0750 -o root -g root "$SOURCE_ROOT"
   log INFO "creating updater source checkout"
-  run_as_service git clone --filter=blob:none --no-checkout "$REPO_URL" "$SOURCE_ROOT"
+  git clone --filter=blob:none --no-checkout "$REPO_URL" "$SOURCE_ROOT"
 else
-  run_as_service git -C "$SOURCE_ROOT" remote set-url origin "$REPO_URL"
+  git -C "$SOURCE_ROOT" remote set-url origin "$REPO_URL"
 fi
 
 log INFO "fetching ${BRANCH} from ${REPO_URL}"
-run_as_service git -C "$SOURCE_ROOT" fetch --prune --depth=1 origin "$BRANCH"
-COMMIT="$(run_as_service git -C "$SOURCE_ROOT" rev-parse FETCH_HEAD)"
+git -C "$SOURCE_ROOT" fetch --prune --depth=1 origin "$BRANCH"
+COMMIT="$(git -C "$SOURCE_ROOT" rev-parse FETCH_HEAD)"
 [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "updater received an invalid commit id"
-run_as_service git -C "$SOURCE_ROOT" checkout --detach --force "$COMMIT" >/dev/null
+git -C "$SOURCE_ROOT" checkout --detach --force "$COMMIT" >/dev/null
 
 PREVIOUS_COMMIT="$(current_commit)"
 if [[ "$PREVIOUS_COMMIT" == "$COMMIT" ]] && health_matches_commit "$COMMIT"; then
   log INFO "already on current commit ${COMMIT}; refreshing worker if needed"
   restart_worker_when_safe "$COMMIT"
+  refresh_lite_workers
+  atomic_state_link "$(current_target)" "$LAST_GOOD_LINK" || log WARN "could not persist last-good release pointer"
   prune_releases
   printf '%s\n' "$COMMIT" >"$STATE_ROOT/last-success-commit"
   exit 0
 fi
 
 log INFO "building release ${COMMIT}"
-BUILD_DIR="$(mktemp -d "$RELEASES_ROOT/.build-${COMMIT}.XXXXXX")"
+BUILD_DIR="$(mktemp -d "$BUILD_ROOT/.build-${COMMIT}.XXXXXX")"
 # git archive is a clean, tracked-file-only input: secrets, data, uploads,
-# node_modules, and local build artifacts cannot leak into a release.
-run_as_service git -C "$SOURCE_ROOT" archive "$COMMIT" | tar -x -C "$BUILD_DIR"
-chown -R "$SERVICE_USER:$SERVICE_USER" "$BUILD_DIR"
+# node_modules, and local build artifacts cannot leak into a release. The
+# archive is extracted as root, then only the isolated builder can run the
+# dependency lifecycle and compiler.
+git -C "$SOURCE_ROOT" archive "$COMMIT" | tar -x -C "$BUILD_DIR"
+chown -R "$BUILD_USER:$BUILD_GROUP" "$BUILD_DIR"
 
 log INFO "installing locked Node dependencies"
-run_as_service npm --prefix "$BUILD_DIR" ci --no-audit --no-fund
+run_as_builder npm --prefix "$BUILD_DIR" ci --no-fund
 log INFO "type-checking release source"
-run_as_service npm --prefix "$BUILD_DIR" run lint
+run_as_builder npm --prefix "$BUILD_DIR" run lint
 log INFO "building production frontend and server bundle"
-run_as_service npm --prefix "$BUILD_DIR" run build
+run_as_builder npm --prefix "$BUILD_DIR" run build
 [[ -s "$BUILD_DIR/dist/index.html" ]] || fail "build did not produce dist/index.html"
 [[ -s "$BUILD_DIR/dist/server.cjs" ]] || fail "build did not produce dist/server.cjs"
-run_as_service node --check "$BUILD_DIR/dist/server.cjs"
+run_as_builder node --check "$BUILD_DIR/dist/server.cjs"
+
+# The service account consumes releases read-only. Only the root updater can
+# replace them, so a compromised web/worker process cannot rewrite the next
+# release or its marker.
+chown -R root:root "$BUILD_DIR"
+chmod -R a+rX "$BUILD_DIR"
+chmod -R a-w "$BUILD_DIR"
 
 # Runtime paths deliberately remain outside the release. The symlinks also
 # preserve relative-path compatibility for code that expects data/ or storage/.
@@ -356,6 +496,10 @@ mv -- "$BUILD_DIR" "$RELEASE_DIR"
 BUILD_DIR=""
 
 log INFO "switching current release to ${COMMIT}"
+if [[ -n "$PREVIOUS_TARGET" && -d "$PREVIOUS_TARGET" ]]; then
+  atomic_state_link "$PREVIOUS_TARGET" "$PREVIOUS_LINK" || fail "could not persist previous release pointer"
+fi
+database_backup
 atomic_link "$RELEASE_DIR"
 SWITCHED=1
 systemctl restart "$SERVER_SERVICE"
@@ -364,8 +508,10 @@ if ! wait_for_health "$COMMIT"; then
 fi
 
 refresh_control_plane "$RELEASE_DIR"
+atomic_state_link "$RELEASE_DIR" "$LAST_GOOD_LINK" || log WARN "could not persist last-good release pointer"
 log INFO "server is healthy on ${COMMIT}; refreshing worker when its queue is idle"
 restart_worker_when_safe "$COMMIT" 1
+refresh_lite_workers 1
 prune_releases
 printf '%s\n' "$COMMIT" >"$STATE_ROOT/last-success-commit"
 printf '%s\n' "$(date --iso-8601=seconds)" >"$STATE_ROOT/last-success-time"

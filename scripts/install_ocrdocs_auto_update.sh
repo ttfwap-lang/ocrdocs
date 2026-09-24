@@ -20,7 +20,9 @@ SOURCE_ROOT="${OCRDOCS_UPDATE_SOURCE_ROOT:-/home/flak3dd/ocrdocs-update-source}"
 STATE_ROOT="${OCRDOCS_UPDATE_STATE_ROOT:-/var/lib/ocrdocs-updater}"
 SERVICE_USER="${OCRDOCS_SERVICE_USER:-flak3dd}"
 SERVICE_HOME="${OCRDOCS_SERVICE_HOME:-/home/flak3dd}"
-IMPORT_ROOT="${OCRDOCS_IMPORT_ROOT:-/home/nick/ocr}"
+BUILD_USER="${OCRDOCS_BUILD_USER:-nobody}"
+BUILD_HOME="${OCRDOCS_BUILD_HOME:-/tmp/ocrdocs-builder-home}"
+BUILD_ROOT="${OCRDOCS_BUILD_ROOT:-/tmp/ocrdocs-builds}"
 HEALTH_URL="${OCRDOCS_HEALTH_URL:-http://127.0.0.1:3000/api/health}"
 REPO_URL="${OCRDOCS_UPDATE_REPO:-https://github.com/ttfwap-lang/ocrdocs.git}"
 BRANCH="${OCRDOCS_UPDATE_BRANCH:-main}"
@@ -30,22 +32,34 @@ BRANCH="${OCRDOCS_UPDATE_BRANCH:-main}"
 [[ -f "$PROJECT_DIR/deploy/ocrdocs-update.service" ]] || { echo "missing systemd service under $PROJECT_DIR" >&2; exit 1; }
 [[ -f "$PROJECT_DIR/deploy/ocrdocs-update.timer" ]] || { echo "missing systemd timer under $PROJECT_DIR" >&2; exit 1; }
 id "$SERVICE_USER" >/dev/null 2>&1 || { echo "service user does not exist: $SERVICE_USER" >&2; exit 1; }
+id "$BUILD_USER" >/dev/null 2>&1 || { echo "build user does not exist: $BUILD_USER" >&2; exit 1; }
+[[ "$BUILD_USER" != "root" && "$BUILD_USER" != "$SERVICE_USER" ]] || { echo "build user must be isolated from root and the service user" >&2; exit 1; }
 [[ -d "$DATA_ROOT" ]] || { echo "runtime data root does not exist: $DATA_ROOT" >&2; exit 1; }
 [[ -r "$DATA_ROOT/.env" ]] || { echo "missing runtime env: $DATA_ROOT/.env" >&2; exit 1; }
 [[ -r "$DATA_ROOT/.env.worker" ]] || { echo "missing worker env: $DATA_ROOT/.env.worker" >&2; exit 1; }
 
-for path in "$DATA_ROOT" "$RELEASES_ROOT" "$CURRENT_LINK" "$SOURCE_ROOT" "$STATE_ROOT" "$IMPORT_ROOT"; do
+for path in "$DATA_ROOT" "$RELEASES_ROOT" "$CURRENT_LINK" "$SOURCE_ROOT" "$STATE_ROOT" "$BUILD_HOME" "$BUILD_ROOT"; do
   case "$path" in
     /*) ;;
     *) echo "all deployment paths must be absolute: $path" >&2; exit 1;;
   esac
 done
 
-# Make the persistent runtime directories usable by the service account. This
-# does not move, copy, or delete the database or uploaded documents.
-install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" \
-  "$DATA_ROOT/data" "$DATA_ROOT/storage" "$RELEASES_ROOT" "$SOURCE_ROOT" "$STATE_ROOT"
-install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$IMPORT_ROOT/queued" "$IMPORT_ROOT/parsed"
+# Do not race a timer-triggered build while changing ownership or units.
+systemctl stop ocrdocs-update.service 2>/dev/null || true
+
+# Make the persistent runtime directories usable by the service account. Code,
+# source checkouts, backups, and updater state stay root-owned and outside the
+# service account's home. This does not move, copy, or delete the database or
+# uploaded documents.
+install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA_ROOT/data" "$DATA_ROOT/storage"
+install -d -m 0750 -o root -g root "$RELEASES_ROOT" "$SOURCE_ROOT" "$STATE_ROOT"
+install -d -m 0700 -o root -g root "$STATE_ROOT/backups"
+install -d -m 0711 -o root -g root "$BUILD_ROOT"
+install -d -m 0700 -o "$BUILD_USER" -g "$(id -gn "$BUILD_USER")" "$BUILD_HOME"
+chown -R root:root "$RELEASES_ROOT" "$SOURCE_ROOT" "$STATE_ROOT"
+chmod -R a+rX "$RELEASES_ROOT" "$SOURCE_ROOT"
+chmod -R a-w "$RELEASES_ROOT" "$SOURCE_ROOT"
 
 # Establish a safe initial target before installing the new systemd paths.
 if [[ -L "$CURRENT_LINK" ]]; then
@@ -74,6 +88,12 @@ OCRDOCS_UPDATE_SOURCE_ROOT=$SOURCE_ROOT
 OCRDOCS_UPDATE_STATE_ROOT=$STATE_ROOT
 OCRDOCS_SERVICE_USER=$SERVICE_USER
 OCRDOCS_SERVICE_HOME=$SERVICE_HOME
+OCRDOCS_BUILD_USER=$BUILD_USER
+OCRDOCS_BUILD_HOME=$BUILD_HOME
+OCRDOCS_BUILD_ROOT=$BUILD_ROOT
+OCRDOCS_PREVIOUS_LINK=$STATE_ROOT/previous-release
+OCRDOCS_LAST_GOOD_LINK=$STATE_ROOT/last-good-release
+OCRDOCS_BACKUP_ROOT=$STATE_ROOT/backups
 OCRDOCS_SERVER_SERVICE=ocrdocs-server.service
 OCRDOCS_WORKER_SERVICE=ocrdocs-worker.service
 OCRDOCS_HEALTH_URL=$HEALTH_URL
@@ -88,8 +108,9 @@ EOF
 chmod 0644 /etc/default/ocrdocs-update
 
 # The existing units remain in place. These managed drop-ins change only the
-# working directory and persistent paths, so queue settings and the existing
-# worker runtime drop-in remain compatible.
+# working directory and persistent paths. Existing queue/import policy (for
+# example the queue watcher and purge-unverified setting) is deliberately not
+# overwritten here; preserve the host's current queue.conf and .env.
 install -d -m 0755 /etc/systemd/system/ocrdocs-server.service.d
 cat >/etc/systemd/system/ocrdocs-server.service.d/zz-ocrdocs-release.conf <<EOF
 [Service]
@@ -102,12 +123,8 @@ Environment=STORAGE_ROOT=$DATA_ROOT/storage/private
 Environment=MEDICARE_INDEX_PATH=$DATA_ROOT/data/medicare_index.json
 Environment=OCRDOCS_HEADSHOTS_DIR=$DATA_ROOT/data/headshots
 Environment=OCRDOCS_HOSTNAME=ocr.local
-Environment=OCRDOCS_IMPORT_ROOT=$IMPORT_ROOT
 Environment=OCRDOCS_PREPARSE_SHELL=bash
 Environment=OCRDOCS_PREPARSE_SCRIPT=$CURRENT_LINK/scripts/pre-parse.sh
-Environment=OCRDOCS_QUEUE_WATCH=true
-Environment=OCRDOCS_QUEUE_POLL_SECONDS=30
-Environment=OCRDOCS_PURGE_UNVERIFIED=true
 EOF
 chmod 0644 /etc/systemd/system/ocrdocs-server.service.d/zz-ocrdocs-release.conf
 
