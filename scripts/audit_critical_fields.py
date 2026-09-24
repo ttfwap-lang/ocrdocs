@@ -92,6 +92,20 @@ def main() -> int:
         ).fetchall()
         for row in rows:
             value = row["corrected_value"] if row["corrected_value"] is not None else row["field_value"]
+            raw_value = (str(value) if value is not None else "").strip()
+            if not raw_value:
+                stats["empty"] += 1
+                db.execute(
+                    """
+                    INSERT INTO critical_field_audit(field_id, field_name, verdict, reason, checked_at)
+                    VALUES (?, ?, 'empty', 'empty', ?)
+                    ON CONFLICT(field_id) DO UPDATE SET
+                      field_name=excluded.field_name, verdict=excluded.verdict,
+                      reason=excluded.reason, checked_at=excluded.checked_at
+                    """,
+                    (row["id"], row["field_name"], now()),
+                )
+                continue
             valid, reason = classify_critical_field(row["field_name"], value)
             protected = row["corrected_value"] is not None or row["approved"] == 1
             if valid:
