@@ -12,6 +12,25 @@ import ocr_qwen_merge as qm
 import ocr_spark_engine as engine
 
 
+@pytest.fixture(autouse=True)
+def no_ambient_llamaparse(monkeypatch):
+    """Keep these tests hermetic.
+
+    Every test here exercises the LOCAL vlm_v2 pipeline with fake readers. If
+    OCRDOCS_LLAMAPARSE happens to be set in the ambient environment, process_single_file_for_pass
+    also attaches the real cloud classifier, and `pick_document_type` lets the cloud's
+    document_type override the local one -- so the file-level `document_type` becomes whatever
+    the cloud said, not what the fakes produced. The page-level types would still show the
+    local answer, which is exactly the confusing shape this guard prevents.
+
+    Deleting the variable is the same approach tests/python/test_llamaparse_bulk.py uses in
+    its own clean_env fixture. The cloud path has its own dedicated tests; these are not them.
+    """
+    monkeypatch.delenv("OCRDOCS_LLAMAPARSE", raising=False)
+    monkeypatch.delenv("LLAMA_CLOUD_API_KEY", raising=False)
+    monkeypatch.delenv("OCRDOCS_LLAMAPARSE_BASE_URL", raising=False)
+
+
 def page():
     return Image.new("RGB", (300, 200), "white")
 
