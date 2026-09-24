@@ -80,8 +80,14 @@ export function runMigrations(db: DatabaseType): void {
     CREATE INDEX IF NOT EXISTS idx_extractions_document_id
       ON extractions(document_id);
 
+    CREATE INDEX IF NOT EXISTS idx_extractions_document_created
+      ON extractions(document_id, created_at DESC);
+
     CREATE INDEX IF NOT EXISTS idx_fields_extraction_id
       ON fields(extraction_id);
+
+    CREATE INDEX IF NOT EXISTS idx_fields_extraction_name
+      ON fields(extraction_id, field_name);
 
     CREATE INDEX IF NOT EXISTS idx_jobs_document_id
       ON jobs(document_id);
@@ -97,6 +103,23 @@ export function runMigrations(db: DatabaseType): void {
   `);
 
   addColumnIfMissing(db, 'jobs', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'documents', 'latest_extraction_id', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_documents_latest_extraction ON documents(latest_extraction_id)');
+  // Backfill the pointer once for databases created before the column existed.
+  // The correlated subquery is deliberately restricted to NULL pointers, so
+  // normal restarts do not rescan every extraction.
+  db.exec(`
+    UPDATE documents
+    SET latest_extraction_id = (
+      SELECT e.id
+      FROM extractions e
+      WHERE e.document_id = documents.id
+      ORDER BY e.created_at DESC, e.rowid DESC
+      LIMIT 1
+    )
+    WHERE latest_extraction_id IS NULL
+      AND EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = documents.id)
+  `);
 }
 
 /**

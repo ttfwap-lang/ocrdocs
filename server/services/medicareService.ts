@@ -92,6 +92,9 @@ export interface MedicareSummary {
   loaded: boolean;
   loadedAt: string | null;
   sourcePath: string;
+  sourceExists: boolean;
+  sourceBytes: number | null;
+  sourceModifiedAt: string | null;
   patients: number;
   withMedicare: number;
   medicareVerified: number;
@@ -394,11 +397,27 @@ export function getMedicareSummary(db: DatabaseType): MedicareSummary {
   // Judge the RAW source values so the counters explain what the rule removed, rather
   // than counting the already-cleared stored values (which would read as simply absent).
   const expiryCensus = readExpiryCensus();
+  const sourcePath = indexPath();
+  let sourceBytes: number | null = null;
+  let sourceModifiedAt: string | null = null;
+  let sourceExists = false;
+  try {
+    const stat = statSync(sourcePath);
+    sourceExists = stat.isFile();
+    sourceBytes = stat.size;
+    sourceModifiedAt = new Date(stat.mtimeMs).toISOString();
+  } catch {
+    // Missing/unreadable source is represented in the summary rather than
+    // making the status endpoint fail or pretending the index is empty.
+  }
 
   return {
     loaded: Boolean(meta),
     loadedAt: meta?.loaded_at ?? null,
-    sourcePath: indexPath(),
+    sourcePath,
+    sourceExists,
+    sourceBytes,
+    sourceModifiedAt,
     patients: one('SELECT COUNT(*) AS n FROM medicare_patients'),
     withMedicare: one("SELECT COUNT(*) AS n FROM medicare_patients WHERE medicare_number <> ''"),
     medicareVerified: one('SELECT COUNT(*) AS n FROM medicare_patients WHERE medicare_valid = 1'),

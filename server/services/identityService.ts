@@ -298,16 +298,25 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
   function buildGroups(): { groups: Map<string, IdentityGroup>; unassigned: UnassignedDocument[] } {
     const groups = new Map<string, IdentityGroup>();
     const unassigned: UnassignedDocument[] = [];
+    const documents = documentRepo.getAll();
+    // One bounded, set-based read replaces the previous two SQLite queries per
+    // document. The live queue database has >14k documents, so the old N+1
+    // pattern made /api/identities take seconds and blocked every other API.
+    const latest = extractionRepo.getLatestSnapshot([
+      GIVEN_NAMES_FIELD,
+      FAMILY_NAME_FIELD,
+      DATE_OF_BIRTH_FIELD,
+    ]);
 
-    for (const doc of documentRepo.getAll()) {
-      const extraction = latestExtraction(doc.id);
+    for (const doc of documents) {
+      const snapshot = latest.get(doc.id);
       const photos = headshotService.photosForDocument(doc.id);
-      if (!extraction) {
+      if (!snapshot) {
         unassigned.push({ id: doc.id, filename: doc.filename, mimeType: doc.mime_type, status: doc.status, uploadedAt: doc.uploaded_at, photos });
         continue;
       }
 
-      const fields = extractionRepo.getFields(extraction.id);
+      const fields = snapshot.fields;
       const givenNames = fieldValue(fields, GIVEN_NAMES_FIELD);
       const familyName = fieldValue(fields, FAMILY_NAME_FIELD);
       const dob = fieldValue(fields, DATE_OF_BIRTH_FIELD);
@@ -366,8 +375,7 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
     };
   }
 
-  function listIdentities(): IdentitySummary[] {
-    const { groups } = buildGroups();
+  function identitySummaries(groups: Map<string, IdentityGroup>): IdentitySummary[] {
     const summaries = Array.from(groups.entries()).map(([id, group]) => toSummary(id, group));
     summaries.sort(
       (a, b) =>
@@ -378,9 +386,41 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
     return summaries;
   }
 
-  function listUnassigned(): UnassignedDocument[] {
-    const { unassigned } = buildGroups();
+  function sortedUnassigned(unassigned: UnassignedDocument[]): UnassignedDocument[] {
     return unassigned.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+  }
+
+  /**
+   * Build the identities and the first page of unassigned documents from one
+   * consistent database snapshot. The API uses this instead of calling the
+   * two legacy list methods independently, which used to scan the database
+   * twice and briefly expose mismatched counts while the second scan ran.
+   */
+  function listIdentitiesAndUnassigned(unassignedLimit = 200, unassignedOffset = 0) {
+    const { groups, unassigned } = buildGroups();
+    const allUnassigned = sortedUnassigned(unassigned);
+    const start = Math.max(0, unassignedOffset);
+    const limit = Math.max(0, unassignedLimit);
+    const unassignedByStatus: Record<string, number> = {};
+    for (const document of allUnassigned) {
+      unassignedByStatus[document.status] = (unassignedByStatus[document.status] ?? 0) + 1;
+    }
+    return {
+      identities: identitySummaries(groups),
+      unassigned: allUnassigned.slice(start, start + limit),
+      unassignedTotal: allUnassigned.length,
+      unassignedByStatus,
+      unassignedOffset: start,
+      unassignedHasMore: start + limit < allUnassigned.length,
+    };
+  }
+
+  function listIdentities(): IdentitySummary[] {
+    return identitySummaries(buildGroups().groups);
+  }
+
+  function listUnassigned(): UnassignedDocument[] {
+    return sortedUnassigned(buildGroups().unassigned);
   }
 
   function getIdentityDetail(identityId: string): IdentityDetail | undefined {
@@ -431,7 +471,7 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
     };
   }
 
-  return { listIdentities, listUnassigned, getIdentityDetail };
+  return { listIdentities, listUnassigned, listIdentitiesAndUnassigned, getIdentityDetail };
 }
 
 export type IdentityService = ReturnType<typeof createIdentityService>;

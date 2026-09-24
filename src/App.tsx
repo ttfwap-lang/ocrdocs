@@ -10,7 +10,7 @@ import { MedicareView } from './components/MedicareView';
 import { GeminiChatbot } from './components/GeminiChatbot';
 import { MatrixRain } from './components/MatrixRain';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import type { ServiceAvailabilityResponse } from './types';
+import type { DocumentCountResponse, ServiceAvailabilityResponse } from './types';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('identities');
@@ -19,6 +19,7 @@ export default function App() {
     dgxWorkerAvailable: false,
     documentCount: 0,
   });
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,26 +27,32 @@ export default function App() {
     const fetchStatusBarData = async () => {
       const [servicesResponse, documentsResponse] = await Promise.all([
         fetch('/api/services/status'),
-        fetch('/api/documents'),
+        fetch('/api/documents/count'),
       ]);
+      if (!servicesResponse.ok || !documentsResponse.ok) {
+        throw new Error(`status request failed (${servicesResponse.status}/${documentsResponse.status})`);
+      }
       const services = (await servicesResponse.json()) as ServiceAvailabilityResponse[];
-      const documents = (await documentsResponse.json()) as unknown[];
+      const documents = (await documentsResponse.json()) as DocumentCountResponse;
       const dgxWorker = services.find((service) => service.service === 'dgx_worker');
 
       if (!cancelled) {
         setStatusBar({
           dgxWorkerAvailable: Boolean(dgxWorker?.available),
-          documentCount: Array.isArray(documents) ? documents.length : 0,
+          documentCount: typeof documents.count === 'number' ? documents.count : 0,
         });
+        setStatusError(null);
       }
     };
 
     fetchStatusBarData().catch((error) => {
       console.error('Failed to fetch application status:', error);
+      if (!cancelled) setStatusError(error instanceof Error ? error.message : 'Status unavailable');
     });
     const interval = window.setInterval(() => {
       fetchStatusBarData().catch((error) => {
         console.error('Failed to refresh application status:', error);
+        if (!cancelled) setStatusError(error instanceof Error ? error.message : 'Status unavailable');
       });
     }, 60_000);
 
@@ -71,8 +78,13 @@ export default function App() {
               </span>
             </div>
 
-            <div className="flex items-center gap-2 text-cyan-400 font-bold text-glow-cyan">
+            <div className="flex items-center gap-3 text-cyan-400 font-bold text-glow-cyan">
               <span>{statusBar.documentCount} DOCUMENTS</span>
+               {statusError && (
+                 <span className="text-rose-300 normal-case tracking-normal" title={statusError}>
+                   status unavailable
+                 </span>
+               )}
             </div>
           </div>
         </div>

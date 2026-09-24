@@ -13,11 +13,18 @@ import type { Database as DatabaseType } from 'better-sqlite3';
 import { runMigrations } from './migrations/001_initial_schema';
 import { runMigrations as runMedicareMigrations } from './migrations/002_medicare_index';
 
-const DB_PATH = resolve(
-  process.env.DATABASE_PATH || 'data/app.db',
-);
+/**
+ * Resolve the database path at connection time, not module-evaluation time.
+ * Static ESM imports are evaluated before server.ts calls dotenv.config(); a
+ * module-level constant could therefore capture the wrong relative path when
+ * DATABASE_PATH is supplied only through .env.
+ */
+export function getDatabasePath(): string {
+  return resolve(process.env.DATABASE_PATH || 'data/app.db');
+}
 
 let dbInstance: DatabaseType | null = null;
+let openedPath: string | null = null;
 
 /**
  * Open (or return the already-open) SQLite database handle.
@@ -28,16 +35,18 @@ export function getDb(): DatabaseType {
     return dbInstance;
   }
 
-  const dir = dirname(DB_PATH);
+  const dbPath = getDatabasePath();
+  const dir = dirname(dbPath);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
 
-  dbInstance = new Database(DB_PATH);
+  dbInstance = new Database(dbPath);
+  openedPath = dbPath;
   dbInstance.pragma('journal_mode = WAL');
   dbInstance.pragma('foreign_keys = ON');
 
-  console.log(`[DB] Opened ${DB_PATH} (WAL mode)`);
+  console.log(`[DB] Opened ${dbPath} (WAL mode)`);
   return dbInstance;
 }
 
@@ -60,8 +69,12 @@ export function closeDb(): void {
   if (dbInstance) {
     dbInstance.close();
     dbInstance = null;
+    openedPath = null;
     console.log('[DB] Closed gracefully');
   }
 }
 
-export { DB_PATH };
+/** The path of the currently opened database, when one exists. */
+export function getOpenedDatabasePath(): string | null {
+  return openedPath;
+}

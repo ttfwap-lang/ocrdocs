@@ -17,7 +17,7 @@
  *    patient. Those rows are still searchable by Medicare number / DOB.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   RefreshCw,
   Search,
@@ -228,30 +228,43 @@ export const MedicareView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<MedicarePatient | null>(null);
   const [copied, setCopied] = useState('');
+  const rowsRequest = useRef(0);
+  const rowsAbort = useRef<AbortController | null>(null);
 
   const loadSummary = useCallback(async () => {
     try {
-      const res = await fetch('/api/medicare/summary');
+      const res = await fetch('/api/medicare/summary', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSummary(await res.json());
+      setError(null);
     } catch (err: any) {
       setError(err?.message || 'Failed to load Medicare index summary');
     }
   }, []);
 
   const loadRows = useCallback(async () => {
+    const requestId = ++rowsRequest.current;
+    rowsAbort.current?.abort();
+    const controller = new AbortController();
+    rowsAbort.current = controller;
     setLoading(true);
     try {
       const qs = buildQuery(filters, sort, dir, limit, page * limit);
-      const res = await fetch(`/api/medicare/patients?${qs}`);
+      const res = await fetch(`/api/medicare/patients?${qs}`, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData(await res.json());
+      const next = await res.json();
+      if (requestId !== rowsRequest.current) return;
+      setData(next);
       setError(null);
     } catch (err: any) {
+      if (err?.name === 'AbortError' || requestId !== rowsRequest.current) return;
       setError(err?.message || 'Failed to load patients');
     } finally {
-      setLoading(false);
+      if (requestId === rowsRequest.current) setLoading(false);
     }
   }, [filters, sort, dir, limit, page]);
+
+  useEffect(() => () => rowsAbort.current?.abort(), []);
 
   useEffect(() => {
     loadSummary();
@@ -514,6 +527,16 @@ export const MedicareView: React.FC = () => {
         {error && (
           <div className="relative mt-4 p-3 bg-rose-950/30 border border-rose-500/30 rounded-lg text-xs font-mono text-rose-300">
             {error}
+          </div>
+        )}
+        {summary && !summary.sourceExists && (
+          <div className="relative mt-4 p-3 bg-amber-950/30 border border-amber-500/30 rounded-lg text-xs font-mono text-amber-300">
+            Medicare source index is not present at the configured runtime path. The zero-row result is a data deployment warning, not an empty archive.
+          </div>
+        )}
+        {summary?.sourceExists && !summary.loaded && (
+          <div className="relative mt-4 p-3 bg-amber-950/30 border border-amber-500/30 rounded-lg text-xs font-mono text-amber-300">
+            Medicare source exists but has not completed a successful import. Check the service log and source permissions.
           </div>
         )}
 

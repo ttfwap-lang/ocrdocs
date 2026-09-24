@@ -51,8 +51,30 @@ export function createExtractionRepo(db: DatabaseType) {
     `SELECT * FROM extractions WHERE id = ?`,
   );
 
+  const stmtSetLatestExtraction = db.prepare(
+    `UPDATE documents SET latest_extraction_id = ? WHERE id = ?`,
+  );
+
   const stmtGetExtractionsByDoc = db.prepare<string>(
-    `SELECT * FROM extractions WHERE document_id = ? ORDER BY created_at DESC`,
+    `SELECT * FROM extractions WHERE document_id = ? ORDER BY created_at DESC, rowid DESC`,
+  );
+
+  /**
+   * Read the latest extraction and the requested fields for every document in
+   * two set-based queries. The identity list used to call
+   * getExtractionsByDocument + getFields once per document (an N+1 query
+   * pattern); with a 14k-document live database that blocked the event loop
+   * for several seconds and made tab switching look like an empty database.
+   *
+   * `documents.latest_extraction_id` is maintained on insertion and backfilled
+   * by the schema migration. It avoids an expensive window sort over every
+   * extraction on each request. The LEFT JOIN deliberately returns a null
+   * extraction for documents that are still queued.
+   */
+  const stmtGetLatestSnapshot = db.prepare(
+    `SELECT d.id AS owner_document_id, e.id, e.document_id
+     FROM documents d
+     LEFT JOIN extractions e ON e.id = d.latest_extraction_id`,
   );
 
   const stmtInsertField = db.prepare<
@@ -112,6 +134,7 @@ export function createExtractionRepo(db: DatabaseType) {
         params.extractionJson ?? null,
         params.extractionVersion ?? 1,
       );
+      stmtSetLatestExtraction.run(id, params.documentId);
       return this.getExtractionById(id)!;
     },
 
@@ -121,6 +144,43 @@ export function createExtractionRepo(db: DatabaseType) {
 
     getExtractionsByDocument(documentId: string): ExtractionRow[] {
       return stmtGetExtractionsByDoc.all(documentId) as ExtractionRow[];
+    },
+
+    /**
+     * Set-based latest-extraction read used by identity grouping. The returned
+     * map contains only the requested fields, so this stays bounded even when
+     * the database contains hundreds of thousands of catalogue fields.
+     */
+    getLatestSnapshot(fieldNames: string[]): Map<string, { extraction: Pick<ExtractionRow, 'id' | 'document_id'>; fields: FieldRow[] }> {
+      const latest = stmtGetLatestSnapshot.all() as Array<Pick<ExtractionRow, 'id' | 'document_id'> & { owner_document_id: string }>;
+      const byExtraction = new Map<string, FieldRow[]>();
+      if (fieldNames.length > 0) {
+        const placeholders = fieldNames.map(() => '?').join(', ');
+        const rows = db.prepare(
+          `SELECT f.*
+           FROM fields f
+           WHERE f.extraction_id IN (
+             SELECT latest_extraction_id
+             FROM documents
+             WHERE latest_extraction_id IS NOT NULL
+           )
+           AND f.field_name IN (${placeholders})`,
+        ).all(...fieldNames) as FieldRow[];
+        for (const row of rows) {
+          const list = byExtraction.get(row.extraction_id);
+          if (list) list.push(row);
+          else byExtraction.set(row.extraction_id, [row]);
+        }
+      }
+      const result = new Map<string, { extraction: Pick<ExtractionRow, 'id' | 'document_id'>; fields: FieldRow[] }>();
+      for (const row of latest) {
+        if (!row.id) continue;
+        result.set(row.owner_document_id, {
+          extraction: row,
+          fields: byExtraction.get(row.id) ?? [],
+        });
+      }
+      return result;
     },
 
     /**

@@ -36,6 +36,7 @@ import { IdentityDetailPage, type DetailSelection } from './IdentityDetailPage';
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff'];
 const UPLOAD_CONCURRENCY = 3;
+const UNASSIGNED_PAGE_SIZE = 200;
 
 /**
  * The "add to cart" selection box that sits under the identities header. Reviewers tick
@@ -113,8 +114,15 @@ function makeQueueId(): string {
 export const IdentitiesView: React.FC = () => {
   const [identities, setIdentities] = useState<IdentitySummary[]>([]);
   const [unassigned, setUnassigned] = useState<UnassignedDocument[]>([]);
+  const [unassignedTotal, setUnassignedTotal] = useState(0);
+  const [unassignedByStatus, setUnassignedByStatus] = useState<Record<string, number>>({});
+  const [unassignedHasMore, setUnassignedHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestSerial = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const unassignedLengthRef = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [selection, setSelection] = useState<DetailSelection | null>(null);
@@ -131,14 +139,43 @@ export const IdentitiesView: React.FC = () => {
     }
   }, []);
 
-  const fetchIdentities = useCallback(async () => {
-    setLoading(true);
+  const fetchIdentities = useCallback(async (append = false) => {
+    const requestId = ++requestSerial.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const offset = append ? unassignedLengthRef.current : 0;
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const res = await fetch('/api/identities');
+      const res = await fetch(
+        `/api/identities?unassigned_limit=${UNASSIGNED_PAGE_SIZE}&unassigned_offset=${offset}`,
+        { signal: controller.signal, cache: 'no-store' },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (requestId !== requestSerial.current) return;
       const next = Array.isArray(data.identities) ? data.identities : [];
+      const page = Array.isArray(data.unassigned) ? data.unassigned : [];
       setIdentities(next);
-      setUnassigned(Array.isArray(data.unassigned) ? data.unassigned : []);
+      setUnassigned((previous) => append ? [...previous, ...page] : page);
+      unassignedLengthRef.current = append ? unassignedLengthRef.current + page.length : page.length;
+      const total = Number.isFinite(Number(data.unassignedTotal))
+        ? Number(data.unassignedTotal)
+        : unassignedLengthRef.current;
+      setUnassignedTotal(total);
+      setUnassignedByStatus(
+        data.unassignedByStatus && typeof data.unassignedByStatus === 'object'
+          ? data.unassignedByStatus
+          : {},
+      );
+      setUnassignedHasMore(
+        typeof data.unassignedHasMore === 'boolean'
+          ? data.unassignedHasMore
+          : unassignedLengthRef.current < total,
+      );
+      setError(null);
       // Drop anything the refresh no longer knows about. An identityId is a hash of
       // name+given+DOB, so re-processing a document can change it; without this the tray
       // would keep counting a person who no longer exists and the CSV would come back
@@ -149,14 +186,19 @@ export const IdentitiesView: React.FC = () => {
         return kept.size === prev.size ? prev : kept;
       });
     } catch (err: any) {
+      if (err?.name === 'AbortError' || requestId !== requestSerial.current) return;
       setError(err?.message || 'Failed to load identities');
     } finally {
-      setLoading(false);
+      if (requestId === requestSerial.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchIdentities();
+    void fetchIdentities();
+    return () => abortRef.current?.abort();
   }, [fetchIdentities]);
 
   const isUploading = uploadQueue.some((q) => q.status === 'pending' || q.status === 'uploading');
@@ -270,9 +312,10 @@ export const IdentitiesView: React.FC = () => {
   const totals = useMemo(
     () => ({
       people: identities.length,
-      documents: identities.reduce((sum, i) => sum + i.documentCount, 0) + unassigned.length,
-      pending: identities.reduce((sum, i) => sum + i.pendingCount, 0) + unassigned.filter((d) => d.status !== 'failed').length,
-      failed: identities.reduce((sum, i) => sum + i.failedCount, 0) + unassigned.filter((d) => d.status === 'failed').length,
+      documents: identities.reduce((sum, i) => sum + i.documentCount, 0) + unassignedTotal,
+      pending: identities.reduce((sum, i) => sum + i.pendingCount, 0)
+        + Object.entries(unassignedByStatus).reduce((sum, [status, count]) => sum + (status === 'failed' ? 0 : Number(count) || 0), 0),
+      failed: identities.reduce((sum, i) => sum + i.failedCount, 0) + (unassignedByStatus.failed ?? 0),
     }),
     [identities, unassigned],
   );
@@ -317,7 +360,7 @@ export const IdentitiesView: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={fetchIdentities}
+              onClick={() => void fetchIdentities()}
               disabled={loading}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider text-matrix-400 bg-black/50 hover:bg-matrix-900/40 border border-matrix-500/30 rounded-lg transition-colors disabled:opacity-50"
             >
@@ -492,7 +535,7 @@ export const IdentitiesView: React.FC = () => {
             <div className="neon-card rounded-xl overflow-hidden">
               <div className="p-3 border-b border-amber-500/20 bg-black/30 flex items-center gap-2">
                 <Inbox className="w-4 h-4 text-amber-400" />
-                <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-amber-300">Unassigned Queue // {unassigned.length}</h2>
+                <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-amber-300">Unassigned Queue // {unassignedTotal}</h2>
               </div>
               <div className="divide-y divide-white/5 max-h-56 overflow-y-auto">
                 {unassigned.map((doc) => (
@@ -516,6 +559,18 @@ export const IdentitiesView: React.FC = () => {
                   </button>
                 ))}
               </div>
+              {unassignedHasMore && (
+                <div className="p-2 border-t border-amber-500/15 text-center">
+                  <button
+                    onClick={() => void fetchIdentities(true)}
+                    disabled={loadingMore}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-amber-300 hover:text-amber-200 disabled:opacity-50"
+                  >
+                    {loadingMore && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Load more unassigned ({unassigned.length} / {unassignedTotal})
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

@@ -93,6 +93,11 @@ export interface ServiceAvailabilityResponse {
   configuredAt?: string;
 }
 
+export interface DocumentCountResponse {
+  count: number;
+  byStatus: Record<string, number>;
+}
+
 /** A document registered via POST /api/documents, as returned by the DB-backed document/job pipeline. */
 export interface LocalDocument {
   id: string;
@@ -344,6 +349,10 @@ export interface MedicareSummary {
   loaded: boolean;
   loadedAt: string | null;
   sourcePath: string;
+  /** Runtime source diagnostics; these are aggregate metadata, never patient values. */
+  sourceExists: boolean;
+  sourceBytes: number | null;
+  sourceModifiedAt: string | null;
   patients: number;
   withMedicare: number;
   medicareVerified: number;

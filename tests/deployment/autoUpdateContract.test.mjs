@@ -30,6 +30,11 @@ test('automatic GX10 updates are atomic, locked, and fail closed', async () => {
   assert.match(updater, /LAST_GOOD_LINK/);
   assert.match(updater, /DATA_ROOT\/\.env/);
   assert.doesNotMatch(updater, /DGX_WORKER_TOKEN\s*=\s*['"][^'"]+['"]/);
+  const reconciler = await read('scripts/reconcile_verified_corpus.py');
+  assert.match(reconciler, /integrity_check/);
+  assert.match(reconciler, /--backup/);
+  assert.match(reconciler, /verif/);
+  assert.match(reconciler, /latest_extraction_id/);
 });
 
 test('systemd timer and installer are present and use the release symlink', async () => {

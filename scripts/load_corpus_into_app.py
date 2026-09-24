@@ -101,6 +101,28 @@ def mime_for(path: str) -> str | None:
     return MIME_BY_EXT.get(Path(path).suffix.lower()) or mimetypes.guess_type(path)[0]
 
 
+def ensure_latest_pointer_column(con: sqlite3.Connection) -> None:
+    """Keep the standalone loader compatible with databases from older releases."""
+    columns = {row[1] for row in con.execute("PRAGMA table_info(documents)")}
+    if "latest_extraction_id" not in columns:
+        con.execute("ALTER TABLE documents ADD COLUMN latest_extraction_id TEXT")
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_documents_latest_extraction ON documents(latest_extraction_id)"
+    )
+    con.execute(
+        """
+        UPDATE documents
+        SET latest_extraction_id = (
+          SELECT e.id FROM extractions e
+          WHERE e.document_id = documents.id
+          ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1
+        )
+        WHERE latest_extraction_id IS NULL
+          AND EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = documents.id)
+        """
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--in", dest="src", required=True, help="results\\rc_extract_verified.jsonl")
@@ -111,6 +133,7 @@ def main() -> int:
     con = sqlite3.connect(args.db)
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
+    ensure_latest_pointer_column(con)
 
     known_by_path = set(r[0] for r in con.execute("SELECT original_path FROM documents"))
     known_by_hash = set(r[0] for r in con.execute("SELECT content_hash FROM documents WHERE content_hash IS NOT NULL"))
@@ -182,6 +205,10 @@ def main() -> int:
             "INSERT INTO extractions (id, document_id, raw_text, extraction_json, extraction_version, created_at) "
             "VALUES (?,?,?,?,1,datetime('now'))",
             (extraction_id, document_id, None, json.dumps(extraction_json, ensure_ascii=False)),
+        )
+        con.execute(
+            "UPDATE documents SET latest_extraction_id = ? WHERE id = ?",
+            (extraction_id, document_id),
         )
 
         # -- insert fields -------------------------------------------------------------

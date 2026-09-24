@@ -243,6 +243,30 @@ test('Identities — grouping, breakdown, file serving, and zip export', async (
     assert.equal(leaked, false, 'the unassigned document must not appear inside any identity group');
   });
 
+  await t.test('identity and document status reads are bounded and paginated', async () => {
+    const pageRes = await fetch(`${baseUrl}/api/identities?unassigned_limit=1&unassigned_offset=0`);
+    assert.equal(pageRes.status, 200);
+    const page = await pageRes.json();
+    assert.ok(Array.isArray(page.unassigned));
+    assert.ok(page.unassigned.length <= 1, 'unassigned queue must be bounded on the initial request');
+    assert.ok(Number.isInteger(page.unassignedTotal));
+    assert.equal(page.unassignedOffset, 0);
+    assert.equal(page.unassignedHasMore, page.unassignedTotal > page.unassigned.length);
+
+    if (page.unassignedTotal > 1) {
+      const nextRes = await fetch(`${baseUrl}/api/identities?unassigned_limit=1&unassigned_offset=1`);
+      const next = await nextRes.json();
+      assert.equal(next.unassigned.length, 1);
+      assert.notEqual(next.unassigned[0].id, page.unassigned[0].id);
+    }
+
+    const countRes = await fetch(`${baseUrl}/api/documents/count`);
+    assert.equal(countRes.status, 200);
+    const counts = await countRes.json();
+    assert.ok(Number.isInteger(counts.count));
+    assert.equal(Object.values(counts.byStatus).reduce((sum, n) => sum + n, 0), counts.count);
+  });
+
   await t.test('GET /api/identities/:id returns full detail with a merged, cross-document field breakdown', async () => {
     const res = await fetch(`${baseUrl}/api/identities/${johnIdentityId}`);
     assert.equal(res.status, 200);

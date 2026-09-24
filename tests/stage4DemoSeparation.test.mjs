@@ -182,5 +182,9 @@ test('Stage 4 (superseded) — Google Drive & cloud-OCR removal guard', async (t
     assert.strictEqual(data.services.multipass, undefined);
     assert.strictEqual(typeof data.services.ocr_worker.available, 'boolean');
     assert.strictEqual(typeof data.services.dgx_worker.available, 'boolean');
+    assert.strictEqual(typeof data.data.status, 'string');
+    assert.strictEqual(typeof data.data.database.documents, 'number');
+    assert.strictEqual(typeof data.data.medicare.sourceExists, 'boolean');
+    assert(Array.isArray(data.data.warnings));
   });
 });

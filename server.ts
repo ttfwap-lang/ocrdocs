@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { createHash, timingSafeEqual } from "crypto";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync, statSync } from "fs";
 import { readFile, unlink } from "fs/promises";
 import { PDFParse } from "pdf-parse";
 import { GoogleGenAI } from "@google/genai";
@@ -242,6 +242,58 @@ function readBuildCommit(): string {
 
 const BUILD_COMMIT = readBuildCommit();
 
+/**
+ * Lightweight, PHI-free runtime data diagnostics. A healthy process can still
+ * be serving an empty/degraded data directory, so deployments must be able to
+ * distinguish "HTTP is up" from "the authorised corpus is mounted".
+ */
+function runtimeDataHealth() {
+  const medicarePath = medicareIndexPath();
+  let medicareSourceExists = false;
+  let medicareSourceBytes: number | null = null;
+  try {
+    const stat = statSync(medicarePath);
+    medicareSourceExists = stat.isFile();
+    medicareSourceBytes = stat.size;
+  } catch {
+    // Missing source is represented in the response below.
+  }
+  const medicareMeta = db.prepare(
+    "SELECT row_count, loaded_at FROM medicare_index_meta WHERE id = 1",
+  ).get() as { row_count: number; loaded_at: string } | undefined;
+  const medicarePatients = db.prepare("SELECT COUNT(*) AS count FROM medicare_patients").get() as { count: number };
+  const reconciliationRows = db.prepare(
+    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'corpus_reconciliation'",
+  ).get() as { count: number };
+  const warnings: string[] = [];
+  if (!medicareSourceExists) warnings.push("medicare_source_missing");
+  if (medicareSourceExists && !medicareMeta) warnings.push("medicare_source_not_imported");
+  if (medicareMeta && medicarePatients.count !== medicareMeta.row_count) {
+    warnings.push("medicare_metadata_count_mismatch");
+  }
+  if (reconciliationRows.count > 0) {
+    const reconciled = db.prepare("SELECT COUNT(*) AS count FROM corpus_reconciliation").get() as { count: number };
+    if (reconciled.count === 0) warnings.push("corpus_reconciliation_empty");
+  }
+  return {
+    status: warnings.length === 0 ? "ok" : "degraded",
+    warnings,
+    database: {
+      documents: documentRepo.count(),
+      byStatus: documentRepo.countByStatus(),
+    },
+    medicare: {
+      sourcePath: medicarePath,
+      sourceExists: medicareSourceExists,
+      sourceBytes: medicareSourceBytes,
+      loaded: Boolean(medicareMeta),
+      loadedAt: medicareMeta?.loaded_at ?? null,
+      patients: medicarePatients.count,
+      sourceRows: medicareMeta?.row_count ?? 0,
+    },
+  };
+}
+
 // Health check and component diagnostic endpoint
 app.get("/api/health", (_req, res) => {
   const dgxWorkerConfigured = Boolean(process.env.DGX_WORKER_TOKEN);
@@ -250,6 +302,7 @@ app.get("/api/health", (_req, res) => {
     service: "ocrdocs-banking-ocr",
     build_commit: BUILD_COMMIT,
     timestamp: new Date().toISOString(),
+    data: runtimeDataHealth(),
     services: {
       ocr_worker: { available: true, mode: "live" },
       dgx_worker: { available: dgxWorkerConfigured, mode: dgxWorkerConfigured ? "live" : "unconfigured" },
@@ -534,6 +587,13 @@ app.get("/api/documents", (_req, res) => {
   res.json(documentRepo.getAll());
 });
 
+// Lightweight count endpoint for the status bar. The full document list is
+// intentionally retained for API compatibility, but should not be fetched on
+// every page load: a large queue can serialise megabytes and block the server.
+app.get("/api/documents/count", (_req, res) => {
+  res.json({ count: documentRepo.count(), byStatus: documentRepo.countByStatus() });
+});
+
 app.get("/api/documents/:id", (req, res) => {
   const document = documentRepo.getById(req.params.id);
   if (!document) {
@@ -647,11 +707,18 @@ app.use("/headshots", express.static(HEADSHOTS_ROOT));
 // + date_of_birth (see server/services/identityService.ts). No separate
 // identities table -- the grouping is derived live from real extraction
 // data, so it can never disagree with what the fields table actually says.
-app.get("/api/identities", (_req, res) => {
-  res.json({
-    identities: identityService.listIdentities(),
-    unassigned: identityService.listUnassigned(),
-  });
+app.get("/api/identities", (req, res) => {
+  const rawLimit = Array.isArray(req.query.unassigned_limit)
+    ? req.query.unassigned_limit[0]
+    : req.query.unassigned_limit;
+  const rawOffset = Array.isArray(req.query.unassigned_offset)
+    ? req.query.unassigned_offset[0]
+    : req.query.unassigned_offset;
+  const parsedLimit = Number.parseInt(typeof rawLimit === "string" ? rawLimit : "200", 10);
+  const parsedOffset = Number.parseInt(typeof rawOffset === "string" ? rawOffset : "0", 10);
+  const unassignedLimit = Number.isFinite(parsedLimit) ? Math.min(500, Math.max(0, parsedLimit)) : 200;
+  const unassignedOffset = Number.isFinite(parsedOffset) ? Math.max(0, parsedOffset) : 0;
+  res.json(identityService.listIdentitiesAndUnassigned(unassignedLimit, unassignedOffset));
 });
 
 app.get("/api/identities/:identityId", (req: express.Request<{ identityId: string }>, res) => {

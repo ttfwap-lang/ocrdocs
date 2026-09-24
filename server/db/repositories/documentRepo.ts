@@ -17,12 +17,21 @@ export function createDocumentRepo(db: DatabaseType) {
      VALUES (?, ?, ?, ?, ?, ?)`,
   );
 
+  const DOCUMENT_COLUMNS = 'id, filename, original_path, content_hash, mime_type, uploaded_at, status, user_id';
   const stmtGetById = db.prepare<string>(
-    `SELECT * FROM documents WHERE id = ?`,
+    `SELECT ${DOCUMENT_COLUMNS} FROM documents WHERE id = ?`,
   );
 
   const stmtGetAll = db.prepare(
-    `SELECT * FROM documents ORDER BY uploaded_at DESC`,
+    `SELECT ${DOCUMENT_COLUMNS} FROM documents ORDER BY uploaded_at DESC`,
+  );
+
+  const stmtCount = db.prepare(
+    `SELECT COUNT(*) AS count FROM documents`,
+  );
+
+  const stmtCountByStatus = db.prepare(
+    `SELECT status, COUNT(*) AS count FROM documents GROUP BY status ORDER BY status`,
   );
 
   const stmtGetByContentHash = db.prepare<string>(
@@ -64,6 +73,19 @@ export function createDocumentRepo(db: DatabaseType) {
 
     getAll(): DocumentRow[] {
       return stmtGetAll.all() as DocumentRow[];
+    },
+
+    /** Lightweight status-bar read; avoids serialising every document row. */
+    count(): number {
+      return (stmtCount.get() as { count: number }).count;
+    },
+
+    countByStatus(): Record<string, number> {
+      const out: Record<string, number> = {};
+      for (const row of stmtCountByStatus.all() as Array<{ status: string; count: number }>) {
+        out[row.status] = row.count;
+      }
+      return out;
     },
 
     /** Identical bytes mean an identical document — used to skip re-OCRing a re-upload. */

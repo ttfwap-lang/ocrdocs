@@ -26,6 +26,7 @@ Run (server stopped):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sqlite3
@@ -45,6 +46,17 @@ CREDIT_SCORE_DISPLAY = BY_ID["credit_score"][0]  # "Credit Score"
 
 def norm_path(p: str) -> str:
     return os.path.normcase(os.path.abspath(p))
+
+
+def sha256_file(path: str) -> str | None:
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
 
 
 def load_scores(path: str):
@@ -72,16 +84,29 @@ def main() -> int:
     con.execute("PRAGMA foreign_keys=ON")
 
     path_to_doc = {}
-    for did, op in con.execute("SELECT id, original_path FROM documents WHERE original_path IS NOT NULL"):
+    hash_to_doc = {}
+    for did, op, content_hash in con.execute(
+        "SELECT id, original_path, content_hash FROM documents WHERE original_path IS NOT NULL"
+    ):
         path_to_doc[norm_path(op)] = did
+        if content_hash:
+            hash_to_doc.setdefault(content_hash, did)
 
-    inserted = updated = skipped_missing_doc = skipped_existing = 0
+    inserted = updated = skipped_missing_doc = skipped_existing = matched_by_hash = 0
     for rec in scores:
         src = rec.get("source")
         value = (rec.get("credit_score") or "").strip()
         if not src or not value:
             continue
         did = path_to_doc.get(norm_path(src))
+        if not did:
+            # A live queue may have registered the same bytes under a parsed
+            # path rather than the original Recovered_C path. Resolve that case
+            # by content hash, without inventing a join.
+            source_hash = sha256_file(src)
+            did = hash_to_doc.get(source_hash) if source_hash else None
+            if did:
+                matched_by_hash += 1
         if not did:
             skipped_missing_doc += 1
             continue
@@ -123,6 +148,7 @@ def main() -> int:
     print(f"credit scores -> {args.db}")
     print(f"  inserted: {inserted}")
     print(f"  updated: {updated}")
+    print(f"  matched by content hash: {matched_by_hash}")
     print(f"  skipped (no matching document): {skipped_missing_doc}")
     print(f"  skipped (already corrected by a human): {skipped_existing}")
     return 0

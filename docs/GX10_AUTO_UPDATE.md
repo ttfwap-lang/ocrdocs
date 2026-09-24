@@ -66,6 +66,53 @@ release. A browser refresh is not a deployment mechanism: if the live asset is
 still old, inspect the updater log and the symlink rather than clearing site
 data.
 
+## Runtime data is a separate deployment artifact
+
+Code releases never contain the corpus or the Medicare index. The live health
+response includes a PHI-free `data` block with aggregate document counts and
+Medicare source/import diagnostics. A `degraded` data block means the process
+is alive but the authorised runtime data is missing or inconsistent; it is not
+safe to interpret the UI's zero counts as an empty archive.
+
+The expected persistent paths are:
+
+- `/home/flak3dd/ocrdocs/data/app.db` — the live SQLite database;
+- `/home/flak3dd/ocrdocs/data/medicare_index.json` — the source Medicare index;
+- `/home/flak3dd/ocrdocs/data/headshots/index.jsonl` and its crop tree.
+
+Install or replace the Medicare source atomically, preserving ownership and
+mode, then restart the server so the boot importer runs:
+
+```bash
+sudo install -o flak3dd -g flak3dd -m 640 /path/to/medicare_index.json \
+  /home/flak3dd/ocrdocs/data/medicare_index.json.new
+sudo mv -f /home/flak3dd/ocrdocs/data/medicare_index.json.new \
+  /home/flak3dd/ocrdocs/data/medicare_index.json
+sudo systemctl restart ocrdocs-server.service
+```
+
+When the live queue database already contains the same source bytes but a
+weaker extraction, do **not** replace the database. Stop the updater timer,
+server and worker, make a verified backup, and run the idempotent reconciler
+from the active release:
+
+```bash
+sudo systemctl stop ocrdocs-update.timer ocrdocs-server.service ocrdocs-worker.service
+sudo python3 /home/flak3dd/ocrdocs-current/scripts/reconcile_verified_corpus.py \
+  --in /home/nick/llamaparse_bulk/results/rc_extract_verified_linux.jsonl \
+  --db /home/flak3dd/ocrdocs/data/app.db \
+  --backup /var/lib/ocrdocs-updater/backups/app-pre-corpus-$(date -u +%Y%m%dT%H%M%SZ).db \
+  --apply --conflict-policy verified
+sudo systemctl start ocrdocs-server.service ocrdocs-worker.service ocrdocs-update.timer
+```
+
+The reconciler joins by SHA-256 content hash, only loads `verif=ok` fields,
+never overwrites approved/corrected human fields, promotes verified documents
+from failed/queued to extracted, records aggregate audit counts in
+`corpus_reconciliation`, and refuses to overwrite an existing backup. Run its
+default dry-run first and inspect the JSON report. A failed post-commit
+integrity check must be investigated before restarting the services.
+
 ## Manual update and rollback
 
 Run one update immediately:
