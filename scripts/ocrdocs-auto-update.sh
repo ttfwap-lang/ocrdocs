@@ -288,6 +288,8 @@ run_as_service node --check "$BUILD_DIR/dist/server.cjs"
 # Runtime paths deliberately remain outside the release. The symlinks also
 # preserve relative-path compatibility for code that expects data/ or storage/.
 printf '%s\n' "$COMMIT" >"$BUILD_DIR/.ocrdocs-release"
+chown "$SERVICE_USER:$SERVICE_USER" "$BUILD_DIR/.ocrdocs-release"
+chmod 0644 "$BUILD_DIR/.ocrdocs-release"
 ln -s "$DATA_ROOT/.env" "$BUILD_DIR/.env"
 ln -s "$DATA_ROOT/.env.worker" "$BUILD_DIR/.env.worker"
 ln -s "$DATA_ROOT/data" "$BUILD_DIR/data"
