@@ -150,12 +150,13 @@ wait_for_worker_idle() {
 
 restart_worker_when_safe() {
   local commit="$1"
+  local force_refresh="${2:-0}"
   local pending_file="$STATE_ROOT/worker-pending-commit"
 
-  # A no-op timer pass must not bounce a healthy worker every 15 minutes. A
-  # pending marker is written only when a new release was switched (or an
-  # earlier worker refresh failed), so this is both cheaper and safer for jobs.
-  if [[ ! -f "$pending_file" ]]; then
+  # A no-op timer pass must not bounce a healthy worker every 15 minutes. The
+  # caller passes force_refresh=1 only after switching to a new release; an
+  # ordinary pass refreshes only an already-pending failed/deferred update.
+  if [[ ! -f "$pending_file" && "$force_refresh" != "1" ]]; then
     log INFO "worker is already marked current; no restart needed"
     return 0
   fi
@@ -321,7 +322,7 @@ if ! wait_for_health "$COMMIT"; then
 fi
 
 log INFO "server is healthy on ${COMMIT}; refreshing worker when its queue is idle"
-restart_worker_when_safe "$COMMIT"
+restart_worker_when_safe "$COMMIT" 1
 prune_releases
 printf '%s\n' "$COMMIT" >"$STATE_ROOT/last-success-commit"
 printf '%s\n' "$(date --iso-8601=seconds)" >"$STATE_ROOT/last-success-time"
