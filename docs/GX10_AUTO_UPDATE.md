@@ -25,7 +25,10 @@ runs `npm ci` and `npm run build`, validates the server bundle, switches the
 symlink, restarts the server, and waits for `/api/health` to report the new
 commit. If the health check fails, it restores the previous release and
 restarts it. The worker is refreshed only after its current `processing` jobs
-drain; a busy worker is left running and retried by the next timer pass.
+drain; a busy worker is left running and retried by the next timer pass. The
+updater also atomically refreshes its own script and validated systemd unit
+files from a successful release, so a future updater fix does not require a
+second manual deployment.
 
 ## Install or repair it on the GX10
 

@@ -71,7 +71,7 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
 }
 
-for command_name in curl flock git npm node runuser systemctl tar install; do
+for command_name in curl flock git npm node runuser systemctl systemd-analyze tar install; do
   require_command "$command_name"
 done
 
@@ -227,6 +227,45 @@ prune_releases() {
   )
 }
 
+refresh_control_plane() {
+  local release_dir="$1"
+  local candidate_unit temporary log_target
+
+  # The updater must be able to repair future updater bugs without requiring a
+  # second manual deployment. The running shell keeps its open script inode;
+  # the next timer invocation uses this atomically replaced copy.
+  if [[ -s "$release_dir/scripts/ocrdocs-auto-update.sh" ]] && bash -n "$release_dir/scripts/ocrdocs-auto-update.sh"; then
+    temporary="/usr/local/sbin/.ocrdocs-auto-update.$$"
+    if install -m 0750 "$release_dir/scripts/ocrdocs-auto-update.sh" "$temporary" && mv -Tf "$temporary" /usr/local/sbin/ocrdocs-auto-update; then
+      log INFO "installed the release's updater script for the next timer run"
+    else
+      rm -f "$temporary"
+      log WARN "could not refresh the updater script; the current copy remains active"
+    fi
+  else
+    log WARN "release updater script failed syntax validation; keeping the current updater"
+  fi
+
+  # Unit changes are uncommon, but refresh them too when systemd can validate
+  # them. A bad future unit must not take down the already-running application.
+  for unit in ocrdocs-update.service ocrdocs-update.timer; do
+    candidate_unit="$release_dir/deploy/$unit"
+    [[ -s "$candidate_unit" ]] || continue
+    if systemd-analyze verify "$candidate_unit" >/dev/null 2>&1; then
+      log_target="/etc/systemd/system/.${unit}.$$"
+      if install -m 0644 "$candidate_unit" "$log_target" && mv -Tf "$log_target" "/etc/systemd/system/$unit"; then
+        log INFO "refreshed systemd unit ${unit}"
+      else
+        rm -f "$log_target"
+        log WARN "could not refresh systemd unit ${unit}; keeping the current unit"
+      fi
+    else
+      log WARN "new ${unit} failed systemd validation; keeping the current unit"
+    fi
+  done
+  systemctl daemon-reload || log WARN "systemd daemon-reload failed after unit refresh"
+}
+
 # Keep a shell-safe record of the last successful run without putting secrets
 # in the repository or in the updater's command line.
 printf '%s\n' "$(date --iso-8601=seconds)" >"$STATE_ROOT/last-run-started"
@@ -321,6 +360,7 @@ if ! wait_for_health "$COMMIT"; then
   fail "new release did not become healthy; rolling back"
 fi
 
+refresh_control_plane "$RELEASE_DIR"
 log INFO "server is healthy on ${COMMIT}; refreshing worker when its queue is idle"
 restart_worker_when_safe "$COMMIT" 1
 prune_releases
