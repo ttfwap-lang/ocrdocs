@@ -77,6 +77,7 @@ done
 
 [[ -d "$DATA_ROOT" ]] || fail "runtime data root does not exist: $DATA_ROOT"
 [[ -r "$DATA_ROOT/.env" ]] || fail "runtime environment file is missing: $DATA_ROOT/.env"
+[[ -r "$DATA_ROOT/.env.worker" ]] || fail "worker environment file is missing: $DATA_ROOT/.env.worker"
 id "$SERVICE_USER" >/dev/null 2>&1 || fail "service user does not exist: $SERVICE_USER"
 git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || fail "invalid update branch: $BRANCH"
 
@@ -325,6 +326,8 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$BUILD_DIR"
 
 log INFO "installing locked Node dependencies"
 run_as_service npm --prefix "$BUILD_DIR" ci --no-audit --no-fund
+log INFO "type-checking release source"
+run_as_service npm --prefix "$BUILD_DIR" run lint
 log INFO "building production frontend and server bundle"
 run_as_service npm --prefix "$BUILD_DIR" run build
 [[ -s "$BUILD_DIR/dist/index.html" ]] || fail "build did not produce dist/index.html"

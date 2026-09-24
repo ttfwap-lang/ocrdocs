@@ -21,7 +21,7 @@ The installer creates:
   timer that checks every 15 minutes.
 
 The updater obtains clean tracked files from the repository's `main` branch,
-runs `npm ci` and `npm run build`, validates the server bundle, switches the
+runs `npm ci`, the TypeScript check, and `npm run build`, validates the server bundle, switches the
 symlink, restarts the server, and waits for `/api/health` to report the new
 commit. If the health check fails, it restores the previous release and
 restarts it. The worker is refreshed only after its current `processing` jobs

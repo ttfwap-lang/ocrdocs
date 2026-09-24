@@ -15,6 +15,7 @@ test('automatic GX10 updates are atomic, locked, and fail closed', async () => {
   assert.match(updater, /flock -n/);
   assert.match(updater, /git archive/);
   assert.match(updater, /npm --prefix .* ci/);
+  assert.match(updater, /npm --prefix .* run lint/);
   assert.match(updater, /npm --prefix .* run build/);
   assert.match(updater, /wait_for_health/);
   assert.match(updater, /restoring previous release/);
