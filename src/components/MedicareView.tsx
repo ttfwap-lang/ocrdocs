@@ -42,7 +42,7 @@ import type { MedicarePatient, MedicareQueryResponse, MedicareSummary } from '..
 // The owner's expiry rule, imported so the UI and the importer cannot disagree about
 // which value is real. Lives in src/utils because both the browser bundle and the
 // server use it. See src/utils/medicareExpiry.ts.
-import { displayExpiry } from '../utils/medicareExpiry';
+import { displayExpiry, monthsUntilExpiry } from '../utils/medicareExpiry';
 
 const PAGE_SIZES = [25, 50, 100, 200];
 
@@ -141,12 +141,15 @@ function NameCell({ row }: { row: MedicarePatient }) {
   );
 }
 
-/** Days until an expiry date; null when unusable. */
-function daysUntil(iso: string): number | null {
-  if (!iso) return null;
-  const t = Date.parse(`${iso}T00:00:00Z`);
-  if (Number.isNaN(t)) return null;
-  return Math.round((t - Date.now()) / 86400000);
+/**
+ * Whole months from now until the expiry month, or null when unusable.
+ *
+ * Deliberately NOT a day count: the owner's rule is MM/YY, and the stored day is a
+ * synthetic 01, so counting days from it would report a card expiring "09/2026" as
+ * expired on 3 September. The rule itself lives in src/utils/medicareExpiry.ts.
+ */
+function monthsUntil(iso: string): number | null {
+  return monthsUntilExpiry(iso);
 }
 
 function ExpiryCell({ row }: { row: MedicarePatient }) {
@@ -157,15 +160,18 @@ function ExpiryCell({ row }: { row: MedicarePatient }) {
   if (!display) {
     return <span className="text-slate-600" title="No expiry outside the accepted 09/2026 - 09/2031 window">—</span>;
   }
-  const d = daysUntil(row.expiry_best_date);
+  // Measured in whole MONTHS, not days: the owner defines the expiry at month
+  // granularity and the stored day is a synthetic 01, so a day count would claim false
+  // precision (a "09/2026" card reading as expired on the 3rd).
+  const m = monthsUntil(row.expiry_best_date);
   const tone =
-    d === null ? 'text-slate-400' : d < 0 ? 'text-rose-400' : d <= 90 ? 'text-amber-300' : 'text-slate-300';
+    m === null ? 'text-slate-400' : m < 0 ? 'text-rose-400' : m <= 3 ? 'text-amber-300' : 'text-slate-300';
   return (
     <span className={tone} title={`${row.expiry_best_word || 'expiry'} (${row.expiry_best_precision})`}>
       {display}
-      {d !== null && (
+      {m !== null && (
         <span className="ml-1.5 text-[10px] opacity-70">
-          {d < 0 ? `${Math.abs(d)}d ago` : `${d}d`}
+          {m < 0 ? `${Math.abs(m)}mo ago` : m === 0 ? 'this mo' : `${m}mo`}
         </span>
       )}
     </span>
@@ -475,8 +481,10 @@ export const MedicareView: React.FC = () => {
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-2 max-w-3xl font-mono leading-relaxed">
               Every deduplicated patient found across the archive, with their Medicare number, checksum verdict,
-              expiry dates and the source documents behind each value. Checksum failures and unverified names are
-              flagged rather than hidden — nothing is dropped.
+              expiry and the source documents behind each value. Checksum failures and unverified names are flagged
+              rather than hidden. The one exception is the expiry: only an <span className="text-cyan-300">MM/YY or
+              MM/YYYY</span> date between <span className="text-cyan-300">09/2026 and 09/2031</span> is accepted, and
+              every other detected expiry is cleared as incorrect — the rejected count is shown above, the values are not.
             </p>
           </div>
 
@@ -577,7 +585,7 @@ export const MedicareView: React.FC = () => {
                 ['all', 'All'],
                 ['with', 'Has expiry (in window)'],
                 ['without', 'No valid expiry'],
-                ['expiring_soon', 'Expiring ≤ 90d'],
+                ['expiring_soon', 'Expiring ≤ 3 months'],
                 ['expired', 'Already expired'],
               ]}
             />
@@ -636,10 +644,10 @@ export const MedicareView: React.FC = () => {
               }
             />
             <StatCard
-              label="Expiring ≤90d"
+              label="Expiring ≤3mo"
               value={summary.expiringSoon}
               tone="amber"
-              hint="Medicare cards expiring within 90 days"
+              hint="Card expires this month or within the next three (month granularity)"
               active={filters.expiry_state === 'expiring_soon'}
               onClick={() =>
                 setFilter({ expiry_state: filters.expiry_state === 'expiring_soon' ? 'all' : 'expiring_soon' })

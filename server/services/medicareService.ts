@@ -20,7 +20,13 @@ import { createHash } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import type { Database as DatabaseType } from 'better-sqlite3';
-import { canonicalExpiry, censusExpiries, type ExpiryCensus } from '../../src/utils/medicareExpiry';
+import {
+  canonicalExpiry,
+  censusExpiries,
+  expiresWithinMonths,
+  isExpiredMonth,
+  type ExpiryCensus,
+} from '../../src/utils/medicareExpiry';
 
 const DEFAULT_INDEX_PATH = 'data/medicare_index.json';
 
@@ -93,7 +99,10 @@ export interface MedicareSummary {
   medicareUnverifiable: number;
   withoutMedicare: number;
   withExpiry: number;
-  expiryWithIsoDate: number;
+  /**
+   * Expiry counts are at MONTH granularity, matching the owner's MM/YY rule: the current
+   * month is never "expired", and "expiring soon" means this month plus the next three.
+   */
   expiringSoon: number;
   expired: number;
   /**
@@ -357,8 +366,20 @@ export function getMedicareSummary(db: DatabaseType): MedicareSummary {
     return row ? row.n : 0;
   };
 
-  const today = new Date().toISOString().slice(0, 10);
-  const soon = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+  // The owner's rule is defined at MONTH granularity, and the store pins the day to 01.
+  // Counting days from that synthetic 1st would report a card expiring "09/2026" as
+  // expired 23 days ago on the 24th, when September has not ended. So the relative
+  // measures are computed in whole months, in JS, over the already-canonical values.
+  const expiryRows = db
+    .prepare("SELECT expiry_best_date FROM medicare_patients WHERE expiry_best_date <> ''")
+    .all() as Array<{ expiry_best_date: string }>;
+  const today = new Date();
+  let expired = 0;
+  let expiringSoon = 0;
+  for (const row of expiryRows) {
+    if (isExpiredMonth(row.expiry_best_date, today)) expired += 1;
+    else if (expiresWithinMonths(row.expiry_best_date, 3, today)) expiringSoon += 1;
+  }
 
   // Judge the RAW source values so the counters explain what the rule removed, rather
   // than counting the already-cleared stored values (which would read as simply absent).
@@ -377,16 +398,8 @@ export function getMedicareSummary(db: DatabaseType): MedicareSummary {
     ),
     withoutMedicare: one("SELECT COUNT(*) AS n FROM medicare_patients WHERE medicare_number = ''"),
     withExpiry: one('SELECT COUNT(*) AS n FROM medicare_patients WHERE has_expiry = 1'),
-    expiryWithIsoDate: one("SELECT COUNT(*) AS n FROM medicare_patients WHERE expiry_best_date <> ''"),
-    expiringSoon: one(
-      `SELECT COUNT(*) AS n FROM medicare_patients
-       WHERE expiry_best_date >= ? AND expiry_best_date <= ?`,
-      [today, soon],
-    ),
-    expired: one(
-      "SELECT COUNT(*) AS n FROM medicare_patients WHERE expiry_best_date <> '' AND expiry_best_date < ?",
-      [today],
-    ),
+    expiringSoon,
+    expired,
     expiryCensus,
     needsReview: one('SELECT COUNT(*) AS n FROM medicare_patients WHERE needs_review = 1'),
     nameStatus: countBy(db, 'name_status'),
@@ -454,11 +467,15 @@ function buildFilters(q: MedicareQuery): { sql: string; params: unknown[] } {
       clauses.push('has_expiry = 0');
       break;
     case 'expired':
-      clauses.push("expiry_best_date <> '' AND expiry_best_date < date('now')");
+      // Month granularity: the expiry is MM/YY, and the stored day is a synthetic 01, so
+      // comparing against date('now') would flag the current month as already expired.
+      clauses.push("expiry_best_date <> '' AND expiry_best_date < date('now', 'start of month')");
       break;
     case 'expiring_soon':
+      // Current month plus the next three, inclusive.
       clauses.push(
-        "expiry_best_date >= date('now') AND expiry_best_date <= date('now', '+90 days')",
+        "expiry_best_date >= date('now', 'start of month') " +
+          "AND expiry_best_date < date('now', 'start of month', '+4 months')",
       );
       break;
     default:

@@ -351,7 +351,10 @@ export interface MedicareSummary {
   medicareUnverifiable: number;
   withoutMedicare: number;
   withExpiry: number;
-  expiryWithIsoDate: number;
+  /**
+   * Expiry counts are at MONTH granularity, matching the owner's MM/YY rule: the current
+   * month is not "expired", and "expiring soon" means this month plus the next three.
+   */
   expiringSoon: number;
   expired: number;
   /**

@@ -142,6 +142,38 @@ export interface ExpiryCensus {
   rejected: number;
 }
 
+/**
+ * Whole months from today until the expiry month, or null when unusable.
+ *
+ * The owner defines the expiry at MONTH granularity (MM/YY or MM/YYYY), and the store
+ * pins the day to 01. Counting days from that synthetic 1st would claim false precision
+ * -- a card expiring "09/2026" would read as expired 23 days ago on the 24th, when in
+ * fact September has not ended. So every relative measure is done in whole months.
+ */
+export function monthsUntilExpiry(raw: string | number | null | undefined, today = new Date()): number | null {
+  const v = classifyExpiry(raw);
+  if (!v.valid || v.yearMonth === null) return null;
+  const [y, m] = v.yearMonth.split('-').map(Number);
+  const months = (y - today.getUTCFullYear()) * 12 + (m - (today.getUTCMonth() + 1));
+  return months;
+}
+
+/** True when the expiry month is the current month or earlier. */
+export function isExpiredMonth(raw: string | number | null | undefined, today = new Date()): boolean {
+  const months = monthsUntilExpiry(raw, today);
+  return months !== null && months < 0;
+}
+
+/** True when the expiry falls within `withinMonths` months from now (0 = this month). */
+export function expiresWithinMonths(
+  raw: string | number | null | undefined,
+  withinMonths: number,
+  today = new Date(),
+): boolean {
+  const months = monthsUntilExpiry(raw, today);
+  return months !== null && months >= 0 && months <= withinMonths;
+}
+
 /** Tally a set of raw expiry values against the rule. */
 export function censusExpiries(values: Array<string | number | null | undefined>): ExpiryCensus {
   const census: ExpiryCensus = {

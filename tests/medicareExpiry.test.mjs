@@ -15,6 +15,9 @@ import {
   displayExpiry,
   isValidExpiry,
   canonicalExpiry,
+  monthsUntilExpiry,
+  isExpiredMonth,
+  expiresWithinMonths,
 } from '../src/utils/medicareExpiry.ts';
 
 test('the two owner formats are accepted and displayed as MM/YYYY', () => {
@@ -106,4 +109,45 @@ test('a two-digit year is read as this century', () => {
   assert.equal(displayExpiry('09/31'), '09/2031');
   // 2032 in short form is out of range.
   assert.equal(isValidExpiry('09/32'), false);
+});
+
+// The owner defines the expiry at MONTH granularity and the store pins the day to 01, so
+// every relative measure must be in whole months. A day count would report a card
+// expiring "09/2026" as expired on 3 September, which is false.
+const SEP_24_2026 = new Date(Date.UTC(2026, 8, 24));
+
+test('monthsUntilExpiry measures whole months, not days', () => {
+  assert.equal(monthsUntilExpiry('2026-09-01', SEP_24_2026), 0, 'the current month is month 0');
+  assert.equal(monthsUntilExpiry('2026-10-01', SEP_24_2026), 1);
+  assert.equal(monthsUntilExpiry('2027-03-01', SEP_24_2026), 6);
+  assert.equal(monthsUntilExpiry('2026-08-01', SEP_24_2026), null, 'rejected values have no month count');
+});
+
+test('the current month is not expired, the previous one is', () => {
+  // A card expiring 09/2026 on 24 September 2026 has NOT expired: September is not over.
+  assert.equal(isExpiredMonth('2026-09-01', SEP_24_2026), false);
+  // Under a day-based rule 2026-09-01 would look 23 days in the past. It must not.
+  assert.equal(monthsUntilExpiry('2026-09-01', SEP_24_2026), 0);
+
+  // Once the month has actually passed, the same value is expired. The window floor is
+  // 09/2026, so there is no in-window month earlier than 09/2026 -- the only way an
+  // expiry can be both in-window and expired is for time to have moved on.
+  assert.equal(isExpiredMonth('2026-09-01', new Date(Date.UTC(2026, 11, 15))), true);
+  assert.equal(monthsUntilExpiry('2026-09-01', new Date(Date.UTC(2026, 11, 15))), -3);
+});
+
+test('an out-of-window month is rejected, never reported as expired', () => {
+  // 2026-08 is before the floor, so it is invalid rather than "expired". The rule runs
+  // before any expiry reasoning, which is the whole point: an incorrect value is not a
+  // real value that happens to be old.
+  assert.equal(classifyExpiry('2026-08-01').rejection, 'before_window');
+  assert.equal(monthsUntilExpiry('2026-08-01', SEP_24_2026), null);
+  assert.equal(isExpiredMonth('2026-08-01', SEP_24_2026), false);
+});
+
+test('expiresWithinMonths includes the current month and excludes the past', () => {
+  assert.equal(expiresWithinMonths('2026-09-01', 3, SEP_24_2026), true, 'this month counts as soon');
+  assert.equal(expiresWithinMonths('2026-12-01', 3, SEP_24_2026), true, 'three months out still counts');
+  assert.equal(expiresWithinMonths('2027-01-01', 3, SEP_24_2026), false, 'four months out does not');
+  assert.equal(expiresWithinMonths('2026-08-01', 3, SEP_24_2026), false, 'the past is not "soon"');
 });

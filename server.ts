@@ -45,6 +45,9 @@ import {
   MEDICARE_SORTABLE_COLUMNS,
   type MedicareQuery,
 } from "./server/services/medicareService";
+// The owner's expiry rule, shared with the browser component so the export and the page
+// can never disagree about which expiry is real.
+import { displayExpiry } from "./src/utils/medicareExpiry";
 
 const db = initDb();
 
@@ -707,14 +710,17 @@ app.get("/api/medicare/patients/:patientId", (req: express.Request<{ patientId: 
 // Full index (or the current filter) as CSV, mirroring the consolidated export.
 app.get("/api/medicare/export.csv", (req, res) => {
   const rows = allMedicarePatients(db, parseMedicareQuery(req.query as Record<string, unknown>));
+  // The expiry is exported in the owner's MM/YYYY display form, and only when it passed
+  // the 09/2026-09/2031 rule. expiry_best_raw and expiry_tokens are deliberately NOT
+  // exported: they still hold the raw detections the rule rejected, and a rejected expiry
+  // is irrelevant by definition, so it must not leave through the export door.
   const header = [
     "patient_id", "name_display", "name_status", "medicare_number", "medicare_valid",
     "medicare_flags", "dob_iso", "sex", "mrn", "phone", "email", "address_full",
-    "suburb", "state", "postcode", "expiry_best_date", "expiry_best_raw",
-    "expiry_best_precision", "expiry_tokens", "record_count", "completeness",
-    "needs_review", "source_files",
+    "suburb", "state", "postcode", "expiry", "expiry_precision",
+    "record_count", "completeness", "needs_review", "source_files",
   ];
-  const lines = [header.join(",")];
+  const lines = [header.map(csvEscape).join(",")];
   for (const r of rows) {
     lines.push(
       [
@@ -737,10 +743,10 @@ app.get("/api/medicare/export.csv", (req, res) => {
         r.suburb ?? "",
         r.state ?? "",
         r.postcode ?? "",
-        r.expiry_best_date ?? "",
-        r.expiry_best_raw ?? "",
+        // MM/YYYY, or empty. The importer already cleared anything outside the window,
+        // so this only formats; displayExpiry re-checks defensively.
+        r.expiry_best_date ? displayExpiry(r.expiry_best_date) : "",
         r.expiry_best_precision ?? "",
-        r.expiry_tokens ?? "",
         r.record_count ?? "",
         r.completeness ?? "",
         r.needs_review ?? "",
