@@ -450,3 +450,52 @@ Reviewed every file touched this session line by line, and swept the live app en
 - Files serve (HTTP 206 application/pdf) and headshot assets serve (HTTP 200 image/jpeg).
 
 npm 256/256, pytest 320 passed / 1 skipped, tsc 0, production build ok.
+
+## 2026-09-24 live pipeline verification (measured on this host, not asserted)
+
+Question: does the full automated pipeline actually run end to end on ocr.local, using
+LlamaParse agentic_plus and the Tesseract/TrOCR/Paddle chain? Answered by running it, not
+by reading the design.
+
+### WORKS on this host, verified by live run
+1. **LlamaParse agentic_plus — genuinely working.** A real document
+   (`078_qingyun chen credit report.pdf`) was sent through the real client: SUCCESS in
+   117.5s, 6 pages, 25,598 chars of real text, **0 errors, 90 credits**, 16 fields
+   including `drivers_licence_number = 011912675` and **`credit_score = 967`**. The
+   `credit_score` field added to the catalogue this session is therefore being populated by
+   the live agentic_plus schema, not just by the offline text extractor.
+2. **Legacy Tesseract + regex path — genuinely working.** Real Australian banking
+   documents extract real fields: BSB `083-343`, an ABN, residential addresses, gross/net
+   income, mobile/email. (A Chinese passport correctly yields 0 fields from the *Australian*
+   regex extractor; that is correct behaviour, not a failure.)
+3. **The autonomous queue watcher — verified end to end, unattended.** A real document was
+   dropped into `C:\mnt\nvme\ocr_pipeline\input` and the running watcher (PID 16492) picked
+   it up with no intervention: vision pre-filter failed (`URLError`, service down) ->
+   **fail-open "keep"** -> LlamaParse agentic_plus -> `parsed_ok` (8 fields, 6 pages, 90
+   credits, 0 errors) in 76.6s. Manifest and `llamacloud_results.jsonl` both recorded it.
+   The watcher then returned to idle. Test file removed; input empty.
+   This is the strongest evidence the autonomous path works: nothing was driven by hand.
+4. **The app itself** — 133-check E2E sweep green (see the previous entry).
+
+### DOES NOT run on this host (measured, not assumed)
+The vlm_v2 vision stages are **not available here**, so the pipeline cannot be described as
+"fully working" end to end on this machine:
+- `torch 2.14.0+cpu`, `torch.cuda.is_available() == False` — no GPU on this host.
+- `transformers`, `paddleocr`, `easyocr` are **not installed** -> TrOCR cannot load.
+- vLLM services Paddle-VL :8100, Qwen :8200, Chandra :8300 are **not listening**; the real
+  run logged `Paddle-VL unavailable, falling back to Tesseract` and
+  `Page classification unavailable ... Qwen at localhost:8200 ... connection refused`.
+- S1/S2 gates, agent verifier and Chandra are all `False` by default here.
+Those stages run on the **GX10 GPU host** (see `scripts/vllm_services.sh`, which is
+Linux/GPU-only), which is not reachable from this machine. So today the honest position is:
+**LlamaParse agentic_plus + Tesseract + the app are verified live; the vlm_v2 vision stages
+are implemented and unit-tested but were NOT exercised on real pages in this verification.**
+
+### Follow-ups this verification surfaced
+- Rotate the LlamaCloud key (`llx-...`), still live in this environment and used by these
+  verification runs.
+- The vision pre-filter and the vlm_v2 stages both silently degrade to Tesseract when their
+  services are down (correct fail-open behaviour, but it means a "successful" run can be
+  much weaker than intended without a visible warning beyond a log line).
+- `PIPELINE_MODE` defaults to `legacy` here; the vlm_v2 chain is opt-in and, without the GPU
+  services, would only produce degraded output.
