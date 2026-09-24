@@ -245,27 +245,24 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
     <div className="space-y-6">
       <BackButton onBack={onBack} />
 
-      {/* ---- The three real headings: Name, Date of Birth, Credit Score ---- */}
+      {/* ---- The three real headings: Name, Date of Birth, Credit Score ----
+           These are peers, so they are laid out as three equal cells at the same type
+           size. DOB previously sat inside the name's block at text-xl and read as a
+           sub-item, while credit score was text-4xl and dwarfed both; that hierarchy did
+           not match the intent that these three are the only real headings. */}
       <div className="neon-card rounded-xl p-6 relative overflow-hidden">
         <div className="absolute inset-0 crt-scanlines" />
         <div className="relative">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Name */}
             <div className="flex items-start gap-4 min-w-0">
               <FaceThumb url={identity.thumbnailUrl} name={identity.fullName} size={96} rounded={false} className="hidden sm:flex" />
               <div className="min-w-0">
-                <div className="flex items-center gap-2 text-matrix-400 mb-1">
+                <div className="flex items-center gap-2 text-matrix-400 mb-2">
                   <User className="w-5 h-5" />
-                  <h1 className="glitch-heading text-2xl sm:text-3xl font-bold tracking-wide uppercase">{identity.fullName}</h1>
+                  <h1 className="text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500">Name</h1>
                 </div>
-                {/* Date of Birth */}
-                <div className="mt-3">
-                  <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500 mb-1">
-                    <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                    Date of Birth
-                  </div>
-                  <div className="font-mono font-bold text-xl text-cyan-300">{identity.dob}</div>
-                </div>
+                <div className="glitch-heading text-xl sm:text-2xl font-bold tracking-wide uppercase text-matrix-400 break-words">{identity.fullName}</div>
                 <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-slate-500 mt-3">
                   <span className="flex items-center gap-1.5">
                     <FileStack className="w-3 h-3 text-matrix-400" />
@@ -297,28 +294,37 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
               </div>
             </div>
 
+            {/* Date of Birth */}
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500 mb-2">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                Date of Birth
+              </div>
+              <div className="font-mono font-bold text-xl sm:text-2xl text-cyan-300 break-words">{identity.dob}</div>
+            </div>
+
             {/* Credit Score */}
-            <div className="shrink-0 lg:text-right">
-              <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500 mb-1 lg:justify-end">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500 mb-2">
                 Credit Score
               </div>
               {score ? (
                 <>
-                  <div className="font-mono font-bold text-4xl text-matrix-300 text-glow-green">{score.value}</div>
+                  <div className="font-mono font-bold text-xl sm:text-2xl text-matrix-300 text-glow-green">{score.value}</div>
                   <a
                     href={`/api/documents/${score.documentId}/file`}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 mt-1.5 text-[10px] font-mono text-cyan-300 hover:text-cyan-200 transition-colors hover:underline underline-offset-2"
+                    className="inline-flex items-center gap-1.5 mt-1.5 text-[10px] font-mono text-cyan-300 hover:text-cyan-200 transition-colors hover:underline underline-offset-2 max-w-full"
                     title="Open the credit report this score was read from"
                   >
                     <FileText className="w-3 h-3 shrink-0" />
-                    <span className="truncate max-w-[220px]">{score.filename}</span>
+                    <span className="truncate">{score.filename}</span>
                     <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-70" />
                   </a>
                 </>
               ) : (
-                <div className="font-mono text-sm text-slate-600 py-3">No credit report on file</div>
+                <div className="font-mono text-sm text-slate-600 pt-1">No credit report on file</div>
               )}
             </div>
           </div>

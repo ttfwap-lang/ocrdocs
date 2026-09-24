@@ -44,11 +44,13 @@ const UPLOAD_CONCURRENCY = 3;
 function SelectionTray({
   selected,
   total,
+  allTotal,
   onClear,
   onSelectAllVisible,
 }: {
   selected: Set<string>;
   total: number;
+  allTotal: number;
   onClear: () => void;
   onSelectAllVisible: () => void;
 }) {
@@ -68,7 +70,7 @@ function SelectionTray({
         )}
         {count < total && (
           <button onClick={onSelectAllVisible} className="text-cyan-300 hover:text-cyan-200 transition-colors underline underline-offset-2">
-            Select all
+            Select all{total < allTotal ? ` ${total} shown` : ''}
           </button>
         )}
       </div>
@@ -77,10 +79,14 @@ function SelectionTray({
         className={`inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider rounded-lg transition-colors ${
           count > 0 ? 'text-black bg-cyan-400 hover:bg-cyan-300 shadow-[0_0_18px_-4px_rgba(0,246,255,0.7)]' : 'text-slate-500 bg-black/40 border border-white/10'
         }`}
-        title={count > 0 ? `Export ${count} selected identit${count === 1 ? 'y' : 'ies'} as CSV rows` : 'Select identities to export only those (or export all)'}
+        title={
+          count > 0
+            ? `Export the ${count} selected identit${count === 1 ? 'y' : 'ies'} as one CSV row each, led by name, DOB, credit score and the key identifiers`
+            : 'Select identities to export only those. With nothing selected this exports every identity, one row each.'
+        }
       >
         <FileSpreadsheet className="w-3.5 h-3.5" />
-        {count > 0 ? `Export ${count} to CSV` : 'Export All (CSV)'}
+        {count > 0 ? `Export ${count} Identit${count === 1 ? 'y' : 'ies'}` : 'Export All Identities'}
       </a>
     </div>
   );
@@ -130,8 +136,18 @@ export const IdentitiesView: React.FC = () => {
     try {
       const res = await fetch('/api/identities');
       const data = await res.json();
-      setIdentities(Array.isArray(data.identities) ? data.identities : []);
+      const next = Array.isArray(data.identities) ? data.identities : [];
+      setIdentities(next);
       setUnassigned(Array.isArray(data.unassigned) ? data.unassigned : []);
+      // Drop anything the refresh no longer knows about. An identityId is a hash of
+      // name+given+DOB, so re-processing a document can change it; without this the tray
+      // would keep counting a person who no longer exists and the CSV would come back
+      // with fewer rows than the tray promised.
+      setCart((prev) => {
+        const live = new Set(next.map((i) => i.identityId));
+        const kept = new Set([...prev].filter((id) => live.has(id)));
+        return kept.size === prev.size ? prev : kept;
+      });
     } catch (err: any) {
       setError(err?.message || 'Failed to load identities');
     } finally {
@@ -311,10 +327,10 @@ export const IdentitiesView: React.FC = () => {
             <a
               href="/api/export/consolidated.csv"
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider text-cyan-300 bg-black/50 hover:bg-cyan-950/40 border border-cyan-500/30 rounded-lg transition-colors"
-              title="One row per document, one column per field, across every document in the corpus"
+              title="One row per DOCUMENT, one column per field, across every document. For one row per person, use the selection tray below."
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
-              Export All (CSV)
+              Per Document (CSV)
             </a>
             <label className="inline-flex items-center gap-2 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider text-black bg-matrix-500 hover:bg-matrix-400 rounded-lg shadow-[0_0_18px_-4px_rgba(0,255,65,0.7)] transition-colors cursor-pointer">
               <Upload className="w-3.5 h-3.5" />
@@ -342,6 +358,7 @@ export const IdentitiesView: React.FC = () => {
         <SelectionTray
           selected={cart}
           total={filteredIdentities.length}
+          allTotal={identities.length}
           onClear={clearCart}
           onSelectAllVisible={selectAllVisible}
         />
