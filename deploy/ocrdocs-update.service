@@ -1,0 +1,14 @@
+[Unit]
+Description=Automatic, atomic OCRDocs GX10 application updates
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ocrdocs-auto-update
+TimeoutStartSec=45min
+User=root
+Group=root
+UMask=0027
+Nice=10
+SyslogIdentifier=ocrdocs-auto-update

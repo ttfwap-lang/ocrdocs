@@ -15,7 +15,7 @@
     "test:integration": "node --test --test-timeout=30000 tests/dgxJobEndpoints.test.mjs tests/identities.test.mjs",
     "test:worker": "node --test --test-timeout=30000 tests/stage7TestIntegrity.test.mjs",
     "test:browser": "node --test --test-timeout=30000 tests/browser/suiteContract.test.mjs",
-    "test:deployment": "node --test --test-timeout=30000 tests/deployment/suiteContract.test.mjs",
+    "test:deployment": "node --test --test-timeout=30000 tests/deployment/suiteContract.test.mjs tests/deployment/autoUpdateContract.test.mjs",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:worker && npm run test:browser && npm run test:deployment",
     "test:python": "python -m pytest tests/python -q"
   },

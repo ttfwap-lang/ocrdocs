@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { createHash, timingSafeEqual } from "crypto";
+import { readFileSync } from "fs";
 import { readFile, unlink } from "fs/promises";
 import { PDFParse } from "pdf-parse";
 import { GoogleGenAI } from "@google/genai";
@@ -226,12 +227,28 @@ function getAIClient(): GoogleGenAI {
   return aiClient;
 }
 
+// The release updater writes a non-secret marker beside dist. Reading it at
+// startup lets the health endpoint prove which immutable release is actually
+// serving requests, rather than merely proving that some process is alive.
+function readBuildCommit(): string {
+  const fromEnv = process.env.OCRDOCS_BUILD_COMMIT?.trim();
+  if (fromEnv) return fromEnv.slice(0, 64);
+  try {
+    return readFileSync(path.join(process.cwd(), ".ocrdocs-release"), "utf8").trim().slice(0, 64) || "development";
+  } catch {
+    return "development";
+  }
+}
+
+const BUILD_COMMIT = readBuildCommit();
+
 // Health check and component diagnostic endpoint
 app.get("/api/health", (_req, res) => {
   const dgxWorkerConfigured = Boolean(process.env.DGX_WORKER_TOKEN);
   res.json({
     status: "ok",
     service: "ocrdocs-banking-ocr",
+    build_commit: BUILD_COMMIT,
     timestamp: new Date().toISOString(),
     services: {
       ocr_worker: { available: true, mode: "live" },
