@@ -247,6 +247,7 @@ type RuntimeDataHealth = {
   warnings: string[];
   database: { documents: number; byStatus: Record<string, number> };
   originalFiles: { checked: number; missing: number };
+  criticalFields: { valid: number; invalid: number; protectedInvalid: number; empty: number };
   medicare: {
     sourcePath: string;
     sourceExists: boolean;
@@ -303,6 +304,21 @@ function runtimeDataHealth(): RuntimeDataHealth {
     0,
   );
   if (missingOriginalFiles > 0) warnings.push("original_files_missing");
+  const criticalAuditTable = db.prepare(
+    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'critical_field_audit'",
+  ).get() as { count: number };
+  const criticalFields = { valid: 0, invalid: 0, protectedInvalid: 0, empty: 0 };
+  if (criticalAuditTable.count > 0) {
+    for (const row of db.prepare(
+      "SELECT verdict, COUNT(*) AS count FROM critical_field_audit GROUP BY verdict",
+    ).all() as Array<{ verdict: string; count: number }>) {
+      if (row.verdict === "valid") criticalFields.valid = row.count;
+      if (row.verdict === "invalid") criticalFields.invalid = row.count;
+      if (row.verdict === "protected_invalid") criticalFields.protectedInvalid = row.count;
+      if (row.verdict === "empty") criticalFields.empty = row.count;
+    }
+    if (criticalFields.invalid > 0) warnings.push("critical_fields_need_review");
+  }
   const result: RuntimeDataHealth = {
     status: warnings.length === 0 ? "ok" : "degraded",
     warnings,
@@ -311,6 +327,7 @@ function runtimeDataHealth(): RuntimeDataHealth {
       byStatus: documentRepo.countByStatus(),
     },
     originalFiles: { checked: originalRows.length, missing: missingOriginalFiles },
+    criticalFields,
     medicare: {
       sourcePath: medicarePath,
       sourceExists: medicareSourceExists,
