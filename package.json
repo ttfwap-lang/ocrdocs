@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "prestart": "node scripts/check_dist_freshness.mjs",
     "start": "node dist/server.cjs",
+    "start:dev": "tsx server.ts",
     "lint": "tsc --noEmit",
     "test": "node --test --test-timeout=30000 tests/*.test.mjs tests/parity/*.test.mjs",
     "test:unit": "node --test --test-timeout=30000 tests/australianValidation.test.mjs tests/ocrEngine.test.mjs tests/bankFields.test.mjs tests/stage3Architecture.test.mjs tests/stage4DemoSeparation.test.mjs tests/stage5Dependencies.test.mjs tests/stage6Startup.test.mjs",
