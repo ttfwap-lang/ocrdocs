@@ -113,6 +113,11 @@ from failed/queued to extracted, records aggregate audit counts in
 default dry-run first and inspect the JSON report. A failed post-commit
 integrity check must be investigated before restarting the services.
 
+For a repeatable browser/DOM loop against a running site, start a disposable
+Chrome profile with a CDP port and run `npm run audit:live`. The audit reports
+only aggregate counts, bounded unassigned rendering, API timings, network
+failures and console errors; it never prints names, filenames or patient rows.
+
 ## Manual update and rollback
 
 Run one update immediately:

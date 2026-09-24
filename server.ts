@@ -242,12 +242,34 @@ function readBuildCommit(): string {
 
 const BUILD_COMMIT = readBuildCommit();
 
+type RuntimeDataHealth = {
+  status: "ok" | "degraded";
+  warnings: string[];
+  database: { documents: number; byStatus: Record<string, number> };
+  originalFiles: { checked: number; missing: number };
+  medicare: {
+    sourcePath: string;
+    sourceExists: boolean;
+    sourceBytes: number | null;
+    loaded: boolean;
+    loadedAt: string | null;
+    patients: number;
+    sourceRows: number;
+  };
+};
+
+let runtimeDataHealthCache: { at: number; value: RuntimeDataHealth } | null = null;
+
 /**
  * Lightweight, PHI-free runtime data diagnostics. A healthy process can still
  * be serving an empty/degraded data directory, so deployments must be able to
  * distinguish "HTTP is up" from "the authorised corpus is mounted".
  */
-function runtimeDataHealth() {
+function runtimeDataHealth(): RuntimeDataHealth {
+  const now = Date.now();
+  if (runtimeDataHealthCache && now - runtimeDataHealthCache.at < 30_000) {
+    return runtimeDataHealthCache.value;
+  }
   const medicarePath = medicareIndexPath();
   let medicareSourceExists = false;
   let medicareSourceBytes: number | null = null;
@@ -275,13 +297,20 @@ function runtimeDataHealth() {
     const reconciled = db.prepare("SELECT COUNT(*) AS count FROM corpus_reconciliation").get() as { count: number };
     if (reconciled.count === 0) warnings.push("corpus_reconciliation_empty");
   }
-  return {
+  const originalRows = db.prepare("SELECT original_path FROM documents").all() as Array<{ original_path: string }>;
+  const missingOriginalFiles = originalRows.reduce(
+    (count, row) => count + (existsSync(row.original_path) ? 0 : 1),
+    0,
+  );
+  if (missingOriginalFiles > 0) warnings.push("original_files_missing");
+  const result: RuntimeDataHealth = {
     status: warnings.length === 0 ? "ok" : "degraded",
     warnings,
     database: {
       documents: documentRepo.count(),
       byStatus: documentRepo.countByStatus(),
     },
+    originalFiles: { checked: originalRows.length, missing: missingOriginalFiles },
     medicare: {
       sourcePath: medicarePath,
       sourceExists: medicareSourceExists,
@@ -292,6 +321,8 @@ function runtimeDataHealth() {
       sourceRows: medicareMeta?.row_count ?? 0,
     },
   };
+  runtimeDataHealthCache = { at: now, value: result };
+  return result;
 }
 
 // Health check and component diagnostic endpoint

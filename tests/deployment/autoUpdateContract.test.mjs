@@ -35,6 +35,10 @@ test('automatic GX10 updates are atomic, locked, and fail closed', async () => {
   assert.match(reconciler, /--backup/);
   assert.match(reconciler, /verif/);
   assert.match(reconciler, /latest_extraction_id/);
+  const liveAudit = await read('scripts/live_dom_audit.mjs');
+  assert.match(liveAudit, /unassigned/);
+  assert.match(liveAudit, /\/api\/medicare\/summary/);
+  assert.match(liveAudit, /process\.exitCode/);
 });
 
 test('systemd timer and installer are present and use the release symlink', async () => {

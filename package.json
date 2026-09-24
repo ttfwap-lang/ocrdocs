@@ -17,7 +17,8 @@
     "test:browser": "node --test --test-timeout=30000 tests/browser/suiteContract.test.mjs",
     "test:deployment": "node --test --test-timeout=30000 tests/deployment/suiteContract.test.mjs tests/deployment/autoUpdateContract.test.mjs",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:worker && npm run test:browser && npm run test:deployment",
-    "test:python": "python -m pytest tests/python -q"
+    "test:python": "python -m pytest tests/python -q",
+    "audit:live": "node scripts/live_dom_audit.mjs"
   },
   "dependencies": {
     "@google/genai": "2.22.0",
