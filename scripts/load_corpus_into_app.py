@@ -50,6 +50,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from field_catalogue import BY_ID  # noqa: E402  (generated from bankFields.ts)
+from critical_field_rules import classify_critical_field  # noqa: E402
 
 # Pipeline field names that differ from the catalogue id (see verify_fields.py FIELD_ID).
 LEGACY_ALIASES = {
@@ -218,16 +219,20 @@ def main() -> int:
             if not display:
                 stats["unknown_field"] += 1
                 continue
+            value = (f.get("value") or "").strip()
+            format_valid, _reason = classify_critical_field(display, value)
             con.execute(
                 "INSERT INTO fields (id, extraction_id, field_name, field_value, confidence, source_section, "
-                "validated, validation_status, corrected_value, approved) VALUES (?,?,?,?,?,?,1,'valid',NULL,0)",
+                "validated, validation_status, corrected_value, approved) VALUES (?,?,?,?,?,?,?,?,NULL,0)",
                 (
                     str(uuid.uuid4()),
                     extraction_id,
                     display,
-                    (f.get("value") or "").strip(),
+                    value,
                     float(f.get("confidence") or 0),
                     f.get("section") or None,
+                    1 if format_valid else 0,
+                    "valid" if format_valid else "warning",
                 ),
             )
             inserted_fields += 1

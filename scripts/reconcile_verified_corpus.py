@@ -46,6 +46,7 @@ if hasattr(sys.stdout, "reconfigure"):
 # catalogue is beside it, without requiring the repository root on sys.path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from field_catalogue import BY_ID  # noqa: E402
+from critical_field_rules import classify_critical_field  # noqa: E402
 
 LEGACY_ALIASES = {
     "drivers_licence_number": "drivers_licence",
@@ -234,15 +235,19 @@ def insert_field(
     value: str,
     confidence: float,
     section: str | None,
+    format_valid: bool = True,
 ) -> None:
     db.execute(
         """
         INSERT INTO fields
           (id, extraction_id, field_name, field_value, confidence, source_section,
            validated, validation_status, corrected_value, approved)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 'valid', NULL, 0)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0)
         """,
-        (str(uuid.uuid4()), extraction_id, field_id, value, confidence, section),
+        (
+            str(uuid.uuid4()), extraction_id, field_id, value, confidence, section,
+            1 if format_valid else 0, "valid" if format_valid else "warning",
+        ),
     )
 
 
@@ -298,7 +303,15 @@ def reconcile_row(
         candidates = existing.get(name, [])
         selected = choose_field(candidates)
         current = effective_value(selected)
+        format_valid, _reason = classify_critical_field(name, value)
+        if not format_valid:
+            stats["critical_format_warnings"] += 1
         if current == value:
+            if selected is not None and not format_valid and selected["corrected_value"] is None and selected["approved"] != 1:
+                db.execute(
+                    "UPDATE fields SET validated = 0, validation_status = 'warning' WHERE rowid = ?",
+                    (selected["rowid"],),
+                )
             stats["fields_unchanged"] += 1
             continue
         if current and selected is not None and (selected["corrected_value"] is not None or selected["approved"] == 1):
@@ -316,17 +329,23 @@ def reconcile_row(
             confidence_value = 0.0
         section = field.get("section") or "corpus-verified"
         if selected is None:
-            insert_field(db, extraction_id, name, value, confidence_value, section)
+            insert_field(db, extraction_id, name, value, confidence_value, section, format_valid)
             fields_inserted += 1
             stats["fields_inserted"] += 1
         else:
             db.execute(
                 """
                 UPDATE fields
-                SET field_value = ?, confidence = ?, source_section = ?
+                SET field_value = ?, confidence = ?, source_section = ?,
+                    validated = ?, validation_status = ?
                 WHERE rowid = ?
                 """,
-                (value, confidence_value, section, selected["rowid"]),
+                (
+                    value, confidence_value, section,
+                    1 if format_valid else 0,
+                    "valid" if format_valid else "warning",
+                    selected["rowid"],
+                ),
             )
             fields_updated += 1
             stats["fields_updated"] += 1
