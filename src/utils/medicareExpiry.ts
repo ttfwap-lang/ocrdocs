@@ -20,8 +20,11 @@
  * itself, which is exactly the failure the owner is guarding against.
  *
  * Measured on data/medicare_index.json (3,592 rows):
- *   474 in window, 65 outside the window, 46 malformed (e.g. `2027-04` with no day),
- *   3,053 with no expiry at all. Rejected values are cleared and counted, never displayed.
+ *   474 in window, 65 outside the window (49 before the floor, 16 after the ceiling),
+ *   0 malformed, 3,053 with no expiry at all. The 46 ISO-month values in the source
+ *   (e.g. `2028-04`, no day) are deliberately NOT malformed -- they carry a real month,
+ *   so 33 qualify and 13 fall outside the window. Rejected values are cleared and
+ *   counted, never displayed.
  */
 
 /** First valid expiry: September 2026. */
@@ -37,7 +40,13 @@ const MM_SLASH_YYYY = /^(\d{2})\/(\d{4})$/;
 export type ExpiryRejection = 'absent' | 'malformed' | 'before_window' | 'after_window';
 
 export interface ExpiryVerdict {
-  /** True only when the value is in `MM/YY` or `MM/YYYY` form AND inside the window. */
+  /**
+   * True only when the value denotes a real month inside the window.
+   *
+   * Accepted input shapes are the owner's `MM/YY` and `MM/YYYY` plus the ISO
+   * `YYYY-MM` / `YYYY-MM-DD` the pipeline stores and this module re-emits, so an
+   * operator can paste any of them and get the same answer.
+   */
   valid: boolean;
   /** Why it was rejected, for the aggregate counters. */
   rejection: ExpiryRejection | null;
