@@ -193,21 +193,6 @@ export interface IdentityDocumentDetail {
   } | null;
 }
 
-export interface IdentityDetail extends IdentitySummary {
-  documents: IdentityDocumentDetail[];
-  fieldBreakdown: IdentityFieldEntry[];
-  /** Every head photo extracted across this person's documents (verified first). */
-  photos: IdentityPhoto[];
-  /**
-   * Passport and driver's-licence values with their verification tier, corroboration
-   * count and exact source files. Promoted on the identity page; every other extracted
-   * field stays in `fieldBreakdown`.
-   */
-  keyIdentifiers: KeyIdentifier[];
-  /** The credit score, if any document for this person carried one. */
-  creditScore: CreditScoreSummary | null;
-}
-
 /**
  * Verification tier for a key identifier (passport / driver's licence).
  * `triple_checked` means the value passed the Australian format check AND was read from
@@ -300,6 +285,104 @@ export interface DependencyLicenseManifest {
     copyleftCountInProduction: number;
     screenedConditionalCount: number;
   };
+}
+
+/**
+ * Medicare index — one deduplicated patient from the full archive PHI
+ * extraction, as served by GET /api/medicare/patients.
+ *
+ * `name_status` matters: 'form_label' means the extractor captured a form
+ * heading ("PATIENT DETAILS") rather than a person, and 'suspect' means the
+ * name looks like a sentence fragment. Both are kept (nothing is dropped) but
+ * must be shown as unverified rather than as a patient's name.
+ */
+export interface MedicarePatient {
+  patient_id: string;
+  full_name: string;
+  name_display: string;
+  name_status: 'ok' | 'suspect' | 'form_label' | 'missing' | string;
+  name_flags: string;
+  title: string;
+  surname: string;
+  given_name: string;
+  middle_names: string;
+  dob_iso: string;
+  sex: string;
+  medicare_number: string;
+  /** '' when the number has no verifiable checksum, 1 when verified, 0 when it failed. */
+  medicare_valid: '' | 0 | 1;
+  medicare_len: number;
+  medicare_flags: string;
+  mrn: string;
+  phone: string;
+  email: string;
+  address_full: string;
+  suburb: string;
+  state: string;
+  postcode: string;
+  referrer: string;
+  tests: string;
+  diagnoses: string;
+  expiry_tokens: string;
+  expiry_best_word: string;
+  /** Normalised ISO date, or '' when the source date could not be resolved. */
+  expiry_best_date: string;
+  expiry_best_raw: string;
+  expiry_best_precision: string;
+  has_expiry: number;
+  record_count: number;
+  confidence_best: string;
+  doc_dates_range: string;
+  source_files: string;
+  needs_review: number;
+  name_suspect: number;
+  completeness: number;
+  sources: string[];
+}
+
+export interface MedicareSummary {
+  loaded: boolean;
+  loadedAt: string | null;
+  sourcePath: string;
+  patients: number;
+  withMedicare: number;
+  medicareVerified: number;
+  medicareFailed: number;
+  medicareUnverifiable: number;
+  withoutMedicare: number;
+  withExpiry: number;
+  expiryWithIsoDate: number;
+  expiringSoon: number;
+  expired: number;
+  /**
+   * How raw expiry values were judged by the owner's rule: only `MM/YY` or `MM/YYYY`
+   * between 09/2026 and 09/2031 inclusive is valid. `rejected` values were cleared at
+   * import and are never displayed anywhere.
+   */
+  expiryCensus: {
+    valid: number;
+    absent: number;
+    malformed: number;
+    beforeWindow: number;
+    afterWindow: number;
+    rejected: number;
+  };
+  needsReview: number;
+  nameStatus: Record<string, number>;
+  sexBreakdown: Record<string, number>;
+  stateBreakdown: Record<string, number>;
+  recordTotal: number;
+  distinctMedicareNumbers: number;
+  sortableColumns: string[];
+}
+
+export interface MedicareQueryResponse {
+  rows: MedicarePatient[];
+  total: number;
+  limit: number;
+  offset: number;
+  sort: string;
+  dir: 'asc' | 'desc';
 }
 
 /** Stage 6 — server bind/lifecycle configuration contract. */

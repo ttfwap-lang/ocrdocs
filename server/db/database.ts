@@ -11,6 +11,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { dirname, resolve } from 'path';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import { runMigrations } from './migrations/001_initial_schema';
+import { runMigrations as runMedicareMigrations } from './migrations/002_medicare_index';
 
 const DB_PATH = resolve(
   process.env.DATABASE_PATH || 'data/app.db',
@@ -46,6 +47,7 @@ export function getDb(): DatabaseType {
 export function initDb(): DatabaseType {
   const db = getDb();
   runMigrations(db);
+  runMedicareMigrations(db);
   console.log('[DB] Migrations complete');
   return db;
 }

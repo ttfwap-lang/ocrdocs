@@ -126,6 +126,42 @@ full local-vs-gx10 matrix.
 - `POST/GET /api/dgx/telemetry-report` — worker telemetry (worker-auth).
 - `GET /api/export/consolidated.csv` — one-row-per-document consolidated export.
 
+## Medicare index (archive PHI tab)
+
+The **Medicare** tab serves the full archive patient-PHI extraction as a
+searchable, filterable, sortable index — 3,592 deduplicated patients with their
+Medicare number, checksum verdict, DOB, expiry dates and the source documents
+behind each value.
+
+The source of truth is `data/medicare_index.json`, produced by the archive scan
+pipeline (`medica/_medica_scan_report/PHI/medicare_index.csv`). On boot
+`server/services/medicareService.ts` imports it into SQLite, guarded by a
+SHA-256 fingerprint so restarts only rewrite the tables when the upstream data
+actually changed. Point `MEDICARE_INDEX_PATH` at another file to load a
+different corpus.
+
+Two quality signals are surfaced rather than hidden, because the extraction runs
+over OCR'd clinical documents:
+
+- `medicare_valid` — the Australian Medicare mod-10 checksum (same rule as
+  `validateAustralianMedicare`). `verified` is strong evidence the digits are a
+  real number; `failed` usually means an OCR misread.
+- `name_status` — `ok`, `suspect` (name looks like a sentence fragment),
+  `form_label` (a form heading such as "PATIENT DETAILS" was captured) or
+  `missing`. Non-`ok` rows show "name unavailable" rather than presenting a
+  form label as a person, and remain searchable by Medicare number or DOB.
+
+Endpoints:
+
+- `GET /api/medicare/summary` — corpus counts, breakdowns, load timestamp.
+- `GET /api/medicare/patients` — paginated rows. Filters: `q` (multi-term),
+  `medicare_state`, `name_status`, `expiry_state`, `sex`, `state`,
+  `needs_review`; plus `sort`, `dir`, `limit`, `offset`.
+- `GET /api/medicare/patients/:patientId` — one patient with source files.
+- `GET /api/medicare/export.csv` — the current filter as CSV.
+
+All of these return real patient PHI — same trust level as `/api/identities`.
+
 ## Configuration
 
 See `.env.example` for all consumed environment variables (app server, DGX worker, and

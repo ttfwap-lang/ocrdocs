@@ -35,8 +35,26 @@ import { upload } from "./server/middleware/upload";
 import { createIdentityService } from "./server/services/identityService";
 import { createHeadshotService } from "./server/services/headshotService";
 import { createImportService, type PreparseShell, type UploadedFile } from "./server/services/importService";
+import {
+  syncMedicareIndex,
+  getMedicareSummary,
+  queryMedicarePatients,
+  allMedicarePatients,
+  getMedicarePatient,
+  medicareIndexPath,
+  MEDICARE_SORTABLE_COLUMNS,
+  type MedicareQuery,
+} from "./server/services/medicareService";
 
 const db = initDb();
+
+// The Medicare index is a separate corpus from uploaded documents: it is the
+// full archive PHI extraction (see _medica_scan_report/PHI). Import it on boot
+// so the tab is queryable server-side; a no-op when the JSON is unchanged.
+const medicareSync = syncMedicareIndex(db);
+console.log(
+  `[Medicare] index ${medicareSync.reason}: ${medicareSync.rows} patients (${medicareIndexPath()})`,
+);
 const documentRepo = createDocumentRepo(db);
 const jobRepo = createJobRepo(db);
 const extractionRepo = createExtractionRepo(db);
@@ -622,6 +640,122 @@ app.get("/api/identities/:identityId", (req: express.Request<{ identityId: strin
     return res.status(404).json({ error: "Identity not found" });
   }
   return res.json(identity);
+});
+
+// ---------------------------------------------------------------------------
+// Medicare index — the full archive PHI extraction, indexed in SQLite and
+// served as a searchable/filterable/sortable page (the "Medicare" tab).
+// These endpoints carry real patient PHI: same trust level as /api/identities.
+// ---------------------------------------------------------------------------
+
+/** Translate query-string params into a validated MedicareQuery. */
+function parseMedicareQuery(query: Record<string, unknown>): MedicareQuery {
+  const one = (key: string): string | undefined => {
+    const v = query[key];
+    if (Array.isArray(v)) return undefined;
+    return typeof v === "string" ? v : undefined;
+  };
+  const q = one("q");
+  const medicareState = one("medicare_state");
+  const nameStatus = one("name_status");
+  const expiryState = one("expiry_state");
+  const needsReview = one("needs_review");
+  const dir = one("dir");
+  return {
+    q,
+    medicareState:
+      medicareState === "verified" || medicareState === "failed" ||
+      medicareState === "unverifiable" || medicareState === "absent"
+        ? medicareState
+        : "all",
+    nameStatus:
+      nameStatus === "ok" || nameStatus === "suspect" ||
+      nameStatus === "form_label" || nameStatus === "missing"
+        ? nameStatus
+        : "all",
+    expiryState:
+      expiryState === "with" || expiryState === "without" || expiryState === "expired" ||
+      expiryState === "expiring_soon"
+        ? expiryState
+        : "all",
+    sex: one("sex") || undefined,
+    state: one("state") || undefined,
+    needsReview: needsReview === "only" || needsReview === "clean" ? needsReview : "all",
+    sort: one("sort") || undefined,
+    dir: dir === "desc" ? "desc" : "asc",
+    limit: one("limit") ? Number.parseInt(one("limit") as string, 10) : undefined,
+    offset: one("offset") ? Number.parseInt(one("offset") as string, 10) : undefined,
+  };
+}
+
+app.get("/api/medicare/summary", (_req, res) => {
+  res.json({ ...getMedicareSummary(db), sortableColumns: MEDICARE_SORTABLE_COLUMNS });
+});
+
+app.get("/api/medicare/patients", (req, res) => {
+  res.json(queryMedicarePatients(db, parseMedicareQuery(req.query as Record<string, unknown>)));
+});
+
+app.get("/api/medicare/patients/:patientId", (req: express.Request<{ patientId: string }>, res) => {
+  const patient = getMedicarePatient(db, req.params.patientId);
+  if (!patient) {
+    return res.status(404).json({ error: "Patient not found" });
+  }
+  return res.json(patient);
+});
+
+// Full index (or the current filter) as CSV, mirroring the consolidated export.
+app.get("/api/medicare/export.csv", (req, res) => {
+  const rows = allMedicarePatients(db, parseMedicareQuery(req.query as Record<string, unknown>));
+  const header = [
+    "patient_id", "name_display", "name_status", "medicare_number", "medicare_valid",
+    "medicare_flags", "dob_iso", "sex", "mrn", "phone", "email", "address_full",
+    "suburb", "state", "postcode", "expiry_best_date", "expiry_best_raw",
+    "expiry_best_precision", "expiry_tokens", "record_count", "completeness",
+    "needs_review", "source_files",
+  ];
+  const lines = [header.join(",")];
+  for (const r of rows) {
+    lines.push(
+      [
+        r.patient_id,
+        r.name_display ?? "",
+        r.name_status ?? "",
+        r.medicare_number ?? "",
+        r.medicare_valid === "" || r.medicare_valid === null || r.medicare_valid === undefined
+          ? ""
+          : r.medicare_valid === 1
+            ? "yes"
+            : "no",
+        r.medicare_flags ?? "",
+        r.dob_iso ?? "",
+        r.sex ?? "",
+        r.mrn ?? "",
+        r.phone ?? "",
+        r.email ?? "",
+        r.address_full ?? "",
+        r.suburb ?? "",
+        r.state ?? "",
+        r.postcode ?? "",
+        r.expiry_best_date ?? "",
+        r.expiry_best_raw ?? "",
+        r.expiry_best_precision ?? "",
+        r.expiry_tokens ?? "",
+        r.record_count ?? "",
+        r.completeness ?? "",
+        r.needs_review ?? "",
+        (r.sources ?? []).join("; "),
+      ]
+        .map(csvEscape)
+        .join(","),
+    );
+  }
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="medicare_index_${Date.now()}.csv"`,
+  );
+  return res.send(lines.join("\n"));
 });
 
 // One-click export: every original file plus a single readable text summary

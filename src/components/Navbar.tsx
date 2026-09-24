@@ -4,9 +4,9 @@
  */
 
 import React from 'react';
-import { Sparkles, Fingerprint, Users } from 'lucide-react';
+import { Sparkles, Fingerprint, Users, ShieldCheck } from 'lucide-react';
 
-export type NavTab = 'identities' | 'copilot';
+export type NavTab = 'identities' | 'copilot' | 'medicare';
 
 interface NavbarProps {
   activeTab: NavTab;
@@ -45,6 +45,19 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             >
               <Users className="w-3.5 h-3.5" />
               <span>Identities</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('medicare')}
+              className={`flex items-center gap-1.5 h-full px-4 sm:px-5 text-[11px] font-mono uppercase tracking-wider transition-all border-l border-matrix-500/15 shrink-0 ${
+                activeTab === 'medicare'
+                  ? 'bg-white/5 text-cyan-300 text-glow-cyan border-b-2 border-b-cyan-500'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+              }`}
+              title="Full Medicare index for the archive: every patient, checksum verdict, expiry dates and source documents"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Medicare</span>
             </button>
 
             <button

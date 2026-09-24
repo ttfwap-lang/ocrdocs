@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navbar, NavTab } from './components/Navbar';
 import { IdentitiesView } from './components/IdentitiesView';
+import { MedicareView } from './components/MedicareView';
 import { GeminiChatbot } from './components/GeminiChatbot';
 import { MatrixRain } from './components/MatrixRain';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -79,6 +80,7 @@ export default function App() {
         <main className="flex-1 max-w-screen-2xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <ErrorBoundary resetKey={activeTab}>
             {activeTab === 'identities' && <IdentitiesView />}
+            {activeTab === 'medicare' && <MedicareView />}
             {activeTab === 'copilot' && <GeminiChatbot />}
           </ErrorBoundary>
         </main>
