@@ -499,3 +499,53 @@ are implemented and unit-tested but were NOT exercised on real pages in this ver
   much weaker than intended without a visible warning beyond a log line).
 - `PIPELINE_MODE` defaults to `legacy` here; the vlm_v2 chain is opt-in and, without the GPU
   services, would only produce degraded output.
+
+## 2026-09-24 post-GX10-restart verification (option 4 chosen: accept the degraded path)
+
+Owner chose option 4: leave the vision services down and accept the Tesseract + LlamaParse
+degraded path. Verified what that choice actually delivers, and found one thing it does not.
+
+### GX10 state after the restart (measured over `scripts/gx10-ssh.ps1`)
+- Reachable: `gx10.local` and `192.168.4.103` both OK.
+- **The host did not reboot**: `uptime` = 3 days 14:09, and `qwen-abliterated` shows
+  "Up 2 hours". Whatever was restarted was a service, not the machine.
+- OCR vision services are all **DOWN**: `paddle-vl` :8100, `qwen-vl` :8200, `chandra` :8300 all
+  refuse connections. Only `qwen-abliterated` :8000 and `ui-venus` :8002 are up.
+- **Memory is exhausted**: 121 GB total, 0 available, 13 GB swap consumed, held by OTHER work
+  (`qwen-abliterated` 85.9 GB, `ui-venus` 28.2 GB). Paddle needs 20 GB free, Qwen 32 GB,
+  Chandra 48 GB, so `vllm_services.sh` correctly refuses to start rather than OOM the box.
+  Those containers are someone else's work and were deliberately not stopped.
+- `Qwen3-VL-8B-Instruct` is **not downloaded** (only `Qwen2.5-VL-7B-Instruct` is present), so
+  `vllm_services.sh fetch qwenvl` would be needed even with free memory.
+
+### What option 4 DOES deliver, verified live
+- **LlamaParse agentic_plus**: working. Real document -> SUCCESS in 117.5s, 6 pages, 25,598
+  chars, 0 errors, 90 credits, 16 fields including `credit_score = 967`.
+- **Legacy Tesseract + regex**: working. Real Australian documents yield real fields
+  (BSB `083-343`, ABN, addresses, income).
+- **The autonomous queue watcher**: verified unattended end to end -- vision pre-filter failed,
+  failed OPEN to "keep", agentic_plus returned `parsed_ok` with 8 fields in 76.6s. This path
+  does not need the GPU stages.
+- **ocr.local itself**: up on :3000, serving the current bundle, 133-check E2E sweep green.
+
+### What option 4 does NOT deliver -- and this is the important finding
+**A NEW document uploaded through the ocr.local UI is never extracted.** Measured:
+`POST /api/documents` on a file genuinely absent from the DB returns **HTTP 202** with
+*"Image OCR requires the DGX worker, which is not connected yet. The document is queued."*
+The job sits at `status: queued` and there is **no DGX worker process running**, so nothing
+will ever claim it. One job is stuck in that state now.
+
+So the degraded path covers the **watcher -> LlamaParse** route and any pre-loaded corpus, but
+it does **not** cover **in-app uploads**. `scripts/dgx_worker.py` is what closes that gap, and
+it needs `OCRDOCS_SERVER_URL` and a matching `DGX_WORKER_TOKEN`; it is the pull-based worker
+that runs `process_document_multipass`. It has not been started.
+
+### To make in-app uploads work without the vision services
+Run the worker on this host (Tesseract + regex + LlamaParse all work locally, as verified):
+`OCRDOCS_SERVER_URL=http://127.0.0.1:3000 DGX_WORKER_TOKEN=<shared secret> python scripts/dgx_worker.py`
+The server-side `DGX_WORKER_TOKEN` must match. That is a one-line start and does NOT require
+the GX10 or the GPU services.
+
+### Housekeeping
+- The stuck queued job came from a verification upload; it can be left (jobs are retried and
+  eventually fail) or cleared deliberately.
