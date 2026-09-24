@@ -359,3 +359,39 @@ CSV export.
 - Single-id export returns exactly 1 row; no-ids returns all 125. CSV leads with
   full_name, dob, credit_score(+source), passport_number/tier/sources, licence_number/tier/sources.
 - `tsc --noEmit` 0, `npm test` 241/241, `pytest` 320 passed / 1 skipped, `npm run build` ok.
+
+## 2026-09-24 review of the Medicare expiry rule and index
+
+Reviewed the committed Medicare work (`e1e9e55`, `ee42b11`) rather than re-authoring it:
+traced the rule from `src/utils/medicareExpiry.ts` through the importer
+(`server/services/medicareService.ts`) to every reader, and confirmed the rule is applied once
+at the import boundary so the list, detail panel, summary tiles, CSV export and the
+expiring-soon count cannot disagree. `expiry_best_raw`/`expiry_tokens` are stored for provenance
+but are not used as a display fallback and are not exported.
+
+### Two documentation defects found and fixed (commit 6a427e4)
+- The module header claimed `46 malformed (e.g. 2027-04 with no day)`. That is wrong and
+  contradicts the code's own comment: an ISO month carries a real month, so `classifyExpiry`
+  reads it and judges it on the window, and the corpus yields **0 malformed**. Of the 46
+  ISO-month values, 33 are in-window (kept) and 13 fall outside (rejected).
+- `ExpiryVerdict.valid` said "MM/YY or MM/YYYY form" while the implementation also accepts the
+  ISO `YYYY-MM` / `YYYY-MM-DD` it stores and re-emits. The contract now lists the accepted shapes.
+- No behaviour change; comments only.
+
+### Verified (measured, not assumed)
+- Census recomputed independently in Python against `data/medicare_index.json`, so a bug in the
+  TS module could not make the check agree with itself: **474 valid, 65 rejected (49 before the
+  floor, 16 after the ceiling), 0 malformed, 3,053 absent**; the four numbers sum to 3,592.
+  `GET /api/medicare/summary` reports the same census, and `withExpiry` = 474.
+- Boundaries are exactly `2026-09` and `2031-09`; 61 distinct expiry months retained.
+- `tsc --noEmit` 0, `npm test` **255/255**, `npm run build` ok, dev server serves on 5178.
+- Medicare is unaffected by the 65 rejected expiries: the number, DOB, address and source files
+  are still stored and searchable, only the expiry is cleared.
+
+### Not committed, deliberately
+`src/components/IdentitiesView.tsx` and `src/components/IdentityDetailPage.tsx` are modified in
+the working tree by a concurrent session (a selection-tray/CSV-export change in the former, a
+Name/DOB/Credit-Score equal-cell layout change in the latter, the latter appearing first and the
+former changing mid-review). Both typecheck and build, but they are in-flight work from another
+session, so they were left unstaged rather than committed on its behalf. Six duplicate dev-server
+processes accumulated during this review and were reduced to the single listener on 5178.
