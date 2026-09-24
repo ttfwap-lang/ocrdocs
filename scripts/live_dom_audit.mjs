@@ -63,7 +63,9 @@ async function evaluate(expression) {
     awaitPromise: true,
     returnByValue: true,
   });
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'DOM evaluation failed');
+  if (result.exceptionDetails) {
+    throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'DOM evaluation failed');
+  }
   return result.result?.value;
 }
 
@@ -81,6 +83,7 @@ async function domState() {
       people: number(/PEOPLE\\s+([\\d,]+)/i),
       documents: number(/([\\d,]+)\\s+DOCUMENTS/i),
       unassigned: number(/Unassigned Queue \\/\\/\\s*([\\d,]+)/i),
+      unassignedRendered: document.querySelectorAll('[data-testid="unassigned-row"]').length,
       medicare: number(/INDEX \\/\\/\\s*([\\d,]+)\\s+PATIENTS/i),
       worker: /DGX WORKER:\\s*(LIVE|UNCONFIGURED)/i.exec(text)?.[1] || null,
       querying: text.includes('Querying index'),
@@ -93,7 +96,8 @@ async function domState() {
 }
 
 async function clickNav(index) {
-  await evaluate(`document.querySelectorAll('nav button')[${index}].click()`);
+  const clicked = await evaluate(`(() => { const button = document.querySelectorAll('nav button')[${index}]; if (!button) return false; button.click(); return true; })()`);
+  if (!clicked) throw new Error(`navigation button ${index} is not present`);
   await sleep(1_500);
 }
 
@@ -141,9 +145,9 @@ report.network = {
 
 const invalid = report.cycles.some(({ initial, medicare, identities }) =>
   !initial.people || !initial.documents || !initial.unassigned ||
-  initial.unassigned > 200 || !initial.loadMore ||
+  initial.unassignedRendered > 200 || !initial.loadMore ||
   !medicare.medicare || medicare.querying || medicare.warning ||
-  !identities.people || identities.unassigned > 200 || identities.warning,
+  !identities.people || identities.unassignedRendered > 200 || identities.warning,
 ) || report.network.failures > 0 || report.network.errors > 0;
 report.ok = !invalid;
 console.log(JSON.stringify(report, null, 2));

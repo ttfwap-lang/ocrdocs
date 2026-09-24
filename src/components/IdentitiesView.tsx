@@ -532,7 +532,7 @@ export const IdentitiesView: React.FC = () => {
         {/* Gallery: same order as the sidebar, with a flipping thumbnail stack per row */}
         <div className="lg:col-span-8 space-y-4">
           {unassigned.length > 0 && (
-            <div className="neon-card rounded-xl overflow-hidden">
+            <div data-testid="unassigned-queue" className="neon-card rounded-xl overflow-hidden">
               <div className="p-3 border-b border-amber-500/20 bg-black/30 flex items-center gap-2">
                 <Inbox className="w-4 h-4 text-amber-400" />
                 <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-amber-300">Unassigned Queue // {unassignedTotal}</h2>
@@ -540,7 +540,7 @@ export const IdentitiesView: React.FC = () => {
               <div className="divide-y divide-white/5 max-h-56 overflow-y-auto">
                 {unassigned.map((doc) => (
                   <button
-                    key={doc.id}
+                    data-testid="unassigned-row" key={doc.id}
                     onClick={() => setSelection({ type: 'document', id: doc.id })}
                     className="w-full text-left px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-white/[0.03] transition-colors"
                   >
