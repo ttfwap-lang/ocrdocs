@@ -520,7 +520,7 @@ export const IdentitiesView: React.FC = () => {
                     aria-label={`Select ${id.fullName} for CSV export`}
                   />
                 </label>
-                <button
+                <button data-testid="identity-open"
                   onClick={() => setSelection({ type: 'identity', id: id.identityId })}
                   className="flex-1 text-left p-3 flex items-center justify-between gap-2 min-w-0"
                 >

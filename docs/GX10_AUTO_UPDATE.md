@@ -101,7 +101,7 @@ sudo systemctl stop ocrdocs-update.timer ocrdocs-server.service ocrdocs-worker.s
 sudo python3 /home/flak3dd/ocrdocs-current/scripts/reconcile_verified_corpus.py \
   --in /home/nick/llamaparse_bulk/results/rc_extract_verified_linux.jsonl \
   --db /home/flak3dd/ocrdocs/data/app.db \
-  --backup /var/lib/ocrdocs-updater/backups/app-pre-corpus-$(date -u +%Y%m%dT%H%M%SZ).db \
+  --backup /var/lib/ocrdocs-updater/backups/pre-corpus-$(date -u +%Y%m%dT%H%M%SZ).db \
   --apply --conflict-policy verified
 sudo systemctl start ocrdocs-server.service ocrdocs-worker.service ocrdocs-update.timer
 ```

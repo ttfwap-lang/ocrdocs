@@ -131,7 +131,22 @@ for (let cycle = 1; cycle <= cycles; cycle++) {
     'identity data after tab switch',
   );
   const identities = await domState();
-  report.cycles.push({ cycle, initial, medicare, identities });
+  const detailOpened = await evaluate(`(() => { const button = document.querySelector('[data-testid="identity-open"]'); if (!button) return false; button.click(); return true; })()`);
+  if (detailOpened) {
+    await waitForDom(
+      `document.body.innerText.includes('Consolidated Breakdown') || document.body.innerText.includes('Source Documents')`,
+      'identity detail',
+    );
+  }
+  const detail = await evaluate(`({ loaded: document.body.innerText.includes('Consolidated Breakdown') || document.body.innerText.includes('Source Documents'), hasBack: [...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Back') })`);
+  if (detail.hasBack) {
+    await evaluate(`([...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Back')).click()`);
+    await waitForDom(
+      `document.querySelector('[data-testid="identities-loading"]') === null && document.querySelector('[data-testid="identity-open"]') !== null`,
+      'return to identities',
+    );
+  }
+  report.cycles.push({ cycle, initial, medicare, identities, detail });
 }
 
 report.api = await evaluate(`(async () => {
@@ -161,11 +176,12 @@ report.network = {
   ).length,
 };
 
-const invalid = report.cycles.some(({ initial, medicare, identities }) =>
+const invalid = report.cycles.some(({ initial, medicare, identities, detail }) =>
   !initial.people || !initial.documents || !initial.unassigned ||
   initial.unassignedRendered > 200 || !initial.loadMore ||
   !medicare.medicare || medicare.querying || medicare.warning ||
-  !identities.people || identities.unassignedRendered > 200 || identities.warning,
+  !identities.people || identities.unassignedRendered > 200 || identities.warning ||
+  !detail?.loaded || !detail?.hasBack,
 ) || report.network.failures > 0 || report.network.errors > 0;
 report.ok = !invalid;
 console.log(JSON.stringify(report, null, 2));
