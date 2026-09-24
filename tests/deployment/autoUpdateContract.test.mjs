@@ -22,7 +22,7 @@ test('automatic GX10 updates are atomic, locked, and fail closed', async () => {
   assert.match(updater, /bash -n/);
   assert.match(updater, /processing_jobs/);
   assert.match(updater, /DATA_ROOT\/\.env/);
-  assert.doesNotMatch(updater, /Plentyon1|flak3dd;/);
+  assert.doesNotMatch(updater, /DGX_WORKER_TOKEN\s*=\s*['"][^'"]+['"]/);
 });
 
 test('systemd timer and installer are present and use the release symlink', async () => {
@@ -36,5 +36,5 @@ test('systemd timer and installer are present and use the release symlink', asyn
   assert.match(timer, /Persistent=true/);
   assert.match(installer, /ocrdocs-current/);
   assert.match(installer, /systemctl enable --now ocrdocs-update\.timer/);
-  assert.doesNotMatch(installer, /Plentyon1|flak3dd;/);
+  assert.doesNotMatch(installer, /DGX_WORKER_TOKEN\s*=\s*['"][^'"]+['"]/);
 });
