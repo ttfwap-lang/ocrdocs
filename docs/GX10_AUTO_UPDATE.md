@@ -113,6 +113,22 @@ from failed/queued to extracted, records aggregate audit counts in
 default dry-run first and inspect the JSON report. A failed post-commit
 integrity check must be investigated before restarting the services.
 
+After a corpus merge, audit the persisted critical formats as well:
+
+```bash
+sudo python3 /home/flak3dd/ocrdocs-current/scripts/audit_critical_fields.py \
+  --db /home/flak3dd/ocrdocs/data/app.db
+sudo python3 /home/flak3dd/ocrdocs-current/scripts/audit_critical_fields.py \
+  --db /home/flak3dd/ocrdocs/data/app.db \
+  --backup /var/lib/ocrdocs-updater/backups/pre-critical-$(date -u +%Y%m%dT%H%M%SZ).db \
+  --apply
+```
+
+This never edits values or human corrections. It marks malformed BSB,
+account-number and DOB candidates as warnings and exposes only aggregate counts
+through `/api/health` under `data.criticalFields`; invalid values remain
+reviewable rather than being fabricated into “valid” data.
+
 For a repeatable browser/DOM loop against a running site, start a disposable
 Chrome profile with a CDP port and run `npm run audit:live`. The audit reports
 only aggregate counts, bounded unassigned rendering, API timings, network

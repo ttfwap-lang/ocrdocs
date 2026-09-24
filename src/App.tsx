@@ -21,6 +21,7 @@ export default function App() {
   });
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusLoaded, setStatusLoaded] = useState(false);
+  const [criticalInvalid, setCriticalInvalid] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +45,7 @@ export default function App() {
         });
         setStatusError(null);
         setStatusLoaded(true);
+        setCriticalInvalid(typeof documents.criticalInvalid === 'number' ? documents.criticalInvalid : 0);
       }
     };
 
@@ -82,6 +84,11 @@ export default function App() {
 
             <div className="flex items-center gap-3 text-cyan-400 font-bold text-glow-cyan">
               <span>{statusLoaded ? `${statusBar.documentCount} DOCUMENTS` : 'STATUS CHECK…'}</span>
+               {criticalInvalid > 0 && (
+                 <span className="text-amber-300 normal-case tracking-normal" title="Malformed critical fields are retained for human review">
+                   {criticalInvalid} critical values need review
+                 </span>
+               )}
                {statusError && (
                  <span className="text-rose-300 normal-case tracking-normal" title={statusError}>
                    status unavailable

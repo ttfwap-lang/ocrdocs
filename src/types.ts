@@ -96,6 +96,7 @@ export interface ServiceAvailabilityResponse {
 export interface DocumentCountResponse {
   count: number;
   byStatus: Record<string, number>;
+  criticalInvalid?: number;
 }
 
 /** A document registered via POST /api/documents, as returned by the DB-backed document/job pipeline. */

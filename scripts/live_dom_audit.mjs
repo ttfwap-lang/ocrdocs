@@ -89,6 +89,7 @@ async function domState() {
       querying: text.includes('Querying index'),
       loadMore: text.includes('LOAD MORE UNASSIGNED'),
       warning: /source index is not present|has not completed a successful import|status unavailable/i.test(text),
+      criticalReview: /critical values need review/i.test(text),
       buttons: document.querySelectorAll('button').length,
       mainElements: document.querySelectorAll('main *').length,
     };

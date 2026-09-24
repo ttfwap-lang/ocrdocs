@@ -639,7 +639,17 @@ app.get("/api/documents", (_req, res) => {
 // intentionally retained for API compatibility, but should not be fetched on
 // every page load: a large queue can serialise megabytes and block the server.
 app.get("/api/documents/count", (_req, res) => {
-  res.json({ count: documentRepo.count(), byStatus: documentRepo.countByStatus() });
+  let criticalInvalid = 0;
+  const auditTable = db.prepare(
+    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'critical_field_audit'",
+  ).get() as { count: number };
+  if (auditTable.count > 0) {
+    const row = db.prepare(
+      "SELECT COUNT(*) AS count FROM critical_field_audit WHERE verdict = 'invalid'",
+    ).get() as { count: number };
+    criticalInvalid = row.count;
+  }
+  res.json({ count: documentRepo.count(), byStatus: documentRepo.countByStatus(), criticalInvalid });
 });
 
 app.get("/api/documents/:id", (req, res) => {
