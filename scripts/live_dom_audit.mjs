@@ -134,13 +134,13 @@ for (let cycle = 1; cycle <= cycles; cycle++) {
   const detailOpened = await evaluate(`(() => { const button = document.querySelector('[data-testid="identity-open"]'); if (!button) return false; button.click(); return true; })()`);
   if (detailOpened) {
     await waitForDom(
-      `document.body.innerText.includes('Consolidated Breakdown') || document.body.innerText.includes('Source Documents')`,
+      `/consolidated breakdown|source documents/i.test(document.body.innerText)`,
       'identity detail',
     );
   }
-  const detail = await evaluate(`({ loaded: document.body.innerText.includes('Consolidated Breakdown') || document.body.innerText.includes('Source Documents'), hasBack: [...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Back') })`);
+  const detail = await evaluate(`({ loaded: /consolidated breakdown|source documents/i.test(document.body.innerText), hasBack: [...document.querySelectorAll('button')].some((b) => b.innerText.trim().toUpperCase() === 'BACK') })`);
   if (detail.hasBack) {
-    await evaluate(`([...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Back')).click()`);
+    await evaluate(`([...document.querySelectorAll('button')].find((b) => b.innerText.trim().toUpperCase() === 'BACK')).click()`);
     await waitForDom(
       `document.querySelector('[data-testid="identities-loading"]') === null && document.querySelector('[data-testid="identity-open"]') !== null`,
       'return to identities',
