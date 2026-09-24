@@ -8,7 +8,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canonicalDob } from '../server/services/dobKey.ts';
+import { canonicalDob, isReliableDob } from '../server/services/dobKey.ts';
 
 test('canonicalDob - same date written differently collapses to one key', () => {
   const target = '19631124';
@@ -78,6 +78,17 @@ test('canonicalDob - unparseable and empty values never throw and stay distinct'
   const digitBearing = ['14/06/1988; 14/06/1983', '99/99/9999', '12/12/1212'];
   const keys = digitBearing.map(canonicalDob);
   assert.equal(new Set(keys).size, keys.length, `distinct junk collapsed: ${keys}`);
+});
+
+test('isReliableDob rejects prose, multiple dates, and impossible dates', () => {
+  for (const value of [
+    'not a date', 'Unknown.Unknown.Unknown', 'name unavailable',
+    '14/06/1988; 14/06/1983', '99/99/9999', '02/31/1990', '',
+  ]) assert.equal(isReliableDob(value), false, value);
+  for (const value of [
+    '14/06/1988', '24/11/1963', '09/02/1991', '1988-06-14',
+    '24 NOV 1963', 'November 24, 1963', '14/06/88',
+  ]) assert.equal(isReliableDob(value), true, value);
 });
 
 test('canonicalDob - two-digit year forms canonicalize when the day is provable', () => {

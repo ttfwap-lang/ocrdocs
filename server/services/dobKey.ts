@@ -70,6 +70,44 @@ function expandTwoDigitYear(twoDigit: string): number {
  * Reduce a DOB string to a canonical `YYYYMMDD` key when the format is
  * unambiguous, otherwise to its raw digits so distinct values cannot collide.
  */
+/**
+ * Whether a DOB is a recognised, date-like value suitable for identity
+ * grouping. `canonicalDob` intentionally preserves distinct junk strings for
+ * safe keying, but a field containing only words or several dates must not be
+ * allowed to manufacture an identity. Ambiguous numeric dates remain accepted
+ * as exact-spelling groups; the caller must not guess their day/month order.
+ */
+export function isReliableDob(value: string): boolean {
+  const raw = (value || '').trim();
+  if (!raw) return false;
+
+  const dmy = raw.match(/^(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{4})$/);
+  if (dmy) {
+    const day = Number(dmy[1]); const month = Number(dmy[2]); const year = Number(dmy[3]);
+    return (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900 && year <= 2100)
+      && (day > 12 ? isRealDate(year, month, day) : (isRealDate(year, month, day) || isRealDate(year, day, month)));
+  }
+  const ymd = raw.match(/^(\d{4})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})$/);
+  if (ymd) return isRealDate(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]));
+
+  const nameFirst = raw.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})$/);
+  if (nameFirst) return isRealDate(Number(nameFirst[3]), monthNumber(nameFirst[2]) ?? 0, Number(nameFirst[1]));
+  const monthFirst = raw.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/);
+  if (monthFirst) return isRealDate(Number(monthFirst[3]), monthNumber(monthFirst[1]) ?? 0, Number(monthFirst[2]));
+  const compact = raw.match(/^(\d{1,2})([A-Za-z]{3,9})\.?(\d{4})$/);
+  if (compact) return isRealDate(Number(compact[3]), monthNumber(compact[2]) ?? 0, Number(compact[1]));
+
+  const shortYear = raw.match(/^(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{2})$/);
+  if (shortYear) {
+    const day = Number(shortYear[1]); const month = Number(shortYear[2]); const year = expandTwoDigitYear(shortYear[3]);
+    return day >= 1 && day <= 31 && month >= 1 && month <= 12 && (day > 12 ? isRealDate(year, month, day) : (isRealDate(year, month, day) || isRealDate(year, day, month)));
+  }
+  const shortNameYear = raw.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?\s+(\d{2})$/);
+  if (shortNameYear) return isRealDate(expandTwoDigitYear(shortNameYear[3]), monthNumber(shortNameYear[2]) ?? 0, Number(shortNameYear[1]));
+
+  return false;
+}
+
 export function canonicalDob(value: string): string {
   const raw = (value || '').trim();
   if (!raw) return '';

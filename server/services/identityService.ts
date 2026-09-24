@@ -17,7 +17,7 @@ import type { ExtractionRepo } from '../db/repositories/extractionRepo';
 import type { DocumentRow } from '../db/contracts';
 import type { HeadshotService, IdentityPhoto } from './headshotService';
 import { BANK_FIELD_DEFINITIONS, CORE_IDENTIFIER_DEFINITIONS } from '../../src/data/bankFields';
-import { canonicalDob } from './dobKey';
+import { canonicalDob, isReliableDob } from './dobKey';
 import { canonicaliseIdentifier, tierExplanation, verificationTier } from './identifierKey';
 
 /**
@@ -321,7 +321,7 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
       const familyName = fieldValue(fields, FAMILY_NAME_FIELD);
       const dob = fieldValue(fields, DATE_OF_BIRTH_FIELD);
 
-      if (!familyName || !dob) {
+      if (!familyName || !dob || !isReliableDob(dob)) {
         unassigned.push({ id: doc.id, filename: doc.filename, mimeType: doc.mime_type, status: doc.status, uploadedAt: doc.uploaded_at, photos });
         continue;
       }
