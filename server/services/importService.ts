@@ -521,6 +521,11 @@ export function createImportService(cfg: ImportConfig) {
       }
       const existing = cfg.documentRepo.getByContentHash(hash);
       if (existing) {
+        // Keep the second source occurrence as evidence, but do not enqueue a
+        // second job or create a second document row.
+        const aside = `${parsedDir}.quarantine/duplicate`;
+        mkdirSync(aside, { recursive: true });
+        renameSync(full, uniqueFilePath(aside, entry));
         continue;
       }
       const inserted = cfg.documentRepo.insertDeduped({

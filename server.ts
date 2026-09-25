@@ -3,7 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { createHash, timingSafeEqual } from "crypto";
 import { existsSync, readFileSync, statSync } from "fs";
-import { readFile, unlink } from "fs/promises";
+import { mkdir, readFile, rename, unlink } from "fs/promises";
 import { PDFParse } from "pdf-parse";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
@@ -83,6 +83,28 @@ function publicPhoto<T extends { source?: string; relPath?: string }>(photo: T):
   delete safe.source;
   delete safe.relPath;
   return safe as Omit<T, "source" | "relPath">;
+}
+
+async function quarantineDuplicateUpload(filePath: string): Promise<void> {
+  const dir = path.join(path.dirname(filePath), ".quarantine", "duplicate");
+  await mkdir(dir, { recursive: true });
+  const base = path.basename(filePath);
+  let target = path.join(dir, base);
+  let n = 1;
+  while (true) {
+    try {
+      await rename(filePath, target);
+      return;
+    } catch (error: any) {
+      if (error?.code !== "EEXIST" && error?.code !== "EPERM") {
+        // A transport-copy cleanup failure must not turn a successful dedupe
+        // response into a failed upload.
+        await unlink(filePath).catch(() => undefined);
+        return;
+      }
+      target = path.join(dir, `${base}.${n++}`);
+    }
+  }
 }
 
 // How long a claimed job may sit in 'processing' before its worker is presumed
@@ -573,10 +595,7 @@ app.post("/api/documents", upload.single("file"), async (req, res) => {
     // POST /api/documents/:id/reprocess to deliberately re-run a document.
     const existing = documentRepo.getByContentHash(contentHash);
     if (existing) {
-      await unlink(req.file.path).catch(() => {
-        // The duplicate upload's bytes are redundant; failing to remove the
-        // temp copy must not fail the request.
-      });
+      await quarantineDuplicateUpload(req.file.path);
       const extractions = extractionRepo.getExtractionsByDocument(existing.id);
       return res.status(200).json({
         document: existing,
@@ -596,7 +615,7 @@ app.post("/api/documents", upload.single("file"), async (req, res) => {
       mimeType: req.file.mimetype,
     });
     if (!inserted.inserted) {
-      await unlink(req.file.path).catch(() => {});
+      await quarantineDuplicateUpload(req.file.path);
       const extractions = extractionRepo.getExtractionsByDocument(inserted.document.id);
       return res.status(200).json({
         document: inserted.document,
