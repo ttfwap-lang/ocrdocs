@@ -28,6 +28,7 @@ import { spawn } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -491,7 +492,14 @@ export function createImportService(cfg: ImportConfig) {
     const jobIds: string[] = [];
     for (const entry of readdirSync(parsedDir)) {
       const full = join(parsedDir, entry);
-      if (!statSync(full).isFile()) {
+      const entryStat = lstatSync(full);
+      if (entryStat.isSymbolicLink()) {
+        const aside = `${parsedDir}.quarantine/symlink`;
+        mkdirSync(aside, { recursive: true });
+        renameSync(full, uniqueFilePath(aside, entry));
+        continue;
+      }
+      if (!entryStat.isFile()) {
         continue;
       }
       // Re-apply the accept filter: pre-parse output may contain files the
@@ -601,7 +609,10 @@ export function createImportService(cfg: ImportConfig) {
   }
 
   function copyTreeSnapshot(src: string, dest: string): void {
-    const st = statSync(src);
+    const st = lstatSync(src);
+    // Never follow a symlink out of the queued tree into an unrelated source
+    // location. The caller leaves it in place for explicit human review.
+    if (st.isSymbolicLink()) return;
     if (st.isDirectory()) {
       mkdirSync(dest, { recursive: true });
       for (const entry of readdirSync(src, { withFileTypes: true })) {
@@ -634,7 +645,11 @@ export function createImportService(cfg: ImportConfig) {
         continue;
       }
       const full = join(cfg.queuedDir, entry.name);
-      if (now - statSync(full).mtimeMs < settleMs) {
+      const entryStat = lstatSync(full);
+      if (entryStat.isSymbolicLink() || (!entryStat.isFile() && !entryStat.isDirectory())) {
+        continue;
+      }
+      if (now - entryStat.mtimeMs < settleMs) {
         continue;
       }
       pick.push(full);

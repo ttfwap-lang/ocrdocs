@@ -310,7 +310,10 @@ export const IdentitiesView: React.FC = () => {
     if (inputEl) inputEl.value = '';
 
     try {
-      if (folderUpload) {
+      // A folder selection, or any multi-file selection, goes through the
+      // server-side snapshot/flatten/quarantine pipeline. A single file keeps
+      // the fast native-PDF path below.
+      if (folderUpload || queued.length > 1) {
         for (const { item } of queued) updateQueueItem(item.id, { status: 'uploading' });
         await uploadFolderBatch(queued);
         await fetchIdentities();
