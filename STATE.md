@@ -584,7 +584,7 @@ the GX10 or the GPU services.
   material is moved aside rather than deleted. Document content-hash insertion is atomic
   (partial unique index plus conflict handling), worker result retries are idempotent, and
   latest-extraction reads no longer return the oldest version.
-- The evidence-preserving release `2fb88c4a260645d64ceb299ca5b4d1d5a574ee39` is live on
+- The evidence-preserving release `de27cb9efb82fa1e199561aea1b9de6d0e966752` is live on
   `ocr.local`. The rear sidecar contains 73 rows: 39 uniquely assigned to a current identity
   and 34 retained as unassigned evidence; all 130 card/page assets resolve, and the
   identity API returns 39 rear rows with no broken or doubled asset links.
@@ -593,6 +593,11 @@ the GX10 or the GPU services.
   diagnostics report 160 exact buckets, 21 same-name/different-DOB clusters (counted only,
   never merged), and zero exact-key collisions.
 - Browser E2E passed two cycles with 160 people, 14,683 documents, 14,366 unassigned,
-  zero queued/processing jobs, no network failures, and no console errors.
+  zero queued/processing jobs, no network failures, and no console errors. The final live
+  audit also confirmed the evidence panel rendered 157 uncertain-image cards and the
+  private sidecar ledgers returned 404 rather than falling through to the SPA.
+- The `Recovered_C` cleanup dry-run remains review-only: it proposed 2,468 corrupt, 22
+  blank, 8 junk-type, 16 junk-name, and 248 duplicate items (about 1.11 GB), and applied
+  no moves or deletions.
 - No recovered source identity file has been deleted. Cleanup remains quarantine-first and
   requires a reference-aware manifest before any irreversible action.
