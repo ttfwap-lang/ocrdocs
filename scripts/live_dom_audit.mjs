@@ -86,6 +86,8 @@ async function domState() {
       unassignedRendered: document.querySelectorAll('[data-testid="unassigned-row"]').length,
       medicare: number(/INDEX \\/\\/\\s*([\\d,]+)\\s+PATIENTS/i),
       worker: /DGX WORKER:\\s*(LIVE|UNCONFIGURED)/i.exec(text)?.[1] || null,
+      jobsQueued: number(/(\\d+)\\s+QUEUED/i) ?? 0,
+      jobsProcessing: number(/(\\d+)\\s+PROCESSING/i) ?? 0,
       querying: text.includes('Querying index'),
       loadMore: text.includes('LOAD MORE UNASSIGNED'),
       warning: /source index is not present|has not completed a successful import|status unavailable/i.test(text),
@@ -151,7 +153,7 @@ for (let cycle = 1; cycle <= cycles; cycle++) {
 }
 
 report.api = await evaluate(`(async () => {
-  const paths = ['/api/health', '/api/documents/count', '/api/identities?unassigned_limit=200&unassigned_offset=0', '/api/medicare/summary'];
+  const paths = ['/api/health', '/api/documents/count', '/api/jobs/count', '/api/identities?unassigned_limit=200&unassigned_offset=0', '/api/medicare/summary'];
   const output = {};
   for (const path of paths) {
     const started = performance.now();
@@ -182,6 +184,7 @@ report.network = {
 
 const invalid = report.cycles.some(({ initial, medicare, identities, detail }) =>
   !initial.people || !initial.documents || !initial.unassigned ||
+  initial.jobsQueued !== 0 || initial.jobsProcessing !== 0 ||
   initial.unassignedRendered > 200 || !initial.loadMore ||
   !medicare.medicare || medicare.querying || medicare.warning ||
   !identities.people || identities.unassignedRendered > 200 || identities.warning ||
