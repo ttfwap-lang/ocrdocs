@@ -202,14 +202,17 @@ export const IdentitiesView: React.FC = () => {
 
   const fetchEvidence = useCallback(async () => {
     try {
-      const res = await fetch('/api/unassigned/evidence?kind=all&state=all&limit=200', { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const items = Array.isArray(data.items) ? data.items as UnassignedEvidenceItem[] : [];
-      // The route is a read-only review surface: only uncertain/unassigned
-      // items are shown here, never a second copy of an identity gallery.
-      setEvidence(items.filter((item) => item.assignmentState !== 'assigned'));
-      setEvidenceTotal(items.filter((item) => item.assignmentState !== 'assigned').length);
+      // Ask the review states separately. Fetching state=all with a bounded
+      // page could sort verified identity crops ahead of uncertain evidence
+      // and silently hide the tail of the review queue.
+      const responses = await Promise.all(['unassigned', 'needs_review'].map(async (state) => {
+        const res = await fetch(`/api/unassigned/evidence?kind=all&state=${state}&limit=500`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      }));
+      const items = responses.flatMap((data) => Array.isArray(data.items) ? data.items as UnassignedEvidenceItem[] : []);
+      setEvidence(items);
+      setEvidenceTotal(items.length);
     } catch {
       // Evidence is supplementary; a failed sidecar must not hide identities.
       setEvidence([]);
