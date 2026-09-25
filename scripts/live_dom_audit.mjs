@@ -84,6 +84,7 @@ async function domState() {
       documents: number(/([\\d,]+)\\s+DOCUMENTS/i),
       unassigned: number(/Unassigned Queue \\/\\/\\s*([\\d,]+)/i),
       unassignedRendered: document.querySelectorAll('[data-testid="unassigned-row"]').length,
+      uncertainEvidenceRendered: document.querySelectorAll('[data-testid="unassigned-evidence"] button').length,
       medicare: number(/INDEX \\/\\/\\s*([\\d,]+)\\s+PATIENTS/i),
       worker: /DGX WORKER:\\s*(LIVE|UNCONFIGURED)/i.exec(text)?.[1] || null,
       jobsQueued: number(/(\\d+)\\s+QUEUED/i) ?? 0,
@@ -153,7 +154,7 @@ for (let cycle = 1; cycle <= cycles; cycle++) {
 }
 
 report.api = await evaluate(`(async () => {
-  const paths = ['/api/health', '/api/documents/count', '/api/jobs/count', '/api/identities?unassigned_limit=200&unassigned_offset=0', '/api/medicare/summary'];
+  const paths = ['/api/health', '/api/documents/count', '/api/jobs/count', '/api/identities?unassigned_limit=200&unassigned_offset=0', '/api/unassigned/evidence?kind=all&state=all&limit=200', '/api/medicare/summary'];
   const output = {};
   for (const path of paths) {
     const started = performance.now();
@@ -185,11 +186,12 @@ report.network = {
 const invalid = report.cycles.some(({ initial, medicare, identities, detail }) =>
   !initial.people || !initial.documents || !initial.unassigned ||
   initial.jobsQueued !== 0 || initial.jobsProcessing !== 0 ||
-  initial.unassignedRendered > 200 || !initial.loadMore ||
+  initial.unassignedRendered > 200 || !initial.loadMore || initial.uncertainEvidenceRendered < 1 ||
   !medicare.medicare || medicare.querying || medicare.warning ||
-  !identities.people || identities.unassignedRendered > 200 || identities.warning ||
+  !identities.people || identities.unassignedRendered > 200 || identities.warning || identities.uncertainEvidenceRendered < 1 ||
   !detail?.loaded || !detail?.hasBack,
-) || report.network.failures > 0 || report.network.errors > 0;
+) || report.network.failures > 0 || report.network.errors > 0 ||
+  report.api['/api/unassigned/evidence?kind=all&state=all&limit=200']?.status !== 200;
 report.ok = !invalid;
 console.log(JSON.stringify(report, null, 2));
 ws.close();

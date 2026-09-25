@@ -584,9 +584,15 @@ the GX10 or the GPU services.
   material is moved aside rather than deleted. Document content-hash insertion is atomic
   (partial unique index plus conflict handling), worker result retries are idempotent, and
   latest-extraction reads no longer return the oldest version.
-- Uncertain image evidence is exposed read-only at `/api/unassigned/evidence`; unverified
-  headshot crops and unassigned/rear review rows are not allowed to become identity
-  thumbnails or gallery entries. Same-name/different-DOB buckets are counted but never
-  auto-merged.
+- The evidence-preserving release `2fb88c4a260645d64ceb299ca5b4d1d5a574ee39` is live on
+  `ocr.local`. The rear sidecar contains 73 rows: 39 uniquely assigned to a current identity
+  and 34 retained as unassigned evidence; all 130 card/page assets resolve, and the
+  identity API returns 39 rear rows with no broken or doubled asset links.
+- The live uncertain-image queue currently reports 330 evidence items (257 headshot crops
+  plus 73 rear occurrences); 11 require review and the remainder are unassigned. Identity
+  diagnostics report 160 exact buckets, 21 same-name/different-DOB clusters (counted only,
+  never merged), and zero exact-key collisions.
+- Browser E2E passed two cycles with 160 people, 14,683 documents, 14,366 unassigned,
+  zero queued/processing jobs, no network failures, and no console errors.
 - No recovered source identity file has been deleted. Cleanup remains quarantine-first and
   requires a reference-aware manifest before any irreversible action.

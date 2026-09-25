@@ -898,6 +898,15 @@ app.use("/headshots", (req, res, next) => {
 }, express.static(HEADSHOTS_ROOT));
 // Rear-side licence evidence is intentionally a separate private asset root;
 // it must never be counted as a headshot or used as an identity thumbnail.
+// Keep the sidecar ledgers unreachable even if the SPA fallback would otherwise
+// turn an unknown path into a misleading 200 HTML response.
+app.use("/rear-licences", (req, res, next) => {
+  const requested = req.path.replace(/^\/+/, "");
+  if (requested === "index.jsonl" || requested === "provenance.jsonl" || requested === "report.json") {
+    return res.sendStatus(404);
+  }
+  return next();
+});
 app.use("/rear-licences/assets", express.static(path.join(REAR_LICENCES_ROOT, "assets")));
 
 /**
