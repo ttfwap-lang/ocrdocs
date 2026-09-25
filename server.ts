@@ -76,6 +76,15 @@ const REAR_LICENCES_ROOT =
 const rearLicenceService = createRearLicenceService(REAR_LICENCES_ROOT);
 const identityService = createIdentityService(documentRepo, extractionRepo, headshotService);
 
+// The headshot index contains local provenance and absolute source paths. Those
+// are useful to the extractor but are not part of the browser contract.
+function publicPhoto<T extends { source?: string; relPath?: string }>(photo: T): Omit<T, "source" | "relPath"> {
+  const safe = { ...photo } as Record<string, unknown>;
+  delete safe.source;
+  delete safe.relPath;
+  return safe as Omit<T, "source" | "relPath">;
+}
+
 // How long a claimed job may sit in 'processing' before its worker is presumed
 // dead, and how many times a job may be claimed before it is failed for good.
 const WORKER_LEASE_SECONDS = Number(process.env.OCRDOCS_WORKER_LEASE_SECONDS || 900);
@@ -573,19 +582,33 @@ app.post("/api/documents", upload.single("file"), async (req, res) => {
         document: existing,
         jobs: jobRepo.getByDocument(existing.id),
         extraction: extractions.length
-          ? extractionRepo.getFullResult(extractions[extractions.length - 1].id)
+          ? extractionRepo.getFullResult(extractions[0].id)
           : null,
         duplicate: true,
         message: `Identical content already uploaded as "${existing.filename}". Returning the existing document instead of processing it again.`,
       });
     }
 
-    const document = documentRepo.insert({
+    const inserted = documentRepo.insertDeduped({
       filename: req.file.originalname,
       originalPath: req.file.path,
       contentHash,
       mimeType: req.file.mimetype,
     });
+    if (!inserted.inserted) {
+      await unlink(req.file.path).catch(() => {});
+      const extractions = extractionRepo.getExtractionsByDocument(inserted.document.id);
+      return res.status(200).json({
+        document: inserted.document,
+        jobs: jobRepo.getByDocument(inserted.document.id),
+        extraction: extractions.length
+          ? extractionRepo.getFullResult(extractions[0].id)
+          : null,
+        duplicate: true,
+        message: `Identical content already uploaded as "${inserted.document.filename}". Returning the existing document instead of processing it again.`,
+      });
+    }
+    const document = inserted.document;
 
     const job = jobRepo.enqueue({ documentId: document.id });
 
@@ -701,7 +724,7 @@ app.get("/api/documents/:id", (req, res) => {
     document,
     jobs,
     extractions: extractions.map((e) => extractionRepo.getFullResult(e.id)),
-    photos: headshotService.photosForDocument(document.id),
+    photos: headshotService.photosForDocument(document.id).map(publicPhoto),
     rearLicences: rearLicenceService.forDocument(document.id),
   });
 });
@@ -728,6 +751,65 @@ app.get("/api/documents/:id/file", (req: express.Request<{ id: string }>, res) =
   });
 });
 
+// Browser folder intake uses the same staged pre-parse pipeline as the
+// authenticated batch importer. The original browser file is removed only
+// after it has been copied into the private per-import staging directory.
+app.post("/api/documents/batch", upload.array("files", IMPORT_MAX_FILES), async (req, res) => {
+  const files = Array.isArray(req.files) ? (req.files as UploadedFile[]) : [];
+  if (files.length === 0) {
+    return res.status(400).json({ error: "No files uploaded. Use multipart form field 'files'." });
+  }
+  let importId: string | null = null;
+  try {
+    // Browsers send the folder-relative path out-of-band; it is provenance
+    // only. The work tree is still flattened by the server, never by the
+    // client trusting a path as a filesystem location.
+    let sourcePaths: string[] = [];
+    const rawPaths = req.body && typeof req.body.paths === "string" ? req.body.paths : "";
+    if (rawPaths) {
+      try {
+        const parsed = JSON.parse(rawPaths);
+        if (Array.isArray(parsed)) sourcePaths = parsed.map((value) => String(value));
+      } catch {
+        sourcePaths = [];
+      }
+    }
+    const stagedFiles = files.map((file, index) => ({
+      ...file,
+      sourcePath: sourcePaths[index] || file.originalname,
+    }));
+    const staged = await importService.stageImport({ files: stagedFiles });
+    importId = staged.importId;
+    if (staged.files.length === 0) {
+      importService.failImport(importId, "no supported files remained after upload filtering", null);
+      return res.status(400).json({ error: "No supported files remained after upload filtering." });
+    }
+    if (staged.limitExceeded) {
+      importService.failImport(importId, "import exceeds configured file/size limit; evidence retained", null);
+      return res.status(413).json({ error: "Folder exceeds the configured file/size limit; source evidence was retained." });
+    }
+    const prepared = await importService.runPreParse(importId);
+    if (!prepared.ok) {
+      importService.failImport(importId, prepared.stderr || "pre-parse failed", prepared.code);
+      return res.status(500).json({ error: "Folder preparation failed", importId, code: prepared.code });
+    }
+    const finalized = await importService.finalize(importId);
+    return res.status(202).json({
+      importId,
+      acceptedFiles: staged.files.length,
+      queuedJobs: finalized.jobIds.length,
+      status: "queued",
+    });
+  } catch (error: any) {
+    if (importId) importService.failImport(importId, String(error?.message || error), null);
+    return res.status(500).json({ error: error?.message || "Folder upload failed" });
+  } finally {
+    // Multer's disk files are temporary transport copies. The staged copy is
+    // now the durable input; never leave an unreferenced duplicate in storage.
+    await Promise.all(files.map((file) => unlink(file.path).catch(() => undefined)));
+  }
+});
+
 // — Batch import (`ocr.local`) endpoints. Full pipeline lives in
 // server/services/importService.ts: stage → run pre-parse script (TARGET_DIR=$1)
 // → finalize (rename staged→parsed/<ts>, content-hash dedup, enqueue one OCR
@@ -741,6 +823,10 @@ app.post(
     try {
       if (req.body && req.body.source === "folder" && req.body.path) {
         const manifest = await importService.stageImport({ folder: String(req.body.path) });
+        if (manifest.limitExceeded) {
+          importService.failImport(manifest.importId, "import exceeds configured file/size limit; evidence retained", null);
+          return res.status(413).json({ error: "Import exceeds the configured file/size limit; source evidence was retained.", importId: manifest.importId });
+        }
         return res.status(202).json(manifest);
       }
       const files = Array.isArray(req.files) ? (req.files as UploadedFile[]) : [];
@@ -750,6 +836,10 @@ app.post(
           .json({ error: "No files provided. POST multipart 'files' or {source:'folder',path}." });
       }
       const manifest = await importService.stageImport({ files });
+      if (manifest.limitExceeded) {
+        importService.failImport(manifest.importId, "import exceeds configured file/size limit; evidence retained", null);
+        return res.status(413).json({ error: "Import exceeds the configured file/size limit; source evidence was retained.", importId: manifest.importId });
+      }
       return res.status(202).json(manifest);
     } catch (err: any) {
       return res.status(400).json({ error: err?.message || "Failed to stage import" });
@@ -797,11 +887,88 @@ app.get("/api/imports", requireImportAuth, (_req, res) => {
 });
 
 // Head photos (scripts/extract_headshots.py output) served so the identities
-// UI can show thumbnails/galleries. Mounted before the SPA catch-all below.
-app.use("/headshots", express.static(HEADSHOTS_ROOT));
+// UI can show thumbnails/galleries. The index/provenance ledgers stay private:
+// only crop assets under the mount are browser-reachable.
+app.use("/headshots", (req, res, next) => {
+  const requested = req.path.replace(/^\/+/, "");
+  if (requested === "index.jsonl" || requested === "provenance.jsonl" || requested.endsWith("/index.jsonl")) {
+    return res.sendStatus(404);
+  }
+  return next();
+}, express.static(HEADSHOTS_ROOT));
 // Rear-side licence evidence is intentionally a separate private asset root;
 // it must never be counted as a headshot or used as an identity thumbnail.
 app.use("/rear-licences/assets", express.static(path.join(REAR_LICENCES_ROOT, "assets")));
+
+/**
+ * Bounded, read-only evidence queue for images that are not safe to present as
+ * an identity: unassigned headshot crops, detector-unverified crops, and rear
+ * licence occurrences whose source document is not uniquely linked to a person.
+ * It never mutates documents or assigns an identity.
+ */
+app.get("/api/unassigned/evidence", (req, res) => {
+  const kind = req.query.kind === "headshot" || req.query.kind === "rear_licence" ? String(req.query.kind) : "all";
+  const state = req.query.state === "unassigned" || req.query.state === "needs_review" || req.query.state === "assigned"
+    ? String(req.query.state)
+    : "all";
+  const rawLimit = Number.parseInt(typeof req.query.limit === "string" ? req.query.limit : "100", 10);
+  const rawOffset = Number.parseInt(typeof req.query.offset === "string" ? req.query.offset : "0", 10);
+  const limit = Number.isFinite(rawLimit) ? Math.min(500, Math.max(1, rawLimit)) : 100;
+  const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
+
+  const items: Array<Record<string, unknown>> = [];
+  if (kind === "all" || kind === "headshot") {
+    for (const photo of headshotService.allPhotos()) {
+      if (state !== "all" && photo.assignmentState !== state) continue;
+      items.push({
+        evidenceId: `headshot:${photo.documentId}:${photo.crop}`,
+        kind: "headshot",
+        documentId: photo.documentId,
+        document: photo.document,
+        page: photo.page,
+        assignmentState: photo.assignmentState,
+        verificationState: photo.verified ? "verified" : "needs_review",
+        url: photo.url,
+      });
+    }
+  }
+  if (kind === "all" || kind === "rear_licence") {
+    for (const evidence of rearLicenceService.all()) {
+      if (state !== "all" && evidence.assignmentState !== state) continue;
+      items.push({
+        evidenceId: `rear:${evidence.occurrenceKey}`,
+        kind: "rear_licence",
+        documentId: evidence.documentId,
+        document: evidence.document,
+        page: evidence.page,
+        assignmentState: evidence.assignmentState,
+        verificationState: evidence.verificationState,
+        cardUrl: evidence.cardUrl,
+        pageUrl: evidence.pageUrl,
+        modelDecision: evidence.modelDecision,
+      });
+    }
+  }
+  items.sort((a, b) => String(a.kind).localeCompare(String(b.kind)) || String(a.document).localeCompare(String(b.document)) || Number(a.page) - Number(b.page) || String(a.evidenceId).localeCompare(String(b.evidenceId)));
+  const byKind: Record<string, number> = {};
+  const byState: Record<string, number> = {};
+  for (const item of items) {
+    const k = String(item.kind);
+    const s = String(item.assignmentState);
+    byKind[k] = (byKind[k] ?? 0) + 1;
+    byState[s] = (byState[s] ?? 0) + 1;
+  }
+  const page = items.slice(offset, offset + limit);
+  return res.json({
+    items: page,
+    total: items.length,
+    offset,
+    limit,
+    hasMore: offset + page.length < items.length,
+    byKind,
+    byState,
+  });
+});
 
 // Identities: documents grouped by their extracted given_names + family_name
 // + date_of_birth (see server/services/identityService.ts). No separate
@@ -818,7 +985,14 @@ app.get("/api/identities", (req, res) => {
   const parsedOffset = Number.parseInt(typeof rawOffset === "string" ? rawOffset : "0", 10);
   const unassignedLimit = Number.isFinite(parsedLimit) ? Math.min(500, Math.max(0, parsedLimit)) : 200;
   const unassignedOffset = Number.isFinite(parsedOffset) ? Math.max(0, parsedOffset) : 0;
-  res.json(identityService.listIdentitiesAndUnassigned(unassignedLimit, unassignedOffset));
+  const snapshot = identityService.listIdentitiesAndUnassigned(unassignedLimit, unassignedOffset);
+  return res.json({
+    ...snapshot,
+    unassigned: snapshot.unassigned.map((document) => ({
+      ...document,
+      photos: document.photos.map(publicPhoto),
+    })),
+  });
 });
 
 app.get("/api/identities/:identityId", (req: express.Request<{ identityId: string }>, res) => {
@@ -826,7 +1000,11 @@ app.get("/api/identities/:identityId", (req: express.Request<{ identityId: strin
   if (!identity) {
     return res.status(404).json({ error: "Identity not found" });
   }
-  return res.json({ ...identity, rearLicences: rearLicenceService.forIdentity(identity.identityId) });
+  return res.json({
+    ...identity,
+    photos: identity.photos.map(publicPhoto),
+    rearLicences: rearLicenceService.forIdentity(identity.identityId),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1020,7 +1198,7 @@ app.get("/api/export/consolidated.csv", (_req, res) => {
   const fieldNames: string[] = [];
   const perDocument = documents.map((doc) => {
     const extractions = extractionRepo.getExtractionsByDocument(doc.id);
-    const latest = extractions.length ? extractions[extractions.length - 1] : undefined;
+    const latest = extractions.length ? extractions[0] : undefined;
     const rows = latest ? extractionRepo.getFields(latest.id) : [];
     const values = new Map<string, { value: string; approved: boolean }>();
     for (const row of rows) {
@@ -1319,7 +1497,28 @@ app.post("/api/jobs/:id/result", requireWorkerAuth, (req: express.Request<{ id: 
       return res.status(404).json({ error: "Job not found" });
     }
 
+    // Worker retries are expected on an unreliable network. Once a job is
+    // terminal, ingesting the same result again must be a no-op rather than a
+    // second extraction/version. A conflicting result on a failed job is
+    // rejected so a late worker cannot resurrect it.
     const body = req.body ?? {};
+    if (job.status === "completed" || job.status === "failed") {
+      if (job.status === "failed" && body.status !== "FAILED") {
+        return res.status(409).json({ error: "Job already failed; create a new job to retry" });
+      }
+      const extractions = extractionRepo.getExtractionsByDocument(job.document_id);
+      return res.status(200).json({
+        ok: true,
+        duplicate: true,
+        status: job.status,
+        document: documentRepo.getById(job.document_id),
+        job,
+        extraction: extractions.length ? extractionRepo.getFullResult(extractions[0].id) : null,
+      });
+    }
+    if (job.status !== "processing") {
+      return res.status(409).json({ error: `Job is ${job.status}; result can only be submitted while processing` });
+    }
 
     if (body.status === "FAILED") {
       jobRepo.markFailed(job.id, typeof body.error === "string" ? body.error : "DGX worker reported failure");
@@ -1436,7 +1635,7 @@ async function startServer(options?: {
 
   if (process.env.OCRDOCS_PURGE_UNVERIFIED === "true") {
     const r = importService.purgeUnverified();
-    console.log(`[OCRD] purge-unverified: checked ${r.checked} imported document(s), removed ${r.purged}, re-queued ${r.requeued}`);
+    console.log(`[OCRD] purge-unverified: checked ${r.checked} imported document(s), flagged ${r.purged} for review, re-queued ${r.requeued}`);
   }
 
   // 24/7 drain: every OCRDOCS_QUEUE_POLL_SECONDS, clean + import whatever sits in the queued root.

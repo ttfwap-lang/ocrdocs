@@ -102,6 +102,29 @@ export function runMigrations(db: DatabaseType): void {
       ON portraits(document_id);
   `);
 
+  // A concurrent folder/file upload must not create two document rows for
+  // identical bytes. The partial form keeps legacy NULL hashes valid while
+  // making the content-hash dedupe check atomic. Do not fail startup on a
+  // legacy database that still contains duplicates; report it for review and
+  // let the next reconciliation resolve those rows first.
+  const duplicateHashes = db.prepare(
+    `SELECT COUNT(*) AS count FROM (
+       SELECT content_hash FROM documents
+       WHERE content_hash IS NOT NULL AND trim(content_hash) <> ''
+       GROUP BY content_hash HAVING COUNT(*) > 1
+     )`,
+  ).get() as { count: number };
+  if (duplicateHashes.count === 0) {
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_content_hash_unique
+         ON documents(content_hash) WHERE content_hash IS NOT NULL`,
+    );
+  } else {
+    console.warn(
+      `[DB] content-hash uniqueness index deferred: ${duplicateHashes.count} duplicate hash group(s) require reconciliation`,
+    );
+  }
+
   addColumnIfMissing(db, 'jobs', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'documents', 'latest_extraction_id', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_documents_latest_extraction ON documents(latest_extraction_id)');

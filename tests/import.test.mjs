@@ -103,6 +103,9 @@ test("ocr.local batch import: stage -> pre-parse -> parsed -> jobs", async (t) =
     assert.equal(manifest.status, "staged");
     // 2 accepted (png + docx), 1 rejected (.doc)
     assert.equal(manifest.files.length, 2);
+    assert.ok(fs.existsSync(manifest.sourceDir), 'immutable source snapshot must exist');
+    assert.ok(fs.existsSync(path.join(manifest.sourceDir, 'evil.doc')), 'rejected source bytes must be retained');
+    assert.ok(fs.existsSync(path.join(`${manifest.stagedDir}.quarantine`, 'unsupported', 'evil.doc')), 'rejected derived copy must be quarantined');
   });
 
   await t.test("rejects with 503 when disabled", async () => {
@@ -164,9 +167,12 @@ test("ocr.local batch import: stage -> pre-parse -> parsed -> jobs", async (t) =
     assert.equal(result.status, "parsed");
     assert.ok(result.jobIds.length >= 1, "at least one OCR job enqueued");
     assert.ok(result.parsedDir.startsWith(parsedDir));
-    // pre-parse marker (.touched) is relocated with the dir into parsed/<ts>/
+    // Unsupported pre-parse markers are retained in the batch quarantine,
+    // never silently dropped or queued as OCR input.
     const entries = fs.readdirSync(result.parsedDir);
-    assert.ok(entries.includes(".touched"), `parsed dir missing .touched marker: ${entries.join(", ")}`);
+    assert.ok(!entries.includes(".touched"), `unsupported marker should not be queued: ${entries.join(", ")}`);
+    const quarantined = fs.existsSync(`${result.parsedDir}.quarantine/unsupported/.touched`);
+    assert.ok(quarantined, "pre-parse marker must be retained in quarantine");
 
     // registry reflects parsed + jobIds
     const rec = await fetch(`${baseUrl}/api/imports/${staged.importId}`, { headers: auth }).then((r) => r.json());

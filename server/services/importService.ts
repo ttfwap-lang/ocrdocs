@@ -36,7 +36,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { basename, extname, join, relative as relativePath } from "node:path";
 import type { DocumentRepo } from "../db/repositories/documentRepo";
 import type { JobRepo } from "../db/repositories/jobRepo";
 import { DEFAULT_FILE_SIZE_LIMIT, SUPPORTED_EXTENSIONS } from "../middleware/upload";
@@ -66,24 +66,36 @@ export interface UploadedFile {
   originalname: string;
   mimetype: string;
   size: number;
+  /** Optional browser/server-relative source path, used only for provenance. */
+  sourcePath?: string;
 }
 
 export interface ImportManifest {
   importId: string;
+  /** Disposable derived work tree that pre-parse may flatten/rename. */
   stagedDir: string;
-  files: Array<{ name: string; size: number }>;
+  /** Immutable byte-for-byte intake snapshot. */
+  sourceDir: string;
+  files: Array<{ name: string; size: number; relativePath: string }>;
+  limitExceeded?: boolean;
   status: "staged";
 }
 
 export interface ImportRecord {
   importId: string;
+  /** Alias for the derived work tree (kept for API compatibility). */
   stagedDir: string;
+  sourceDir: string;
+  quarantineDir: string;
+  manifestDir: string;
   status: "staged" | "parsed" | "failed";
   parsedDir?: string;
   jobIds?: string[];
   stdout?: string;
   stderr?: string;
   code?: number | null;
+  /** Private, batch-relative source associations. */
+  sourceFiles?: Array<{ relativePath: string; name: string; size: number; sha256?: string; outcome?: string }>;
 }
 
 export interface PreparseResult {
@@ -133,8 +145,8 @@ export function isAccepted(originalname: string, size: number): boolean {
 }
 
 const IMPORT_ID_RE = /^[a-z0-9]+-[a-z0-9]{6}$/;
-/** Side folders pre-parse.sh writes next to a staged dir (<id>.unsupported / <id>.failed): never new work. */
-const IMPORT_SIDE_DIR_RE = /^[a-z0-9]+-[a-z0-9]{6}\.(unsupported|failed)$/;
+/** Side folders pre-parse writes next to a work dir: never new work. */
+const IMPORT_SIDE_DIR_RE = /^[a-z0-9]+-[a-z0-9]{6}\.(source|quarantine|manifests|unsupported|failed|unverified)$/;
 
 /**
  * True when the file's leading bytes actually look like what its extension claims. A real batch contained
@@ -226,6 +238,38 @@ export function createImportService(cfg: ImportConfig) {
     writeFileSync(recordPath(rec.importId), JSON.stringify(rec, null, 2), "utf-8");
   }
 
+  function safeRelativePath(value: string | undefined, fallback: string): string {
+    const raw = String(value || fallback).replace(/\\/g, "/");
+    const parts = raw.split("/").filter((part) => part && part !== "." && part !== "..");
+    return parts.length ? parts.join("/") : fallback.replace(/[^A-Za-z0-9._-]/g, "_");
+  }
+
+  function uniqueFilePath(dir: string, relative: string): string {
+    const direct = join(dir, relative);
+    if (!existsSync(direct)) return direct;
+    const parsed = relative.split("/");
+    const name = parsed.pop() || "file";
+    const dot = name.lastIndexOf(".");
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : "";
+    let index = 1;
+    let candidate = join(dir, ...parsed, `${stem}~${index}${ext}`);
+    while (existsSync(candidate)) {
+      index += 1;
+      candidate = join(dir, ...parsed, `${stem}~${index}${ext}`);
+    }
+    return candidate;
+  }
+
+  function writeIntake(manifestDir: string, entry: Record<string, unknown>): void {
+    mkdirSync(manifestDir, { recursive: true });
+    const file = join(manifestDir, "intake.jsonl");
+    // Append synchronously: the intake ledger is the audit record for a batch
+    // whose derived work tree may later be moved or quarantined.
+    const existing = existsSync(file) ? readFileSync(file, "utf8") : "";
+    writeFileSync(file, existing + JSON.stringify(entry) + "\n", "utf8");
+  }
+
   async function stageImport(params: {
     files?: UploadedFile[];
     folder?: string;
@@ -239,26 +283,52 @@ export function createImportService(cfg: ImportConfig) {
 
     ensureDirs();
     const importId = newImportId();
+    // Work is disposable. Source is an immutable intake snapshot. Quarantine
+    // and manifests sit beside both so cleanup can never delete the only copy.
     const stagedDir = join(cfg.queuedDir, importId);
-    mkdirSync(stagedDir, { recursive: true });
+    const sourceDir = join(cfg.queuedDir, `${importId}.source`);
+    const quarantineDir = join(cfg.queuedDir, `${importId}.quarantine`);
+    const manifestDir = join(cfg.queuedDir, `${importId}.manifests`);
+    for (const dir of [stagedDir, sourceDir, quarantineDir, manifestDir]) {
+      mkdirSync(dir, { recursive: true });
+    }
 
-    const accepted: Array<{ name: string; size: number }> = [];
+    const accepted: Array<{ name: string; size: number; relativePath: string }> = [];
+    const sourceFiles: Array<{ relativePath: string; name: string; size: number; outcome: string }> = [];
     let totalBytes = 0;
     let kept = 0;
 
-    const acceptAndCopy = (srcPath: string, originalname: string) => {
+    const acceptAndCopy = (srcPath: string, originalname: string, sourcePath?: string) => {
       const size = statSync(srcPath).size;
+      const relative = safeRelativePath(sourcePath, originalname);
+      const sourceDest = uniqueFilePath(sourceDir, relative);
+      mkdirSync(join(sourceDest, ".."), { recursive: true });
+      copyFileSync(srcPath, sourceDest);
+      const sha256 = createHash("sha256").update(readFileSync(srcPath)).digest("hex");
+
       if (!isAccepted(originalname, size)) {
-        return; // skip unsupported — mirrors upload.ts:uploadFilter (single source)
+        const q = uniqueFilePath(join(quarantineDir, "unsupported"), relative);
+        mkdirSync(join(q, ".."), { recursive: true });
+        copyFileSync(srcPath, q);
+        sourceFiles.push({ relativePath: relative, name: originalname, size, outcome: "unsupported" });
+        writeIntake(manifestDir, { importId, relativePath: relative, size, sha256, outcome: "unsupported" });
+        return;
       }
-      if (accepted.length >= cfg.maxFiles) {
-        throw new Error(`import exceeds ${cfg.maxFiles} files`);
+      if (accepted.length >= cfg.maxFiles || totalBytes + size > cfg.maxTotalMb * 1024 * 1024) {
+        const q = uniqueFilePath(join(quarantineDir, "limit"), relative);
+        mkdirSync(join(q, ".."), { recursive: true });
+        copyFileSync(srcPath, q);
+        sourceFiles.push({ relativePath: relative, name: originalname, size, outcome: "limit" });
+        writeIntake(manifestDir, { importId, relativePath: relative, size, sha256, outcome: "limit" });
+        return;
       }
-      totalBytes += size;
       const ext = extname(originalname).toLowerCase();
-      const dest = join(stagedDir, `${importId}-${kept}${ext}`);
-      copyFileSync(srcPath, dest);
-      accepted.push({ name: originalname, size });
+      const workDest = join(stagedDir, `${importId}-${kept}${ext}`);
+      copyFileSync(srcPath, workDest);
+      accepted.push({ name: originalname, size, relativePath: relative });
+      sourceFiles.push({ relativePath: relative, name: originalname, size, outcome: "accepted" });
+      writeIntake(manifestDir, { importId, relativePath: relative, size, sha256, outcome: "accepted" });
+      totalBytes += size;
       kept += 1;
     };
 
@@ -269,32 +339,65 @@ export function createImportService(cfg: ImportConfig) {
           if (entry.isDirectory()) {
             walk(full);
           } else if (entry.isFile()) {
-            acceptAndCopy(full, entry.name);
+            acceptAndCopy(full, entry.name, relativePath(params.folder!, full));
           }
         }
       };
       walk(params.folder);
     } else if (params.files) {
       for (const f of params.files) {
-        acceptAndCopy(f.path, f.originalname);
+        acceptAndCopy(f.path, f.originalname, f.sourcePath);
       }
     }
 
-    if (totalBytes > cfg.maxTotalMb * 1024 * 1024) {
-      rmSync(stagedDir, { recursive: true, force: true });
-      throw new Error(`import exceeds ${cfg.maxTotalMb} MB total`);
-    }
-
-    writeRecord({ importId, stagedDir, status: "staged" });
-    return { importId, stagedDir, files: accepted, status: "staged" };
+    const record: ImportRecord = {
+      importId,
+      stagedDir,
+      sourceDir,
+      quarantineDir,
+      manifestDir,
+      status: "staged",
+      sourceFiles,
+    };
+    writeRecord(record);
+    return {
+      importId,
+      stagedDir,
+      sourceDir,
+      files: accepted,
+      limitExceeded: sourceFiles.some((entry) => entry.outcome === "limit"),
+      status: "staged",
+    };
   }
 
   function getRecord(importId: string): ImportRecord {
     const p = recordPath(importId);
     if (!existsSync(p)) {
-      return { importId, stagedDir: "", status: "failed" };
+      return {
+        importId,
+        stagedDir: "",
+        sourceDir: "",
+        quarantineDir: "",
+        manifestDir: "",
+        status: "failed",
+      };
     }
-    return JSON.parse(readFileSync(p, "utf-8")) as ImportRecord;
+    const parsed = JSON.parse(readFileSync(p, "utf-8")) as Partial<ImportRecord>;
+    const stagedDir = parsed.stagedDir || "";
+    return {
+      importId,
+      stagedDir,
+      sourceDir: parsed.sourceDir || `${stagedDir}.source`,
+      quarantineDir: parsed.quarantineDir || `${stagedDir}.quarantine`,
+      manifestDir: parsed.manifestDir || `${stagedDir}.manifests`,
+      status: parsed.status || "failed",
+      parsedDir: parsed.parsedDir,
+      jobIds: parsed.jobIds,
+      stdout: parsed.stdout,
+      stderr: parsed.stderr,
+      code: parsed.code,
+      sourceFiles: parsed.sourceFiles,
+    };
   }
 
   function runPreParse(importId: string): Promise<PreparseResult> {
@@ -321,13 +424,13 @@ export function createImportService(cfg: ImportConfig) {
       let args: string[];
       if (cfg.preparseShell === "node") {
         cmd = process.execPath;
-        args = [cfg.preparseScript, manifest.stagedDir];
+        args = [cfg.preparseScript, manifest.stagedDir, manifest.stagedDir];
       } else if (cfg.preparseShell === "wsl") {
         cmd = "wsl";
-        args = ["bash", cfg.preparseScript, manifest.stagedDir];
+        args = ["bash", cfg.preparseScript, manifest.stagedDir, manifest.stagedDir];
       } else {
         cmd = "bash";
-        args = [cfg.preparseScript, manifest.stagedDir];
+        args = [cfg.preparseScript, manifest.stagedDir, manifest.stagedDir];
       }
       const proc = spawn(cmd, args, { env: { ...process.env } });
       let stdout = "";
@@ -365,9 +468,20 @@ export function createImportService(cfg: ImportConfig) {
     // existing dir throws EEXIST on Windows.
     renameSync(manifest.stagedDir, parsedDir);
     // Record the move immediately so a crash mid-enqueue never orphans the dir.
-    writeRecord({ importId, stagedDir: parsedDir, status: "parsed", parsedDir, jobIds: [] });
-    // Keep the set-aside (unsupported / failed-archive) files with the batch they came from, out of the queue root.
-    for (const suffix of [".unsupported", ".failed"]) {
+    writeRecord({
+      importId,
+      stagedDir: parsedDir,
+      sourceDir: manifest.sourceDir,
+      quarantineDir: manifest.quarantineDir,
+      manifestDir: manifest.manifestDir,
+      status: "parsed",
+      parsedDir,
+      jobIds: [],
+      sourceFiles: manifest.sourceFiles,
+    });
+    // Keep the immutable source snapshot, quarantine evidence, and manifests
+    // with the batch they came from, out of the OCR queue root.
+    for (const suffix of [".source", ".quarantine", ".manifests", ".unsupported", ".failed", ".unverified"]) {
       const side = `${manifest.stagedDir}${suffix}`;
       if (existsSync(side)) {
         renameSync(side, `${parsedDir}${suffix}`);
@@ -381,8 +495,12 @@ export function createImportService(cfg: ImportConfig) {
         continue;
       }
       // Re-apply the accept filter: pre-parse output may contain files the
-      // engine can't OCR (e.g. extracted binaries) or empty leftovers.
+      // engine can't OCR (e.g. extracted binaries) or empty leftovers. Set
+      // them aside instead of silently dropping the evidence.
       if (!isAccepted(entry, statSync(full).size)) {
+        const aside = `${parsedDir}.quarantine/unsupported`;
+        mkdirSync(aside, { recursive: true });
+        renameSync(full, uniqueFilePath(aside, entry));
         continue;
       }
       // Extension claims a type the bytes don't have: set it aside rather than queue an OCR job that must fail.
@@ -405,12 +523,14 @@ export function createImportService(cfg: ImportConfig) {
       if (existing) {
         continue;
       }
-      const document = cfg.documentRepo.insert({
+      const inserted = cfg.documentRepo.insertDeduped({
         filename: entry,
         originalPath: full,
         contentHash: hash,
         mimeType: mimeFor(entry),
       });
+      if (!inserted.inserted) continue;
+      const document = inserted.document;
       const job = cfg.jobRepo.enqueue({ documentId: document.id });
       jobIds.push(job.id);
     }
@@ -418,17 +538,22 @@ export function createImportService(cfg: ImportConfig) {
     writeRecord({
       importId,
       stagedDir: parsedDir,
+      sourceDir: manifest.sourceDir,
+      quarantineDir: manifest.quarantineDir,
+      manifestDir: manifest.manifestDir,
       status: "parsed",
       parsedDir,
       jobIds,
+      sourceFiles: manifest.sourceFiles,
     });
     return { parsedDir, jobIds };
   }
 
   /**
-   * One-shot cleanup for documents queued before verifyContent existed: deletes the DB rows (jobs/extractions
-   * cascade) of documents that live under the parsed root and fail verification, moving the files aside.
-   * Never touches documents from elsewhere (e.g. user uploads).
+   * One-shot safety audit for documents that live under the parsed root but
+   * fail structural verification. It never deletes a row or a byte: the file
+   * stays at its stable original_path, the document is marked failed for human
+   * review, and the count is reported to the operator.
    */
   function purgeUnverified(): { checked: number; purged: number; requeued: number } {
     let checked = 0;
@@ -438,30 +563,12 @@ export function createImportService(cfg: ImportConfig) {
     for (const doc of cfg.documentRepo.getAll()) {
       if (!doc.original_path.startsWith(root)) continue;
       checked++;
-      if (!existsSync(doc.original_path) || verifyContent(doc.original_path, extname(doc.original_path))) continue;
-      const aside = join(root, "_unverified");
-      mkdirSync(aside, { recursive: true });
-      try {
-        renameSync(doc.original_path, join(aside, `${doc.id}-${doc.filename}`));
-      } catch {
-        /* file already gone: still drop the row */
-      }
-      cfg.documentRepo.delete(doc.id);
+      if (!existsSync(doc.original_path)) continue;
+      if (verifyContent(doc.original_path, extname(doc.original_path))) continue;
+      // Keep the evidence and the document row. Moving it would break the
+      // document file route; deleting it would destroy the only source copy.
+      cfg.documentRepo.updateStatus(doc.id, "failed");
       purged++;
-    }
-    // Anything set aside earlier that passes the (now UTF-16-aware) check goes back to the queue root so the
-    // normal drain re-imports it; genuine junk stays in _unverified.
-    const asideDir = join(root, "_unverified");
-    if (existsSync(asideDir)) {
-      for (const name of readdirSync(asideDir)) {
-        const full = join(asideDir, name);
-        const original = name.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/, "");
-        if (statSync(full).isFile() && verifyContent(full, extname(original))) {
-          mkdirSync(cfg.queuedDir, { recursive: true });
-          renameSync(full, join(cfg.queuedDir, original));
-          requeued++;
-        }
-      }
     }
     return { checked, purged, requeued };
   }
@@ -488,10 +595,24 @@ export function createImportService(cfg: ImportConfig) {
       .sort((a, b) => b.stagedDir.localeCompare(a.stagedDir));
   }
 
+  function copyTreeSnapshot(src: string, dest: string): void {
+    const st = statSync(src);
+    if (st.isDirectory()) {
+      mkdirSync(dest, { recursive: true });
+      for (const entry of readdirSync(src, { withFileTypes: true })) {
+        copyTreeSnapshot(join(src, entry.name), join(dest, entry.name));
+      }
+    } else if (st.isFile()) {
+      mkdirSync(join(dest, ".."), { recursive: true });
+      copyFileSync(src, dest);
+    }
+  }
+
   /**
-   * 24/7 queue drain: move everything loose in the queued root (any file type,
-   * archives included) into a fresh staged dir, so pre-parse can clean it.
-   * Skips in-flight API stages, the registry, and files still being written.
+   * 24/7 queue drain: claim aged top-level entries into a disposable work
+   * tree, while keeping a byte-for-byte source snapshot beside it. A folder is
+   * moved only as a unit after its mtime has settled; all later flattening or
+   * quarantine happens exclusively in the work tree.
    */
   function stageQueuedRoot(settleMs = 10_000): string | null {
     if (!existsSync(cfg.queuedDir)) {
@@ -518,9 +639,44 @@ export function createImportService(cfg: ImportConfig) {
     }
     const importId = newImportId();
     const stagedDir = join(cfg.queuedDir, importId);
-    mkdirSync(stagedDir, { recursive: true });
-    pick.forEach((src, i) => renameSync(src, join(stagedDir, `${i}_${basename(src)}`)));
-    writeRecord({ importId, stagedDir, status: "staged" });
+    const sourceDir = join(cfg.queuedDir, `${importId}.source`);
+    const quarantineDir = join(cfg.queuedDir, `${importId}.quarantine`);
+    const manifestDir = join(cfg.queuedDir, `${importId}.manifests`);
+    for (const dir of [stagedDir, sourceDir, quarantineDir, manifestDir]) {
+      mkdirSync(dir, { recursive: true });
+    }
+    const sourceFiles: Array<{ relativePath: string; name: string; size: number; outcome: string }> = [];
+    pick.forEach((src, i) => {
+      const name = `${i}_${basename(src)}`;
+      const workPath = join(stagedDir, name);
+      const sourcePath = join(sourceDir, name);
+      renameSync(src, workPath);
+      copyTreeSnapshot(workPath, sourcePath);
+      const walkFiles = (dir: string, rel: string) => {
+        if (!statSync(dir).isDirectory()) {
+          sourceFiles.push({ relativePath: rel, name: basename(rel), size: statSync(dir).size, outcome: "queued" });
+          return;
+        }
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, entry.name);
+          const nextRel = rel ? `${rel}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) walkFiles(full, nextRel);
+          else if (entry.isFile()) {
+            sourceFiles.push({ relativePath: nextRel, name: entry.name, size: statSync(full).size, outcome: "queued" });
+          }
+        }
+      };
+      walkFiles(workPath, name);
+    });
+    writeRecord({
+      importId,
+      stagedDir,
+      sourceDir,
+      quarantineDir,
+      manifestDir,
+      status: "staged",
+      sourceFiles,
+    });
     return importId;
   }
 

@@ -145,11 +145,14 @@ python3 scripts/attach_rear_licences.py \
 
 Review the aggregate dry-run first, then repeat with `--apply`. The bridge
 copies opaque card/page assets, writes `index.jsonl` and private
-`provenance.jsonl`, and only emits a row when the complete source-file hash
-matches exactly one app document whose current grouping has a reliable name and
-DOB. It does not create identities, merge visual duplicates, or expose the
-source path through the API. `--include-review` is reserved for pages that a
-human has explicitly reviewed.
+`provenance.jsonl`, and only assigns an identity when the complete source-file
+hash matches exactly one app document whose current grouping has a reliable
+name and DOB. Confirmed-but-unassigned and review occurrences are still written
+with `assignmentState=unassigned` or `needs_review` and a null identity so a
+reviewer can open them from `/api/unassigned/evidence`; they never enter an
+identity gallery. It does not create identities, merge visual duplicates, or
+expose the source path through the API. `--include-review` is reserved for
+pages that a human has explicitly reviewed.
 
 For a repeatable browser/DOM loop against a running site, start a disposable
 Chrome profile with a CDP port and run `npm run audit:live`. The audit reports

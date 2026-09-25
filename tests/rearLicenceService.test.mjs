@@ -32,25 +32,46 @@ test('rear licence service indexes by identity and document without exposing pat
   fs.writeFileSync(path.join(root, 'assets', 'cards', 'abc.jpg'), 'card');
   fs.writeFileSync(
     path.join(root, 'index.jsonl'),
-    JSON.stringify({
-      occurrenceKey: 'occ-1',
-      documentId: 'doc-1',
-      identityId: 'id-1',
-      document: 'licence.pdf',
-      page: 2,
-      part: '',
-      cardAsset: 'assets/cards/abc.jpg',
-      pageAsset: 'assets/cards/abc.jpg',
-      bbox: [1, 2, 3, 4],
-      modelDecision: 'confirmed',
-      modelConfidence: 0.95,
-    }) + '\n',
+    [
+      JSON.stringify({
+        occurrenceKey: 'occ-1',
+        documentId: 'doc-1',
+        identityId: 'id-1',
+        assignmentState: 'assigned',
+        verificationState: 'verified',
+        document: 'licence.pdf',
+        page: 2,
+        part: '',
+        cardAsset: 'assets/cards/abc.jpg',
+        pageAsset: 'assets/cards/abc.jpg',
+        bbox: [1, 2, 3, 4],
+        modelDecision: 'confirmed',
+        modelConfidence: 0.95,
+      }),
+      JSON.stringify({
+        occurrenceKey: 'occ-review',
+        documentId: 'doc-2',
+        identityId: null,
+        assignmentState: 'needs_review',
+        verificationState: 'needs_review',
+        document: 'unassigned.pdf',
+        page: 1,
+        part: '',
+        cardAsset: 'assets/cards/abc.jpg',
+        pageAsset: 'assets/cards/abc.jpg',
+        bbox: [0, 0, 1, 1],
+        modelDecision: 'review',
+        modelConfidence: 0.61,
+      }),
+    ].join('\n') + '\n',
   );
   const service = createRearLicenceService(root);
   assert.equal(service.forIdentity('id-1').length, 1);
   assert.equal(service.forDocument('doc-1').length, 1);
+  assert.equal(service.forUnassigned().length, 1);
+  assert.equal(service.forReview().length, 1);
   const evidence = service.forIdentity('id-1')[0];
-  assert.equal(evidence.cardUrl, '/rear-licences/assets/assets/cards/abc.jpg');
+  assert.equal(evidence.cardUrl, '/rear-licences/assets/cards/abc.jpg');
   assert.equal(evidence.modelDecision, 'confirmed');
   assert.equal(service.forIdentity('missing').length, 0);
 });

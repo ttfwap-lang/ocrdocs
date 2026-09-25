@@ -573,5 +573,20 @@ the GX10 or the GPU services.
 - The local rear scanner is being completed against a temporary, lower-memory local Qwen
   endpoint. Mixed front+rear pages can be confirmed when the model supplies a distinct rear
   bbox/text; this does not change the identity-key policy.
+- The rear scan completed 881 candidate pages with zero verification errors. Six visually
+  identified Medicare-card false positives were moved to the latest rejected result; the
+  finalized private corpus is 73 confirmed pages, 71 unique card fingerprints, and two
+  duplicate occurrences. The fingerprint implementation was corrected to hash stable RGB
+  bytes rather than tuple/int pixel data.
+- Upload/import is now snapshot-first: each batch keeps an immutable source tree beside a
+  disposable flattened work tree, with intake/action manifests and reversible quarantine.
+  The browser folder button uses that pipeline; unsupported, duplicate, corrupt, and archive
+  material is moved aside rather than deleted. Document content-hash insertion is atomic
+  (partial unique index plus conflict handling), worker result retries are idempotent, and
+  latest-extraction reads no longer return the oldest version.
+- Uncertain image evidence is exposed read-only at `/api/unassigned/evidence`; unverified
+  headshot crops and unassigned/rear review rows are not allowed to become identity
+  thumbnails or gallery entries. Same-name/different-DOB buckets are counted but never
+  auto-merged.
 - No recovered source identity file has been deleted. Cleanup remains quarantine-first and
   requires a reference-aware manifest before any irreversible action.

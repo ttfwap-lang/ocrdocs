@@ -26,7 +26,7 @@ function png(seed) {
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.concat(rows), { level: 0 })), chunk('IEND', Buffer.alloc(0))]);
 }
 
-test('pre-parse.sh: flatten, dedupe, purge junk, extract nested archives', { skip: !runnable && 'needs bash+file+7z+python3 on POSIX' }, () => {
+test('pre-parse.sh: flatten, quarantine evidence, and extract nested archives without deletion', { skip: !runnable && 'needs bash+file+7z+python3 on POSIX' }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'preparse-'));
   const dir = path.join(root, 'in');
   fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
@@ -49,9 +49,14 @@ z2=zipfile.ZipFile(d+'/outer.zip','w'); z2.writestr('inner.zip',inner.getvalue()
   const r = spawnSync('bash', [script, dir], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   const left = fs.readdirSync(dir);
-  assert.ok(!left.some((n) => /\.(zip|tar|gz)$/.test(n)), `archives left over: ${left}`);
-  assert.ok(!left.includes('Thumbs.db') && !left.includes('tiny.txt'), 'junk/tiny files purged');
+  assert.ok(!left.some((n) => /\.(zip|tar|gz)$/.test(n)), `archives should be quarantined: ${left}`);
+  assert.ok(!left.includes('Thumbs.db') && !left.includes('tiny.txt'), 'junk/tiny files should not remain in the work root');
   // unique images: a (+ its duplicate), b, and c (identical copy in a zip, a tar.gz and a zip-in-zip) => 3
-  assert.equal(left.filter((n) => n.startsWith('png_')).length, 3, `unique PNGs after dedupe: ${left}`);
+  assert.equal(left.filter((n) => n.startsWith('png_')).length, 3, `unique PNGs after quarantine: ${left}`);
+  const quarantine = `${dir}.quarantine`;
+  assert.ok(fs.existsSync(path.join(quarantine, 'junk_name')), 'junk metadata must be retained');
+  assert.ok(fs.existsSync(path.join(quarantine, 'duplicate')), 'duplicate evidence must be retained');
+  assert.ok(fs.existsSync(path.join(quarantine, 'archive_original')), 'original archives must be retained');
+  assert.ok(fs.existsSync(`${dir}.manifests/actions.jsonl`), 'action manifest must be written');
   fs.rmSync(root, { recursive: true, force: true });
 });

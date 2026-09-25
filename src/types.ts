@@ -155,20 +155,25 @@ export interface IdentitySummary {
 export interface IdentityPhoto {
   crop: string;
   url: string;
-  relPath: string;
+  relPath?: string;
   documentId: string;
+  identityId: string | null;
+  assignmentState: 'assigned' | 'unassigned' | 'needs_review';
   document: string;
   page: number;
   bbox: number[];
   verified: boolean;
-  source: string;
+  /** Present only in private service data; API responses omit source paths. */
+  source?: string;
 }
 
-/** A verified rear-side driver-licence occurrence, kept separate from headshots. */
+/** Rear-side driver-licence evidence, kept separate from headshots. */
 export interface RearLicenceEvidence {
   occurrenceKey: string;
-  documentId: string;
-  identityId: string;
+  documentId: string | null;
+  identityId: string | null;
+  assignmentState: 'assigned' | 'unassigned' | 'needs_review';
+  verificationState: 'verified' | 'needs_review';
   document: string;
   page: number;
   part: string;
@@ -253,6 +258,20 @@ export interface CreditScoreSummary {
   value: string;
   documentId: string;
   filename: string;
+}
+
+export interface UnassignedEvidenceItem {
+  evidenceId: string;
+  kind: 'headshot' | 'rear_licence';
+  documentId: string | null;
+  document: string;
+  page: number;
+  assignmentState: 'assigned' | 'unassigned' | 'needs_review';
+  verificationState: 'verified' | 'needs_review';
+  url?: string;
+  cardUrl?: string;
+  pageUrl?: string;
+  modelDecision?: string;
 }
 
 export interface IdentityDetail extends IdentitySummary {

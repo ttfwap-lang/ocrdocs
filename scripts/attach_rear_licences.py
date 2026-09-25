@@ -6,9 +6,12 @@ and the app's derived identity grouping. It never creates an identity from a
 rear-only scan and never treats a visual duplicate as an identity merge.
 
 The source occurrence is joined to the app by the *full file SHA-256*. Only a
-unique matching document with a reliable current name+DOB grouping is emitted.
-Review rows are excluded unless the operator explicitly passes
-``--include-review`` (intended for pages already reviewed by a human).
+unique matching document with a reliable current name+DOB grouping is ever
+emitted into an identity gallery. Confirmed-but-unassigned and review pages are
+also written to the private index with an explicit unassigned/needs_review
+state so a human can inspect them; they never receive an identity ID. Review
+rows are only assignable when the operator explicitly passes ``--include-review``
+for mixed pages that already have a human review.
 
 Outputs are private sidecar files; the server exposes only the asset URL and
 non-sensitive metadata. The original source path is kept in provenance.jsonl,
@@ -162,6 +165,30 @@ def atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+def _is_licence_candidate(row: dict) -> bool:
+    """Rows that are allowed to become user-facing rear evidence.
+
+    Rejected pages never become evidence. Review rows are retained in the
+    private review index, but only an explicitly reviewed mixed page can be
+    promoted to an identity when --include-review is supplied.
+    """
+    decision = row.get("decision")
+    category = row.get("category")
+    if decision == "confirmed":
+        return True
+    return decision == "review" and category in {"rear_licence", "mixed_licences"}
+
+
+def _review_is_attachable(row: dict, include_review: bool) -> bool:
+    return (
+        include_review
+        and row.get("decision") == "review"
+        and row.get("category") == "mixed_licences"
+        and bool(row.get("rear_bbox"))
+        and row.get("rear_text_visible") is True
+    )
+
+
 def load_rows(path: Path, include_review: bool) -> tuple[list[dict], Counter]:
     latest: dict[str, dict] = {}
     counts: Counter = Counter()
@@ -180,12 +207,10 @@ def load_rows(path: Path, include_review: bool) -> tuple[list[dict], Counter]:
     counts["latest_rows"] = len(latest)
     for row in latest.values():
         decision = row.get("decision")
-        eligible = decision == "confirmed" or (
-            include_review and decision == "review" and row.get("category") == "mixed_licences"
-            and row.get("rear_bbox") and row.get("rear_text_visible") is True
-        )
-        if eligible:
+        if _is_licence_candidate(row):
             counts["eligible_rows"] += 1
+            if decision == "review":
+                counts["review_evidence_rows"] += 1
         else:
             counts[f"skipped_{decision or 'missing'}"] += 1
     return list(latest.values()), counts
@@ -288,11 +313,7 @@ def main() -> int:
     seen_occurrences: set[str] = set()
     for row in rows:
         decision = row.get("decision")
-        eligible = decision == "confirmed" or (
-            args.include_review and decision == "review" and row.get("category") == "mixed_licences"
-            and row.get("rear_bbox") and row.get("rear_text_visible") is True
-        )
-        if not eligible:
+        if not _is_licence_candidate(row):
             continue
         source = Path(str(row.get("file") or ""))
         card = Path(str(row.get("card_image") or ""))
@@ -308,25 +329,49 @@ def main() -> int:
                     counts["source_hash_map_mismatch"] += 1
                     continue
                 source_hash = computed_source_hash
-            if not source_hash:
-                counts["missing_source_hash"] += 1
-                continue
             card_hash, page_hash = sha256_file(card), sha256_file(page_image)
         except OSError:
             counts["asset_read_error"] += 1
             continue
-        matches = by_hash.get(source_hash, [])
-        if len(matches) != 1:
+
+        matches = by_hash.get(source_hash, []) if source_hash else []
+        document_id: str | None = None
+        document_name = ""
+        identity: dict | None = None
+        if len(matches) == 1:
+            document_id = str(matches[0]["id"])
+            document_name = str(matches[0]["filename"])
+            identity = docs.get(document_id)
+        elif source_hash:
             counts["ambiguous_or_unmatched_document"] += 1
-            continue
-        document_id = str(matches[0]["id"])
-        identity = docs.get(document_id)
-        if not identity:
-            counts["unassigned_document"] += 1
-            continue
+        else:
+            counts["missing_source_hash"] += 1
+
+        # A confirmed page without a unique, currently-grouped document is
+        # retained as unassigned/review evidence. It is never allowed to enter
+        # an identity gallery. This is what makes uncertain images reviewable
+        # instead of silently disappearing.
+        attachable = decision == "confirmed" or _review_is_attachable(row, bool(args.include_review))
+        if identity and attachable:
+            assignment_state = "assigned"
+            counts["attached_evidence"] += 1
+        elif decision == "review":
+            assignment_state = "needs_review"
+            counts["review_evidence"] += 1
+        else:
+            assignment_state = "unassigned"
+            counts["unassigned_evidence"] += 1
+        verification_state = "verified" if decision == "confirmed" else "needs_review"
+        if document_id is None:
+            counts["unlinked_evidence"] += 1
+
         page = int(row.get("page") or 1)
         part = str(row.get("part") or "")
-        occurrence = hashlib.sha256(f"{source_hash}|{page}|{part}|{card_hash}".encode()).hexdigest()
+        # The source hash is deliberately not emitted in the API index. It is
+        # only an input to the stable occurrence key so identical pages cannot
+        # be shown twice after a re-scan.
+        occurrence_source = source_hash or f"unlinked:{source}|{card_hash}"
+        occurrence = hashlib.sha256(f"{occurrence_source}|{page}|{part}|{card_hash}".encode()).hexdigest()
         if occurrence in seen_occurrences:
             counts["duplicate_occurrence"] += 1
             continue
@@ -336,8 +381,10 @@ def main() -> int:
         record = {
             "occurrenceKey": occurrence,
             "documentId": document_id,
-            "identityId": identity["identityId"],
-            "document": str(matches[0]["filename"]),
+            "identityId": identity["identityId"] if identity and attachable else None,
+            "assignmentState": assignment_state,
+            "verificationState": verification_state,
+            "document": document_name,
             "page": page,
             "part": part,
             "cardAsset": card_rel,

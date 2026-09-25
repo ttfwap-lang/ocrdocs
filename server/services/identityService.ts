@@ -405,6 +405,17 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
     for (const document of allUnassigned) {
       unassignedByStatus[document.status] = (unassignedByStatus[document.status] ?? 0) + 1;
     }
+    // Count, but never merge, same-name/different-DOB clusters. They may be
+    // different people; a human must review them before any alias is created.
+    const byName = new Map<string, Set<string>>();
+    for (const group of groups.values()) {
+      const key = `${normalizeText(group.familyName)}|${normalizeText(group.givenNames)}`;
+      const dobs = byName.get(key) ?? new Set<string>();
+      dobs.add(normalizeDob(group.dob));
+      byName.set(key, dobs);
+    }
+    const possibleSameNameDifferentDobGroups = [...byName.values()]
+      .filter((dobs) => dobs.size > 1).length;
     return {
       identities: identitySummaries(groups),
       unassigned: allUnassigned.slice(start, start + limit),
@@ -412,6 +423,11 @@ export function createIdentityService(documentRepo: DocumentRepo, extractionRepo
       unassignedByStatus,
       unassignedOffset: start,
       unassignedHasMore: start + limit < allUnassigned.length,
+      diagnostics: {
+        exactIdentityBuckets: groups.size,
+        possibleSameNameDifferentDobGroups,
+        exactKeyCollisions: 0,
+      },
     };
   }
 

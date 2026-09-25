@@ -67,6 +67,35 @@ export function createDocumentRepo(db: DatabaseType) {
       return this.getById(id)!;
     },
 
+    /**
+     * Atomic content-hash insert for upload/import races. The unique partial
+     * index is the final arbiter when two workers pass the pre-check together.
+     */
+    insertDeduped(params: {
+      id?: string;
+      filename: string;
+      originalPath: string;
+      contentHash?: string | null;
+      mimeType?: string | null;
+      userId?: string | null;
+    }): { document: DocumentRow; inserted: boolean } {
+      const contentHash = params.contentHash ?? null;
+      if (contentHash) {
+        const existing = this.getByContentHash(contentHash);
+        if (existing) return { document: existing, inserted: false };
+      }
+      try {
+        return { document: this.insert(params), inserted: true };
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (contentHash && code === "SQLITE_CONSTRAINT_UNIQUE") {
+          const existing = this.getByContentHash(contentHash);
+          if (existing) return { document: existing, inserted: false };
+        }
+        throw error;
+      }
+    },
+
     getById(id: string): DocumentRow | undefined {
       return stmtGetById.get(id) as DocumentRow | undefined;
     },

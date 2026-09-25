@@ -111,7 +111,7 @@ function HeadPhotoGrid({ photos }: { photos: IdentityPhoto[] }) {
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
       {photos.map((p, i) => (
         <a
-          key={`${p.relPath}-${i}`}
+          key={`${p.url}-${i}`}
           href={p.url}
           target="_blank"
           rel="noreferrer"
@@ -137,7 +137,7 @@ function RearLicenceGrid({ items }: { items: RearLicenceEvidence[] }) {
   if (items.length === 0) {
     return (
       <div className="text-xs font-mono text-slate-500 py-2">
-        No verified rear-side driver-licence evidence is attached to this identity yet.
+        No rear-side driver-licence evidence is attached to this identity yet.
       </div>
     );
   }
@@ -160,7 +160,7 @@ function RearLicenceGrid({ items }: { items: RearLicenceEvidence[] }) {
           />
           <div className="p-2 text-[10px] font-mono text-slate-400 flex items-center justify-between gap-2">
             <span className="truncate">{item.document} · p{item.page}</span>
-            <span className="shrink-0 text-matrix-400">Open source</span>
+            <span className="shrink-0 text-amber-300">{item.assignmentState === 'assigned' ? 'Open source' : 'Review only'}</span>
           </div>
         </a>
       ))}
@@ -407,7 +407,7 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
       <div className="neon-card rounded-xl p-5" id="rear-licences">
         <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-cyan-300 mb-3 flex items-center justify-between">
           <span className="flex items-center gap-2">
-            <FileText className="w-4 h-4" /> Verified Rear Licence Evidence // {(identity.rearLicences ?? []).length}
+            <FileText className="w-4 h-4" /> Rear Licence Evidence // {(identity.rearLicences ?? []).length}
           </span>
           {(identity.rearLicences ?? []).length > 0 && (
             <span className="text-[10px] font-mono text-slate-500">separate from headshots</span>

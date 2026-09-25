@@ -106,8 +106,11 @@ def test_attach_rejects_duplicate_document_hash(tmp_path: Path) -> None:
     result = run_attach(tmp_path, db, index, out)
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout)
-    assert report["emitted"] == 0
+    assert report["emitted"] == 1
     assert report["counts"]["ambiguous_or_unmatched_document"] == 1
+    records = [json.loads(line) for line in (out / "index.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert records[0]["identityId"] is None
+    assert records[0]["assignmentState"] == "unassigned"
 
 
 def test_review_rows_are_excluded_unless_explicitly_included(tmp_path: Path) -> None:
@@ -125,10 +128,16 @@ def test_review_rows_are_excluded_unless_explicitly_included(tmp_path: Path) -> 
 
     excluded = run_attach(tmp_path, db, index, out)
     assert excluded.returncode == 0, excluded.stderr
-    assert json.loads(excluded.stdout)["emitted"] == 0
+    assert json.loads(excluded.stdout)["emitted"] == 1
+    excluded_rows = [json.loads(line) for line in (out / "index.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert excluded_rows[0]["assignmentState"] == "needs_review"
+    assert excluded_rows[0]["identityId"] is None
     included = run_attach(tmp_path, db, index, out, "--include-review")
     assert included.returncode == 0, included.stderr
     assert json.loads(included.stdout)["emitted"] == 1
+    included_rows = [json.loads(line) for line in (out / "index.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert included_rows[0]["assignmentState"] == "assigned"
+    assert len(included_rows[0]["identityId"]) == 16
 
 
 def test_source_hash_map_allows_assets_to_stay_on_build_host(tmp_path: Path) -> None:

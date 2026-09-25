@@ -29,12 +29,12 @@ import {
   Terminal,
   ShoppingCart,
 } from 'lucide-react';
-import type { IdentitySummary, UnassignedDocument } from '../types';
+import type { IdentitySummary, UnassignedDocument, UnassignedEvidenceItem } from '../types';
 import { FlipStack } from './identity/FlipStack';
 import { FaceThumb } from './identity/FaceThumb';
 import { IdentityDetailPage, type DetailSelection } from './IdentityDetailPage';
 
-const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff'];
+const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp', '.docx', '.rtf', '.xml', '.txt', '.json'];
 const UPLOAD_CONCURRENCY = 3;
 const UNASSIGNED_PAGE_SIZE = 200;
 
@@ -117,6 +117,8 @@ export const IdentitiesView: React.FC = () => {
   const [unassignedTotal, setUnassignedTotal] = useState(0);
   const [unassignedByStatus, setUnassignedByStatus] = useState<Record<string, number>>({});
   const [unassignedHasMore, setUnassignedHasMore] = useState(false);
+  const [evidence, setEvidence] = useState<UnassignedEvidenceItem[]>([]);
+  const [evidenceTotal, setEvidenceTotal] = useState(0);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -198,10 +200,28 @@ export const IdentitiesView: React.FC = () => {
     }
   }, []);
 
+  const fetchEvidence = useCallback(async () => {
+    try {
+      const res = await fetch('/api/unassigned/evidence?kind=all&state=all&limit=200', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items as UnassignedEvidenceItem[] : [];
+      // The route is a read-only review surface: only uncertain/unassigned
+      // items are shown here, never a second copy of an identity gallery.
+      setEvidence(items.filter((item) => item.assignmentState !== 'assigned'));
+      setEvidenceTotal(items.filter((item) => item.assignmentState !== 'assigned').length);
+    } catch {
+      // Evidence is supplementary; a failed sidecar must not hide identities.
+      setEvidence([]);
+      setEvidenceTotal(0);
+    }
+  }, []);
+
   useEffect(() => {
     void fetchIdentities();
+    void fetchEvidence();
     return () => abortRef.current?.abort();
-  }, [fetchIdentities]);
+  }, [fetchIdentities, fetchEvidence]);
 
   const isUploading = uploadQueue.some((q) => q.status === 'pending' || q.status === 'uploading');
   const queueCounts = useMemo(
@@ -257,7 +277,20 @@ export const IdentitiesView: React.FC = () => {
     return results;
   };
 
-  const handleFilesSelected = async (fileList: FileList | null, inputEl: HTMLInputElement | null) => {
+  const uploadFolderBatch = async (items: Array<{ item: QueueItem; file: File }>) => {
+    const formData = new FormData();
+    for (const { file } of items) formData.append('files', file, file.name);
+    formData.append('paths', JSON.stringify(items.map(({ file }) => (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name)));
+    const response = await fetch('/api/documents/batch', { method: 'POST', body: formData });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `Folder upload failed (${response.status})`);
+    const queued = Number.isFinite(Number(body.queuedJobs)) ? Number(body.queuedJobs) : items.length;
+    for (const { item } of items) {
+      updateQueueItem(item.id, { status: 'queued_ocr', message: `Queued for OCR (${queued} job${queued === 1 ? '' : 's'})` });
+    }
+  };
+
+  const handleFilesSelected = async (fileList: FileList | null, inputEl: HTMLInputElement | null, folderUpload = false) => {
     if (!fileList || fileList.length === 0) return;
     setError(null);
     setNotice(null);
@@ -275,6 +308,23 @@ export const IdentitiesView: React.FC = () => {
     const queued = accepted.map((file) => ({ item: { id: makeQueueId(), name: file.name, status: 'pending' as QueueStatus }, file }));
     setUploadQueue((prev) => [...prev, ...queued.map((q) => q.item)]);
     if (inputEl) inputEl.value = '';
+
+    try {
+      if (folderUpload) {
+        for (const { item } of queued) updateQueueItem(item.id, { status: 'uploading' });
+        await uploadFolderBatch(queued);
+        await fetchIdentities();
+        setNotice(
+          `Prepared ${queued.length} file(s) through the folder cleanup pipeline; ${skipped > 0 ? `skipped ${skipped} unsupported file(s).` : ''}`,
+        );
+        return;
+      }
+    } catch (err: any) {
+      const message = err?.message || 'Folder upload failed';
+      for (const { item } of queued) updateQueueItem(item.id, { status: 'error', message });
+      setError(message);
+      return;
+    }
 
     const results = await runQueue(queued);
     await fetchIdentities();
@@ -371,7 +421,7 @@ export const IdentitiesView: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={() => void fetchIdentities()}
+              onClick={() => { void fetchIdentities(); void fetchEvidence(); }}
               disabled={loading}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider text-matrix-400 bg-black/50 hover:bg-matrix-900/40 border border-matrix-500/30 rounded-lg transition-colors disabled:opacity-50"
             >
@@ -393,7 +443,7 @@ export const IdentitiesView: React.FC = () => {
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff"
+                accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.docx,.rtf,.xml,.txt,.json"
                 className="hidden"
                 onChange={(e) => handleFilesSelected(e.target.files, fileInputRef.current)}
               />
@@ -401,7 +451,7 @@ export const IdentitiesView: React.FC = () => {
             <label className="inline-flex items-center gap-2 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider text-black bg-cyan-400 hover:bg-cyan-300 rounded-lg shadow-[0_0_18px_-4px_rgba(0,246,255,0.7)] transition-colors cursor-pointer">
               <FolderUp className="w-3.5 h-3.5" />
               Upload Folder
-              <input ref={folderInputRef} type="file" multiple className="hidden" onChange={(e) => handleFilesSelected(e.target.files, folderInputRef.current)} />
+              <input ref={folderInputRef} type="file" multiple className="hidden" onChange={(e) => handleFilesSelected(e.target.files, folderInputRef.current, true)} />
             </label>
           </div>
         </div>
@@ -542,6 +592,41 @@ export const IdentitiesView: React.FC = () => {
 
         {/* Gallery: same order as the sidebar, with a flipping thumbnail stack per row */}
         <div className="lg:col-span-8 space-y-4">
+          {evidence.length > 0 && (
+            <div data-testid="unassigned-evidence" className="neon-card rounded-xl overflow-hidden border-amber-500/20">
+              <div className="p-3 border-b border-amber-500/20 bg-black/30 flex items-center gap-2">
+                <Search className="w-4 h-4 text-amber-400" />
+                <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-amber-300">Uncertain Image Evidence // {evidenceTotal}</h2>
+                <span className="ml-auto text-[10px] font-mono text-slate-500">review only — not assigned to a person</span>
+              </div>
+              <div className="p-3 grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-8 gap-2 max-h-64 overflow-y-auto">
+                {evidence.map((item) => {
+                  const imageUrl = item.url || item.cardUrl;
+                  return (
+                    <button
+                      key={item.evidenceId}
+                      type="button"
+                      disabled={!item.documentId}
+                      onClick={() => item.documentId && setSelection({ type: 'document', id: item.documentId })}
+                      className="group text-left disabled:cursor-default"
+                      title={`${item.kind} · ${item.assignmentState}${item.document ? ` · ${item.document}` : ''}`}
+                    >
+                      <span className="block aspect-square rounded border border-white/10 bg-black/50 overflow-hidden">
+                        {imageUrl ? (
+                          <img src={imageUrl} alt="" className="w-full h-full object-cover group-hover:border-amber-400/60" />
+                        ) : (
+                          <span className="w-full h-full flex items-center justify-center text-[9px] font-mono text-slate-600">no preview</span>
+                        )}
+                      </span>
+                      <span className="block mt-1 text-[9px] font-mono uppercase text-slate-500 truncate">
+                        {item.kind === 'headshot' ? 'head' : 'rear'} · {item.assignmentState === 'unassigned' ? 'unassigned' : 'review'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {unassigned.length > 0 && (
             <div data-testid="unassigned-queue" className="neon-card rounded-xl overflow-hidden">
               <div className="p-3 border-b border-amber-500/20 bg-black/30 flex items-center gap-2">

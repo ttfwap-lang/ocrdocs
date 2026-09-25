@@ -220,6 +220,24 @@ test('Phase 5 — job leases and endpoint hardening', async (t) => {
     );
   });
 
+  await t.test('a repeated worker result is idempotent and does not create a second extraction', async () => {
+    const upload = await uploadImage(baseUrl, 'retry-result.png');
+    const claim = await (await fetch(`${baseUrl}/api/jobs/claim`, { headers: auth })).json();
+    assert.equal(claim.document.id, upload.document.id);
+    const body = { status: 'SUCCESS', rawText: 'Family Name / Surname: Retry\\nGiven Names / First Name: Case\\nDate of Birth (DOB): 01/02/1990', engineUsed: 'stub' };
+    const first = await fetch(`${baseUrl}/api/jobs/${claim.job.id}/result`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...auth }, body: JSON.stringify(body),
+    });
+    assert.equal(first.status, 201);
+    const second = await fetch(`${baseUrl}/api/jobs/${claim.job.id}/result`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...auth }, body: JSON.stringify(body),
+    });
+    assert.equal(second.status, 200);
+    assert.equal((await second.json()).duplicate, true);
+    const document = await (await fetch(`${baseUrl}/api/documents/${upload.document.id}`)).json();
+    assert.equal(document.extractions.length, 1, 'retry must not append another extraction version');
+  });
+
   await t.test('re-uploading identical bytes returns the existing document instead of duplicating work', async () => {
     const first = await uploadImage(baseUrl, 'dedup.png');
     assert.equal(first.duplicate, undefined, 'the first upload is not a duplicate');

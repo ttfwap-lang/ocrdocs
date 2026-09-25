@@ -10,12 +10,18 @@
  * not be grouped (no name+DOB) are still indexed under their documentId, which
  * is how an unassigned passport scan gets its photos shown.
  *
- * The store is re-read whenever index.jsonl's mtime changes, so re-running the
- * extractor while the server is up is visible on the next request.
+ * Only verified, currently-grouped crops are returned by photosForIdentity().
+ * Detector-unverified crops remain available by document and in the review
+ * method, but can never become an identity thumbnail or identity gallery item.
+ *
+ * The store is re-read whenever index.jsonl's mtime changes, so re-running
+ * the extractor while the server is up is visible on the next request.
  */
 
 import fs from "node:fs";
 import path from "node:path";
+
+export type PhotoAssignmentState = "assigned" | "unassigned" | "needs_review";
 
 /** A single extracted head photo, as surfaced through /api/identities. */
 export interface IdentityPhoto {
@@ -26,19 +32,24 @@ export interface IdentityPhoto {
   /** Path relative to the headshots root (useful for fs ops). */
   relPath: string;
   documentId: string;
+  /** Opaque derived grouping key; null when the document is unassigned. */
+  identityId: string | null;
+  assignmentState: PhotoAssignmentState;
   /** Original source document filename the crop came from. */
   document: string;
   page: number;
   bbox: number[];
   /** True when the crop re-detected a face (scripts/extract_headshots.py fusion pass). */
   verified: boolean;
-  /** Absolute path of the source document the photo was cut from. */
+  /** Absolute path of the source document the photo was cut from (never expose this in API responses). */
   source: string;
 }
 
 export interface HeadshotService {
   photosForIdentity(identityId: string): IdentityPhoto[];
   photosForDocument(documentId: string): IdentityPhoto[];
+  reviewPhotos(): IdentityPhoto[];
+  allPhotos(): IdentityPhoto[];
 }
 
 function photoUrl(subdir: string | undefined, crop: string): string {
@@ -47,9 +58,19 @@ function photoUrl(subdir: string | undefined, crop: string): string {
   return `/headshots/${segs.join("/")}`;
 }
 
+function assignmentState(identityId: string, verified: boolean): PhotoAssignmentState {
+  if (!identityId) return "unassigned";
+  return verified ? "assigned" : "needs_review";
+}
+
 export function createHeadshotService(headshotsRoot: string): HeadshotService {
   const indexFile = path.join(headshotsRoot, "index.jsonl");
-  let cache: { mtimeMs: number; byIdentity: Map<string, IdentityPhoto[]>; byDocument: Map<string, IdentityPhoto[]> } | null = null;
+  let cache: {
+    mtimeMs: number;
+    all: IdentityPhoto[];
+    byIdentity: Map<string, IdentityPhoto[]>;
+    byDocument: Map<string, IdentityPhoto[]>;
+  } | null = null;
 
   function load() {
     let mtimeMs = -1;
@@ -61,6 +82,7 @@ export function createHeadshotService(headshotsRoot: string): HeadshotService {
     if (cache && cache.mtimeMs === mtimeMs) {
       return cache;
     }
+    const all: IdentityPhoto[] = [];
     const byIdentity = new Map<string, IdentityPhoto[]>();
     const byDocument = new Map<string, IdentityPhoto[]>();
     if (mtimeMs >= 0) {
@@ -81,6 +103,7 @@ export function createHeadshotService(headshotsRoot: string): HeadshotService {
           if (!f || typeof f !== "object") continue;
           const crop = String((f as { crop?: unknown }).crop ?? "");
           if (!crop) continue;
+          const verified = Boolean((f as { verified?: unknown }).verified);
           const photo: IdentityPhoto = {
             crop,
             url: photoUrl(subdir, crop),
@@ -88,28 +111,35 @@ export function createHeadshotService(headshotsRoot: string): HeadshotService {
               ? String((f as { relPath?: unknown }).relPath)
               : path.posix.join(subdir || "_unassigned", crop),
             documentId: docId,
+            identityId: identityId || null,
+            assignmentState: assignmentState(identityId, verified),
             document: String(rec.doc ?? ""),
             page: Number(rec.page ?? 0) || 0,
             bbox: Array.isArray((f as { bbox?: unknown }).bbox) ? (f as { bbox: number[] }).bbox : [],
-            verified: Boolean((f as { verified?: unknown }).verified),
+            verified,
             source: String(rec.source ?? ""),
           };
-          for (const map of [byIdentity, byDocument]) {
-            const key = map === byIdentity ? identityId : docId;
-            if (!key) continue;
-            const arr = map.get(key);
-            if (arr) arr.push(photo);
-            else map.set(key, [photo]);
+          all.push(photo);
+          // An identity gallery is deliberately limited to a verified crop
+          // whose current derived grouping is known. Unverified crops are
+          // review material, not identity evidence.
+          if (identityId && verified) {
+            const values = byIdentity.get(identityId);
+            if (values) values.push(photo);
+            else byIdentity.set(identityId, [photo]);
+          }
+          if (docId) {
+            const values = byDocument.get(docId);
+            if (values) values.push(photo);
+            else byDocument.set(docId, [photo]);
           }
         }
       }
-      for (const map of [byIdentity, byDocument]) {
-        for (const arr of map.values()) {
-          arr.sort((a, b) => Number(b.verified) - Number(a.verified) || a.document.localeCompare(b.document) || a.page - b.page);
-        }
-      }
     }
-    cache = { mtimeMs, byIdentity, byDocument };
+    for (const arr of [all, ...byIdentity.values(), ...byDocument.values()]) {
+      arr.sort((a, b) => Number(b.verified) - Number(a.verified) || a.document.localeCompare(b.document) || a.page - b.page);
+    }
+    cache = { mtimeMs, all, byIdentity, byDocument };
     return cache;
   }
 
@@ -120,5 +150,13 @@ export function createHeadshotService(headshotsRoot: string): HeadshotService {
     photosForDocument(documentId: string): IdentityPhoto[] {
       return load().byDocument.get(documentId) ?? [];
     },
+    reviewPhotos(): IdentityPhoto[] {
+      return load().all.filter((photo) => photo.assignmentState !== "assigned");
+    },
+    allPhotos(): IdentityPhoto[] {
+      return load().all;
+    },
   };
 }
+
+export type HeadshotServiceType = ReturnType<typeof createHeadshotService>;

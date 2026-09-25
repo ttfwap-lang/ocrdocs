@@ -113,6 +113,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({ detail, jobs = [], d
 
       {jobs.length > 0 && (
         <div className="mt-3 space-y-1.5">
+          <div className="text-[9px] font-mono uppercase tracking-widest text-slate-600">Job history // {jobs.length}</div>
           {jobs.map((job) => (
             <div key={job.id} className="flex items-center justify-between gap-2 p-1.5 bg-black/40 rounded border border-white/5 text-[11px] font-mono">
               <span className="flex items-center gap-1.5 text-slate-400">

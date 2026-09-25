@@ -1,165 +1,264 @@
-# The staged directory is passed as $1 by server/services/importService.ts.
-# Fall back to a placeholder so the script is still runnable ad-hoc.
+#!/usr/bin/env bash
+# Evidence-preserving pre-parse for the ocrdocs batch importer.
+#
+# Contract:
+#   pre-parse.sh WORK_DIR [BATCH_DIR]
+#
+# WORK_DIR is disposable derived content. BATCH_DIR (when supplied) is the
+# import id directory that owns WORK_DIR; immutable source/, quarantine/, and
+# manifests/ live beside it. Nothing in this script deletes a file: every
+# removal is a move into quarantine with a JSONL action record.
+set -u
+
 TARGET_DIR="${1:-}"
+BASE_DIR="${2:-${TARGET_DIR%/}}"
 if [[ -z "$TARGET_DIR" || ! -d "$TARGET_DIR" ]]; then
-    echo "usage: pre-parse.sh <existing-target-dir>" >&2
+    echo "usage: pre-parse.sh <existing-work-dir> [batch-dir]" >&2
     exit 2
 fi
-# Archive tool: 7z (p7zip) or 7zz. Missing tool = archives are left in place, loudly.
+if [[ -z "$BASE_DIR" || "$BASE_DIR" == "$TARGET_DIR" ]]; then
+    BASE_DIR="${TARGET_DIR%/}"
+fi
+
+QUARANTINE_DIR="${BASE_DIR}.quarantine"
+MANIFEST_DIR="${BASE_DIR}.manifests"
+mkdir -p "$QUARANTINE_DIR" "$MANIFEST_DIR"
+ACTION_MANIFEST="${MANIFEST_DIR}/actions.jsonl"
+umask 077
+
 SEVENZ="$(command -v 7z || command -v 7zz || true)"
-export SEVENZ TARGET_DIR
+FILE_CMD="$(command -v file || true)"
+NPROC="$(nproc 2>/dev/null || echo 1)"
 
-# --- FUNCTION: FLATTEN FOLDER ---
-flatten_directory() {
-    echo "--> Moving all nested files to the root directory..."
-    # -mindepth 2 ensures we only grab files inside subdirectories
-    find "$TARGET_DIR" -mindepth 2 -type f -print0 | xargs -0 -P $(nproc) -I {} mv --backup=t "{}" "$TARGET_DIR"/
-    
-    # Clean up empty subdirectories
-    find "$TARGET_DIR" -mindepth 1 -type d -empty -delete 2>/dev/null
+json_escape() {
+    # Paths/reasons are operator-controlled filesystem strings; escape the
+    # characters that would otherwise break a JSONL record.
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\r/\\r/g' | tr '\n' ' '
 }
 
-# --- FUNCTION: PURGE, IDENTIFY & RENAME ---
-process_files() {
-    echo "--> Purging files 2KB or smaller..."
-    find "$TARGET_DIR" -maxdepth 1 -type f -size -2049c -delete
+log_action() {
+    local stage="$1" reason="$2" from="$3" to="$4"
+    printf '{"stage":"%s","reason":"%s","from":"%s","to":"%s","at":"%s"}\n' \
+        "$(json_escape "$stage")" "$(json_escape "$reason")" \
+        "$(json_escape "$from")" "$(json_escape "$to")" \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$ACTION_MANIFEST"
+}
 
-    echo "--> Purging Windows junk, identifying types, deduplicating, and renaming..."
-    find "$TARGET_DIR" -maxdepth 1 -type f -print0 | xargs -0 -P $(nproc) -I {} bash -c '
-        filepath="$1"
-        [[ ! -f "$filepath" ]] && exit 0
-        
-        # SINGLE-PASS IDENTIFICATION: Grabs both mime and extension guess simultaneously to save I/O
-        # Example output: "application/x-dosexec; charset=binary    exe"
-        # Two separate calls on purpose: combining --mime-type with --extension makes file 5.45 report plain text
-        # as application/octet-stream, which hid ~1,800 real text files.
-        mime=$(file -b --mime-type "$filepath")
-        ext_guess=$(file -b --extension "$filepath")
-        
-        # 1. EXTENDED INTELLIGENT WINDOWS SYSTEM PURGE
-        base_lower=$(basename "$filepath" | tr "[:upper:]" "[:lower:]")
-        
-        # Purge by precise filename (Caches, Logs, Mac/Win Metadata, Hibernation, Pagefiles)
-        if [[ "$base_lower" =~ ^(thumbs\.db|ehthumbs\.db|ehthumbs_vista\.db|desktop\.ini|iconcache\.db|ntuser\.dat.*|bootmgr|hiberfil\.sys|pagefile\.sys|swapfile\.sys|\.ds_store|win386\.swp)$ ]]; then
-            rm -f "$filepath"; exit 0
-        fi
-        
-        # Purge by true binary file type / MIME / Extension guess
-        # Targets: Executables (PE32/PE32+), DLLs, Sys Drivers, Installers (MSI, CAB, MSP), 
-        # Registry files, Compiled HTML Help, Cursors/Icons, Object files, and Shortcuts.
-        if [[ "$mime" =~ application/(x-dosexec|x-msdownload|vnd\.ms-cab-compressed|x-msi|x-ms-installer|x-ms-shortcut) ]] || \
-           [[ "$ext_guess" =~ ^(exe|com|dll|sys|scr|lnk|cpl|cab|msi|msp|inf|reg|chm|hlp|bat|cmd|vbs|vbe|wsf|wsc|cur|ani|ico|obj|lib|pdb)$ ]]; then
-            rm -f "$filepath"; exit 0
-        fi
-        
-        # Name by TRUE content type. `file --extension` says "???" for plain text and returns oddities
-        # ("text", "image", "jpe") that the OCR pipeline does not accept, which silently lost thousands of files.
-        case "$mime" in
-            image/bmp|image/x-ms-bmp) new_ext=bmp;;
-            image/jpeg) new_ext=jpg;;
-            image/png) new_ext=png;;
-            image/tiff) new_ext=tif;;
-            image/webp) new_ext=webp;;
-            application/pdf) new_ext=pdf;;
-            text/plain) new_ext=txt;;
-            text/xml|application/xml) new_ext=xml;;
-            application/json) new_ext=json;;
-            application/rtf|text/rtf) new_ext=rtf;;
-            application/vnd.openxmlformats-officedocument.wordprocessingml.document) new_ext=docx;;
-            *)
-                # Unknown mime: fall back to file'"'"'s own extension guess, if it looks like a real extension.
-                [[ "$ext_guess" == "???" || -z "$ext_guess" ]] && exit 0
-                new_ext="${ext_guess%%/*}"
-                [[ "$new_ext" =~ ^[a-z0-9]{2,5}$ ]] || exit 0
-                ;;
-        esac
-        
-        # 2. HASH, DEDUPLICATE, AND RENAME
-        file_hash=$(md5sum "$filepath" | cut -d" " -f1)
-        short_hash="${file_hash:0:12}"
-        new_name="${new_ext}_${short_hash}.${new_ext}"
-        new_filepath="${filepath%/*}/${new_name}"
-        
-        if [[ "$filepath" != "$new_filepath" ]]; then
-            if [[ -f "$new_filepath" ]]; then
-                # An exact content duplicate already claimed this simplified name! Delete this copy.
-                rm -f "$filepath"
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        # The importer's authoritative duplicate key is SHA-256. This fallback
+        # is only for minimal POSIX images; it is recorded as a digest, not
+        # used to merge documents.
+        shasum -a 256 "$1" 2>/dev/null | awk '{print $1}' || true
+    fi
+}
+
+unique_destination() {
+    local dir="$1" name="$2" candidate="$1/$2" stem ext i
+    if [[ ! -e "$candidate" ]]; then
+        printf '%s' "$candidate"
+        return 0
+    fi
+    if [[ "$name" == *.* ]]; then
+        stem="${name%.*}"
+        ext=".${name##*.}"
+    else
+        stem="$name"
+        ext=""
+    fi
+    i=1
+    while :; do
+        candidate="${dir}/${stem}~${i}${ext}"
+        [[ ! -e "$candidate" ]] && break
+        i=$((i + 1))
+    done
+    printf '%s' "$candidate"
+}
+
+quarantine_file() {
+    local filepath="$1" stage="$2" reason="$3" rel dest
+    [[ -f "$filepath" ]] || return 0
+    rel="${filepath#"$TARGET_DIR"/}"
+    dest="$(unique_destination "${QUARANTINE_DIR}/${stage}" "$rel")"
+    mkdir -p "$(dirname "$dest")"
+    mv -- "$filepath" "$dest" || return 1
+    log_action "$stage" "$reason" "$filepath" "$dest"
+    printf '--> quarantined %s (%s)\n' "$rel" "$stage" >&2
+}
+
+identify_extension() {
+    local filepath="$1" mime="" guess=""
+    if [[ -n "$FILE_CMD" ]]; then
+        mime="$($FILE_CMD -b --mime-type "$filepath" 2>/dev/null || true)"
+        guess="$($FILE_CMD -b --extension "$filepath" 2>/dev/null || true)"
+    fi
+    case "$mime" in
+        image/bmp|image/x-ms-bmp) printf 'bmp' ;;
+        image/jpeg) printf 'jpg' ;;
+        image/png) printf 'png' ;;
+        image/tiff) printf 'tif' ;;
+        image/webp) printf 'webp' ;;
+        application/pdf) printf 'pdf' ;;
+        text/plain) printf 'txt' ;;
+        text/xml|application/xml) printf 'xml' ;;
+        application/json) printf 'json' ;;
+        application/rtf|text/rtf) printf 'rtf' ;;
+        application/vnd.openxmlformats-officedocument.wordprocessingml.document) printf 'docx' ;;
+        *)
+            guess="${guess//\?/}"
+            if [[ "$guess" == "???" || -z "$guess" ]]; then
+                printf ''
             else
-                mv "$filepath" "$new_filepath"
+                printf '%s' "${guess%%/*}" | tr '[:upper:]' '[:lower:]'
             fi
-        fi
-    ' _ {}
+            ;;
+    esac
 }
 
-# --- FUNCTION: EXTRACT ARCHIVES ---
+is_archive() {
+    local filepath="$1" mime="" ext="${1##*.}"
+    ext="${ext,,}"
+    if [[ -n "$FILE_CMD" ]]; then
+        mime="$($FILE_CMD -b --mime-type "$filepath" 2>/dev/null || true)"
+    fi
+    [[ "$ext" =~ ^(zip|rar|7z|gz|tgz|tar|bz2|xz)$ ]] || \
+        [[ "$mime" =~ application/(zip|x-rar|x-7z-compressed|gzip|x-tar|x-bzip2|x-xz|vnd\.rar) ]]
+}
+
+flatten_directory() {
+    local filepath rel base stem ext candidate digest n
+    while IFS= read -r -d '' filepath; do
+        [[ -f "$filepath" ]] || continue
+        rel="${filepath#"$TARGET_DIR"/}"
+        base="${rel##*/}"
+        candidate="$TARGET_DIR/$base"
+        if [[ -e "$candidate" ]]; then
+            if [[ "$base" == *.* ]]; then
+                stem="${base%.*}"
+                ext=".${base##*.}"
+            else
+                stem="$base"
+                ext=""
+            fi
+            digest="$(printf '%s' "$rel" | sha256_of /dev/stdin 2>/dev/null || true)"
+            [[ -n "$digest" ]] || digest="$(printf '%s' "$rel" | cksum | awk '{print $1}')"
+            candidate="$TARGET_DIR/${stem}~${digest:0:8}${ext}"
+            n=1
+            while [[ -e "$candidate" ]]; do
+                candidate="$TARGET_DIR/${stem}~${digest:0:8}_${n}${ext}"
+                n=$((n + 1))
+            done
+        fi
+        mv -- "$filepath" "$candidate" || continue
+        log_action flatten "nested:$rel" "$filepath" "$candidate"
+    done < <(find "$TARGET_DIR" -mindepth 2 -type f -print0 2>/dev/null)
+    # Directory removal is safe: rmdir only succeeds when no file remains.
+    find "$TARGET_DIR" -depth -mindepth 1 -type d -empty -exec rmdir -- {} + 2>/dev/null || true
+}
+
+process_files() {
+    local filepath base ext mime size digest short new_name target current_digest
+    while IFS= read -r -d '' filepath; do
+        [[ -f "$filepath" ]] || continue
+        base="${filepath##*/}"
+        # Test/prepare markers and the action manifest are not corpus files.
+        [[ "$base" == .* || "$base" == "actions.jsonl" || "$base" == "intake.jsonl" ]] && continue
+        if is_archive "$filepath"; then
+            continue
+        fi
+        ext="$(identify_extension "$filepath")"
+        [[ -n "$ext" ]] || { quarantine_file "$filepath" unsupported "unrecognised content type"; continue; }
+        mime=""
+        if [[ -n "$FILE_CMD" ]]; then
+            mime="$($FILE_CMD -b --mime-type "$filepath" 2>/dev/null || true)"
+        fi
+        size=$(wc -c < "$filepath" 2>/dev/null || echo 0)
+        case "${base,,}" in
+            thumbs.db|ehthumbs.db|ehthumbs_vista.db|desktop.ini|iconcache.db|bootmgr|hiberfil.sys|pagefile.sys|swapfile.sys|.ds_store|win386.swp|ntuser.dat*)
+                quarantine_file "$filepath" junk_name "known system metadata"; continue ;;
+        esac
+        if [[ "$ext" =~ ^(exe|com|dll|sys|scr|lnk|cpl|cab|msi|msp|inf|reg|chm|hlp|bat|cmd|vbs|vbe|wsf|wsc|cur|ani|ico|obj|lib|pdb)$ ]] || \
+           [[ "$mime" =~ application/(x-dosexec|x-msdownload|vnd\.ms-cab-compressed|x-msi|x-ms-installer|x-ms-shortcut) ]]; then
+            quarantine_file "$filepath" junk_type "executable or installer"; continue
+        fi
+        if [[ "$size" -le 0 ]] || { [[ "$size" -le 2048 ]] && [[ "$ext" =~ ^(png|jpg|jpeg|tif|tiff|bmp|webp|pdf|docx)$ ]]; }; then
+            quarantine_file "$filepath" tiny "empty or implausibly small document"; continue
+        fi
+        digest="$(sha256_of "$filepath")"
+        [[ -n "$digest" ]] || { quarantine_file "$filepath" unreadable "could not hash"; continue; }
+        short="${digest:0:16}"
+        new_name="${ext}_${short}.${ext}"
+        target="$TARGET_DIR/$new_name"
+        if [[ -e "$target" ]]; then
+            current_digest="$(sha256_of "$target")"
+            if [[ "$current_digest" == "$digest" ]]; then
+                quarantine_file "$filepath" duplicate "same SHA-256 as kept file $new_name"
+                continue
+            fi
+            target="$(unique_destination "$TARGET_DIR" "$new_name")"
+        fi
+        if [[ "$filepath" != "$target" ]]; then
+            mv -- "$filepath" "$target" || continue
+            log_action rename "canonical:$ext" "$filepath" "$target"
+        fi
+    done < <(find "$TARGET_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+}
+
 extract_archives() {
-    echo "--> Identifying and extracting archives..."
-    find "$TARGET_DIR" -maxdepth 1 -type f -print0 | xargs -0 -P $(nproc) -I {} bash -c '
-        filepath="$1"
-        [[ ! -f "$filepath" ]] && exit 0
-        
-        # Zip-based containers that are NOT archives of documents: extracting a .jar/.apk explodes into 100k+
-        # class/resource files, and Office/EPUB files must stay intact for their own parsers.
-        name_lower=$(basename "$filepath" | tr "[:upper:]" "[:lower:]")
-        [[ "$name_lower" =~ \.(jar|apk|aar|war|ear|xpi|crx|vsix|odt|ods|odp|epub|docx|xlsx|pptx)$ ]] && exit 0
-        mime=$(file -b --mime-type "$filepath")
-        if [[ "$mime" =~ application/(zip|x-rar|x-7z-compressed|gzip|x-tar|x-bzip2|x-xz|vnd\.rar) ]]; then
-            # Extract to a temp folder named after the archive to avoid filename collisions during extraction
-            temp_out="${filepath%/*}/_ext_${filepath##*/}"
-            mkdir -p "$temp_out"
-            
-            if [[ -z "$SEVENZ" ]]; then
-                echo "WARNING: no 7z/7zz installed; leaving archive ${filepath##*/} unextracted" >&2
-                rmdir "$temp_out" 2>/dev/null
-                exit 0
+    local filepath temp_out rc base
+    [[ -n "$SEVENZ" ]] || return 0
+    while IFS= read -r -d '' filepath; do
+        [[ -f "$filepath" ]] || continue
+        is_archive "$filepath" || continue
+        base="${filepath##*/}"
+        temp_out="${TARGET_DIR}/_ext_${base}.$$.d"
+        mkdir -p "$temp_out"
+        "$SEVENZ" x -mmt=1 -y -bd -o"$temp_out" -- "$filepath" >/dev/null 2>&1
+        rc=$?
+        if [[ $rc -ge 2 ]]; then
+            quarantine_file "$filepath" archive_failed "archive could not be extracted (rc=$rc)"
+            if [[ -d "$temp_out" ]]; then
+                local failed_dir="${QUARANTINE_DIR}/archive_failed_members/${base}.$$.d"
+                mkdir -p "$(dirname "$failed_dir")"
+                mv -- "$temp_out" "$failed_dir" 2>/dev/null || true
+                log_action archive_failed_members "partial extraction retained" "$temp_out" "$failed_dir"
             fi
-            "$SEVENZ" x -mmt=1 -y -o"$temp_out" "$filepath" >/dev/null 2>&1
-            rc=$?
-            # p7zip exit codes: 0 ok, 1 warning (members extracted), >=2 real failure (corrupt, encrypted, unsupported).
-            if [[ $rc -ge 2 ]]; then
-                FAILED_DIR="${TARGET_DIR%/}.failed"; mkdir -p "$FAILED_DIR"
-                chmod -R u+rwX "$temp_out" 2>/dev/null
-                rmdir "$temp_out" 2>/dev/null || true
-                mv --backup=t "$filepath" "$FAILED_DIR/" 2>/dev/null
-            fi
-            [[ $rc -eq 1 ]] && rc=0
-            # Archive members can carry mode 000 dirs/files; make them traversable or flatten/find cannot read them.
-            chmod -R u+rwX "$temp_out" 2>/dev/null
-            [[ $rc -eq 0 ]] && rm -f "$filepath"
+            continue
         fi
-    ' _ {}
+        # The archive itself is evidence. Move it to quarantine rather than
+        # deleting it; members continue through flatten/process below.
+        quarantine_file "$filepath" archive_original "retained after safe extraction"
+        # Leave temp_out in place: flatten_directory() will move its members
+        # into the derived root and then remove only empty directories.
+    done < <(find "$TARGET_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
 }
 
-# --- FUNCTION: COUNT REMAINING ARCHIVES ---
+# The temp directory removal above is limited to the freshly-created derived
+# extraction directory; no source snapshot is ever passed to this script.
 count_archives() {
-    find "$TARGET_DIR" -maxdepth 1 -type f -print0 | xargs -0 -r file -b --mime-type 2>/dev/null         | grep -Ecs 'application/(zip|x-rar|x-7z-compressed|gzip|x-tar|x-bzip2|x-xz|vnd\.rar)' || true
+    local n=0 filepath
+    while IFS= read -r -d '' filepath; do
+        [[ -f "$filepath" ]] || continue
+        if is_archive "$filepath"; then n=$((n + 1)); fi
+    done < <(find "$TARGET_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+    printf '%s' "$n"
 }
 
-# --- MAIN EXECUTION PIPELINE ---
-echo "=== Phase 1/3: Initial Flattening ==="
+echo "=== Phase 1/3: flatten derived work tree ==="
 flatten_directory
-
-echo "=== Phase 2/3: Initial Process & Rename ==="
-process_files
-
-echo "=== Phase 3/3: Extracting Archives (repeats for nested archives, e.g. tar.gz, zip-in-zip) ==="
 for round in 1 2 3 4 5 6; do
-    remaining=$(count_archives)
+    remaining="$(count_archives)"
     [[ "${remaining:-0}" -eq 0 ]] && break
-    echo "--> round $round: $remaining archive(s)"
+    echo "--> archive round $round: $remaining"
     extract_archives
-    # Pull extracted files out of the "_ext_" temp folders, then clean/rename/dedup them.
     flatten_directory
     process_files
 done
-remaining=$(count_archives)
-[[ "${remaining:-0}" -gt 0 ]] && echo "WARNING: $remaining archive(s) could not be extracted" >&2
-
-# --- QUARANTINE: set aside (never delete) everything the OCR pipeline cannot read ---
-# Accepted set mirrors server/middleware/upload.ts SUPPORTED_EXTENSIONS.
-UNSUPPORTED_DIR="${TARGET_DIR%/}.unsupported"
-mkdir -p "$UNSUPPORTED_DIR"
-find "$TARGET_DIR" -maxdepth 1 -type f -not -iregex '.*\.\(pdf\|jpe?g\|png\|tiff?\|bmp\|webp\|docx\|rtf\|xml\|txt\|json\)$'     -exec mv --backup=t -t "$UNSUPPORTED_DIR" {} +
-echo "--> unsupported types set aside in $UNSUPPORTED_DIR ($(find "$UNSUPPORTED_DIR" -type f | wc -l) files)"
-
-echo "Operation Complete. Folder is flattened, cleaned, and simplified."
+echo "=== Phase 2/3: classify, quarantine, and canonicalize ==="
+process_files
+remaining="$(count_archives)"
+[[ "${remaining:-0}" -gt 0 ]] && echo "WARNING: $remaining archive(s) retained in quarantine" >&2
+echo "--> action manifest: $ACTION_MANIFEST"
+echo "Operation complete: derived tree flattened; evidence moved to quarantine, never deleted."
