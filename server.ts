@@ -251,6 +251,7 @@ type RuntimeDataHealth = {
   status: "ok" | "degraded";
   warnings: string[];
   database: { documents: number; byStatus: Record<string, number> };
+  jobs: { total: number; byStatus: Record<string, number>; queued: number; processing: number };
   originalFiles: { checked: number; missing: number };
   criticalFields: { valid: number; invalid: number; protectedInvalid: number; empty: number };
   medicare: {
@@ -324,6 +325,20 @@ function runtimeDataHealth(): RuntimeDataHealth {
     }
     if (criticalFields.invalid > 0) warnings.push("critical_fields_need_review");
   }
+  const jobsByStatus: Record<string, number> = {};
+  for (const row of db.prepare("SELECT status, COUNT(*) AS count FROM jobs GROUP BY status").all() as Array<{
+    status: string;
+    count: number;
+  }>) {
+    jobsByStatus[row.status] = row.count;
+  }
+  const jobs = {
+    total: Object.values(jobsByStatus).reduce((sum, count) => sum + count, 0),
+    byStatus: jobsByStatus,
+    queued: jobsByStatus.queued ?? 0,
+    processing: jobsByStatus.processing ?? 0,
+  };
+  if (jobs.queued > 0 || jobs.processing > 0) warnings.push("jobs_pending");
   const result: RuntimeDataHealth = {
     status: warnings.length === 0 ? "ok" : "degraded",
     warnings,
@@ -331,6 +346,7 @@ function runtimeDataHealth(): RuntimeDataHealth {
       documents: documentRepo.count(),
       byStatus: documentRepo.countByStatus(),
     },
+    jobs,
     originalFiles: { checked: originalRows.length, missing: missingOriginalFiles },
     criticalFields,
     medicare: {
@@ -655,6 +671,23 @@ app.get("/api/documents/count", (_req, res) => {
     criticalInvalid = row.count;
   }
   res.json({ count: documentRepo.count(), byStatus: documentRepo.countByStatus(), criticalInvalid });
+});
+
+/** PHI-free job queue totals. This endpoint never claims or mutates a job. */
+app.get("/api/jobs/count", (_req, res) => {
+  const byStatus: Record<string, number> = {};
+  for (const row of db.prepare("SELECT status, COUNT(*) AS count FROM jobs GROUP BY status").all() as Array<{
+    status: string;
+    count: number;
+  }>) {
+    byStatus[row.status] = row.count;
+  }
+  res.json({
+    count: Object.values(byStatus).reduce((sum, count) => sum + count, 0),
+    byStatus,
+    queued: byStatus.queued ?? 0,
+    processing: byStatus.processing ?? 0,
+  });
 });
 
 app.get("/api/documents/:id", (req, res) => {

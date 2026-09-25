@@ -10,7 +10,7 @@ import { MedicareView } from './components/MedicareView';
 import { GeminiChatbot } from './components/GeminiChatbot';
 import { MatrixRain } from './components/MatrixRain';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import type { DocumentCountResponse, ServiceAvailabilityResponse } from './types';
+import type { DocumentCountResponse, JobCountResponse, ServiceAvailabilityResponse } from './types';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('identities');
@@ -18,6 +18,8 @@ export default function App() {
   const [statusBar, setStatusBar] = useState({
     dgxWorkerAvailable: false,
     documentCount: 0,
+    queuedJobs: 0,
+    processingJobs: 0,
   });
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusLoaded, setStatusLoaded] = useState(false);
@@ -27,21 +29,25 @@ export default function App() {
     let cancelled = false;
 
     const fetchStatusBarData = async () => {
-      const [servicesResponse, documentsResponse] = await Promise.all([
+      const [servicesResponse, documentsResponse, jobsResponse] = await Promise.all([
         fetch('/api/services/status'),
         fetch('/api/documents/count'),
+        fetch('/api/jobs/count'),
       ]);
-      if (!servicesResponse.ok || !documentsResponse.ok) {
-        throw new Error(`status request failed (${servicesResponse.status}/${documentsResponse.status})`);
+      if (!servicesResponse.ok || !documentsResponse.ok || !jobsResponse.ok) {
+        throw new Error(`status request failed (${servicesResponse.status}/${documentsResponse.status}/${jobsResponse.status})`);
       }
       const services = (await servicesResponse.json()) as ServiceAvailabilityResponse[];
       const documents = (await documentsResponse.json()) as DocumentCountResponse;
+      const jobs = (await jobsResponse.json()) as JobCountResponse;
       const dgxWorker = services.find((service) => service.service === 'dgx_worker');
 
       if (!cancelled) {
         setStatusBar({
           dgxWorkerAvailable: Boolean(dgxWorker?.available),
           documentCount: typeof documents.count === 'number' ? documents.count : 0,
+          queuedJobs: typeof jobs.queued === 'number' ? jobs.queued : 0,
+          processingJobs: typeof jobs.processing === 'number' ? jobs.processing : 0,
         });
         setStatusError(null);
         setStatusLoaded(true);
@@ -84,6 +90,11 @@ export default function App() {
 
             <div className="flex items-center gap-3 text-cyan-400 font-bold text-glow-cyan">
               <span>{statusLoaded ? `${statusBar.documentCount} DOCUMENTS` : 'STATUS CHECK…'}</span>
+               {statusLoaded && (statusBar.queuedJobs > 0 || statusBar.processingJobs > 0) && (
+                 <span className="text-amber-300" title="Jobs still waiting for or running in the OCR worker">
+                   {statusBar.queuedJobs} QUEUED · {statusBar.processingJobs} PROCESSING
+                 </span>
+               )}
                {criticalInvalid > 0 && (
                  <span className="text-amber-300 normal-case tracking-normal" title="Malformed critical fields are retained for human review">
                    {criticalInvalid} critical values need review

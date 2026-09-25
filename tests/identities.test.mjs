@@ -265,6 +265,14 @@ test('Identities — grouping, breakdown, file serving, and zip export', async (
     const counts = await countRes.json();
     assert.ok(Number.isInteger(counts.count));
     assert.equal(Object.values(counts.byStatus).reduce((sum, n) => sum + n, 0), counts.count);
+
+    const jobsRes = await fetch(`${baseUrl}/api/jobs/count`);
+    assert.equal(jobsRes.status, 200);
+    const jobs = await jobsRes.json();
+    assert.ok(Number.isInteger(jobs.count));
+    assert.equal(Object.values(jobs.byStatus).reduce((sum, n) => sum + n, 0), jobs.count);
+    assert.equal(jobs.queued, jobs.byStatus.queued ?? 0);
+    assert.equal(jobs.processing, jobs.byStatus.processing ?? 0);
   });
 
   await t.test('GET /api/identities/:id returns full detail with a merged, cross-document field breakdown', async () => {

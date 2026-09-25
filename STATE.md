@@ -564,6 +564,8 @@ the GX10 or the GPU services.
 - The critical-field audit was applied with its own backup. It reports 1,685 valid, 163 invalid,
   and 26,701 empty critical-field rows; invalid/empty values remain reviewable and were not
   fabricated or silently discarded.
+- The live status surface now includes a PHI-free `/api/jobs/count` aggregate and displays
+  queued/processing job totals; the endpoint never claims or mutates a job.
 - A separate rear-licence evidence path is being added. It joins source occurrences to app
   documents by full SHA-256, derives the current exact name+DOB identity key, keeps unassigned
   or ambiguous occurrences out of identities, and stores assets separately from headshots.

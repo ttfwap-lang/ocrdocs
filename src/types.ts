@@ -99,6 +99,13 @@ export interface DocumentCountResponse {
   criticalInvalid?: number;
 }
 
+export interface JobCountResponse {
+  count: number;
+  byStatus: Record<string, number>;
+  queued: number;
+  processing: number;
+}
+
 /** A document registered via POST /api/documents, as returned by the DB-backed document/job pipeline. */
 export interface LocalDocument {
   id: string;
