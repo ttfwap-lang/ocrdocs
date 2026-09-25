@@ -11,7 +11,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Download, User, Calendar, FileStack, CheckCircle2, Clock, XCircle, Images, ExternalLink, ShieldCheck, FileText } from 'lucide-react';
-import type { IdentityDetail, IdentityDocumentDetail, IdentityPhoto, KeyIdentifier, LocalJob } from '../types';
+import type { IdentityDetail, IdentityDocumentDetail, IdentityPhoto, KeyIdentifier, LocalJob, RearLicenceEvidence } from '../types';
 import { DocumentCard } from './identity/DocumentCard';
 import { FaceThumb } from './identity/FaceThumb';
 
@@ -133,11 +133,47 @@ function HeadPhotoGrid({ photos }: { photos: IdentityPhoto[] }) {
   );
 }
 
+function RearLicenceGrid({ items }: { items: RearLicenceEvidence[] }) {
+  if (items.length === 0) {
+    return (
+      <div className="text-xs font-mono text-slate-500 py-2">
+        No verified rear-side driver-licence evidence is attached to this identity yet.
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {items.map((item) => (
+        <a
+          key={item.occurrenceKey}
+          href={item.pageUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="group rounded-lg overflow-hidden border border-white/10 hover:border-cyan-500/50 transition-colors bg-black/40"
+          title={`Open the source page for this rear licence (${item.document}, page ${item.page})`}
+        >
+          <img
+            src={item.cardUrl}
+            alt={`Rear driver licence from ${item.document}, page ${item.page}`}
+            loading="lazy"
+            className="w-full aspect-[1.586] object-cover group-hover:scale-[1.02] transition-transform"
+          />
+          <div className="p-2 text-[10px] font-mono text-slate-400 flex items-center justify-between gap-2">
+            <span className="truncate">{item.document} · p{item.page}</span>
+            <span className="shrink-0 text-matrix-400">Open source</span>
+          </div>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selection, onBack }) => {
   const [identity, setIdentity] = useState<IdentityDetail | null>(null);
   const [singleDoc, setSingleDoc] = useState<IdentityDocumentDetail | null>(null);
   const [singleDocJobs, setSingleDocJobs] = useState<LocalJob[]>([]);
   const [singleDocPhotos, setSingleDocPhotos] = useState<IdentityPhoto[]>([]);
+  const [singleDocRearLicences, setSingleDocRearLicences] = useState<RearLicenceEvidence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,6 +191,7 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
     setSingleDoc({ document: body.document, extraction: latest });
     setSingleDocJobs(body.jobs ?? []);
     setSingleDocPhotos(body.photos ?? []);
+    setSingleDocRearLicences(body.rearLicences ?? []);
   }, []);
 
   const load = useCallback(async () => {
@@ -177,6 +214,7 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
     setIdentity(null);
     setSingleDoc(null);
     setSingleDocPhotos([]);
+    setSingleDocRearLicences([]);
     load();
   }, [load]);
 
@@ -227,6 +265,14 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
               <Images className="w-4 h-4" /> Head Photos in This Document // {singleDocPhotos.length}
             </h2>
             <HeadPhotoGrid photos={singleDocPhotos} />
+          </div>
+        )}
+        {singleDocRearLicences.length > 0 && (
+          <div className="neon-card rounded-xl p-5">
+            <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-cyan-300 mb-3 flex items-center gap-2">
+              <FileText className="w-4 h-4" /> Rear Licence Evidence // {singleDocRearLicences.length}
+            </h2>
+            <RearLicenceGrid items={singleDocRearLicences} />
           </div>
         )}
         <DocumentCard detail={singleDoc!} jobs={singleDocJobs} onReprocessed={load} />
@@ -356,6 +402,18 @@ export const IdentityDetailPage: React.FC<IdentityDetailPageProps> = ({ selectio
             </a>
           </div>
         </div>
+      </div>
+
+      <div className="neon-card rounded-xl p-5" id="rear-licences">
+        <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-cyan-300 mb-3 flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <FileText className="w-4 h-4" /> Verified Rear Licence Evidence // {(identity.rearLicences ?? []).length}
+          </span>
+          {(identity.rearLicences ?? []).length > 0 && (
+            <span className="text-[10px] font-mono text-slate-500">separate from headshots</span>
+          )}
+        </h2>
+        <RearLicenceGrid items={identity.rearLicences ?? []} />
       </div>
 
       <div className="neon-card rounded-xl p-5" id="head-photos">

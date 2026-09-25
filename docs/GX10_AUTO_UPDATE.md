@@ -78,7 +78,8 @@ The expected persistent paths are:
 
 - `/home/flak3dd/ocrdocs/data/app.db` — the live SQLite database;
 - `/home/flak3dd/ocrdocs/data/medicare_index.json` — the source Medicare index;
-- `/home/flak3dd/ocrdocs/data/headshots/index.jsonl` and its crop tree.
+- `/home/flak3dd/ocrdocs/data/headshots/index.jsonl` and its crop tree;
+- `/home/flak3dd/ocrdocs/data/rear_licences/index.jsonl` and its private `assets/` tree (verified rear-side driver-licence evidence; never mixed with headshots).
 
 Install or replace the Medicare source atomically, preserving ownership and
 mode, then restart the server so the boot importer runs:
@@ -128,6 +129,27 @@ This never edits values or human corrections. It marks malformed BSB,
 account-number and DOB candidates as warnings and exposes only aggregate counts
 through `/api/health` under `data.criticalFields`; invalid values remain
 reviewable rather than being fabricated into “valid” data.
+
+### Verified rear-licence evidence
+
+Rear-side licence cards are a separate evidence class, not headshots. After the
+rear scanner has produced a final `index.jsonl`, run the hash-based bridge from
+the build host (or the active release) against the live database:
+
+```bash
+python3 scripts/attach_rear_licences.py \
+  --index /path/to/rear_licence_corpus/index.jsonl \
+  --db /home/flak3dd/ocrdocs/data/app.db \
+  --out /home/flak3dd/ocrdocs/data/rear_licences
+```
+
+Review the aggregate dry-run first, then repeat with `--apply`. The bridge
+copies opaque card/page assets, writes `index.jsonl` and private
+`provenance.jsonl`, and only emits a row when the complete source-file hash
+matches exactly one app document whose current grouping has a reliable name and
+DOB. It does not create identities, merge visual duplicates, or expose the
+source path through the API. `--include-review` is reserved for pages that a
+human has explicitly reviewed.
 
 For a repeatable browser/DOM loop against a running site, start a disposable
 Chrome profile with a CDP port and run `npm run audit:live`. The audit reports

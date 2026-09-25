@@ -157,6 +157,23 @@ export interface IdentityPhoto {
   source: string;
 }
 
+/** A verified rear-side driver-licence occurrence, kept separate from headshots. */
+export interface RearLicenceEvidence {
+  occurrenceKey: string;
+  documentId: string;
+  identityId: string;
+  document: string;
+  page: number;
+  part: string;
+  cardUrl: string;
+  pageUrl: string;
+  cardAsset: string;
+  pageAsset: string;
+  bbox: number[];
+  modelDecision: string;
+  modelConfidence: number | null;
+}
+
 /** A queued/extracted document that has no reliable family_name + date_of_birth to group by yet. */
 export interface UnassignedDocument {
   id: string;
@@ -236,6 +253,8 @@ export interface IdentityDetail extends IdentitySummary {
   fieldBreakdown: IdentityFieldEntry[];
   /** Every head photo extracted across this person's documents (verified first). */
   photos: IdentityPhoto[];
+  /** Verified rear-side driver-licence evidence attached by source document. */
+  rearLicences: RearLicenceEvidence[];
   /**
    * Passport and driver's-licence values with their verification tier, corroboration
    * count and exact source files. Promoted on the identity page; every other extracted

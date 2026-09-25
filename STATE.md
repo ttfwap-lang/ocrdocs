@@ -549,3 +549,27 @@ the GX10 or the GPU services.
 ### Housekeeping
 - The stuck queued job came from a verification upload; it can be left (jobs are retried and
   eventually fail) or cleared deliberately.
+
+## 2026-09-25 rear-licence evidence and corpus reconciliation (in progress)
+
+- The live GX10 became reachable again after a host restart. The atomic application release
+  currently serving `ocr.local` is commit `6821573c5a407db9ef315deacbda550c57c94b8a`.
+- Before changes: 14,676 documents, 9,595 extracted, 5,081 failed, 160 grouped identities,
+  and 14,359 unassigned documents. These are measured aggregates, not a claim that every
+  field is correct.
+- The verified corpus reconciler was run dry-run and then applied against a stopped server/worker
+  with SQLite backups. It matched 1,633 documents, updated 3,634 verified fields, promoted
+  matched documents, left 2,448 source rows without verified fields, and reported one unmatched
+  content hash. Pre/post `PRAGMA integrity_check` returned `ok`.
+- The critical-field audit was applied with its own backup. It reports 1,685 valid, 163 invalid,
+  and 26,701 empty critical-field rows; invalid/empty values remain reviewable and were not
+  fabricated or silently discarded.
+- A separate rear-licence evidence path is being added. It joins source occurrences to app
+  documents by full SHA-256, derives the current exact name+DOB identity key, keeps unassigned
+  or ambiguous occurrences out of identities, and stores assets separately from headshots.
+  Visual duplicate fingerprints are never used as identity evidence.
+- The local rear scanner is being completed against a temporary, lower-memory local Qwen
+  endpoint. Mixed front+rear pages can be confirmed when the model supplies a distinct rear
+  bbox/text; this does not change the identity-key policy.
+- No recovered source identity file has been deleted. Cleanup remains quarantine-first and
+  requires a reference-aware manifest before any irreversible action.

@@ -35,6 +35,7 @@ import type { ExtractedField, ValidationStatus } from "./server/db/contracts";
 import { upload } from "./server/middleware/upload";
 import { createIdentityService } from "./server/services/identityService";
 import { createHeadshotService } from "./server/services/headshotService";
+import { createRearLicenceService } from "./server/services/rearLicenceService";
 import { createImportService, type PreparseShell, type UploadedFile } from "./server/services/importService";
 import {
   syncMedicareIndex,
@@ -69,6 +70,10 @@ const HEADSHOTS_ROOT =
   process.env.OCRDOCS_HEADSHOTS_DIR ||
   path.join(path.dirname(path.resolve(process.env.DATABASE_PATH || "data/app.db")), "headshots");
 const headshotService = createHeadshotService(HEADSHOTS_ROOT);
+const REAR_LICENCES_ROOT =
+  process.env.OCRDOCS_REAR_LICENCES_DIR ||
+  path.join(path.dirname(path.resolve(process.env.DATABASE_PATH || "data/app.db")), "rear_licences");
+const rearLicenceService = createRearLicenceService(REAR_LICENCES_ROOT);
 const identityService = createIdentityService(documentRepo, extractionRepo, headshotService);
 
 // How long a claimed job may sit in 'processing' before its worker is presumed
@@ -664,6 +669,7 @@ app.get("/api/documents/:id", (req, res) => {
     jobs,
     extractions: extractions.map((e) => extractionRepo.getFullResult(e.id)),
     photos: headshotService.photosForDocument(document.id),
+    rearLicences: rearLicenceService.forDocument(document.id),
   });
 });
 
@@ -760,6 +766,9 @@ app.get("/api/imports", requireImportAuth, (_req, res) => {
 // Head photos (scripts/extract_headshots.py output) served so the identities
 // UI can show thumbnails/galleries. Mounted before the SPA catch-all below.
 app.use("/headshots", express.static(HEADSHOTS_ROOT));
+// Rear-side licence evidence is intentionally a separate private asset root;
+// it must never be counted as a headshot or used as an identity thumbnail.
+app.use("/rear-licences/assets", express.static(path.join(REAR_LICENCES_ROOT, "assets")));
 
 // Identities: documents grouped by their extracted given_names + family_name
 // + date_of_birth (see server/services/identityService.ts). No separate
@@ -784,7 +793,7 @@ app.get("/api/identities/:identityId", (req: express.Request<{ identityId: strin
   if (!identity) {
     return res.status(404).json({ error: "Identity not found" });
   }
-  return res.json(identity);
+  return res.json({ ...identity, rearLicences: rearLicenceService.forIdentity(identity.identityId) });
 });
 
 // ---------------------------------------------------------------------------
