@@ -264,11 +264,17 @@ def load_source_hash_map(path: str | None) -> dict[str, str]:
     text = source.read_text(encoding="utf-8").strip()
     if not text:
         return {}
-    if text.startswith("{"):
+    # Accept either a single JSON object or JSONL. JSONL also starts with
+    # `{`, so probing json.loads() first (and falling back on failure) avoids
+    # misclassifying the 66-row scanner export as one malformed object.
+    try:
         raw = json.loads(text)
-        if not isinstance(raw, dict):
-            raise SystemExit("source hash map JSON must be an object")
+    except json.JSONDecodeError:
+        raw = None
+    if isinstance(raw, dict):
         return {str(k): str(v).lower() for k, v in raw.items()}
+    if raw is not None:
+        raise SystemExit("source hash map JSON must be an object or JSONL")
     out: dict[str, str] = {}
     for line in text.splitlines():
         if not line.strip():

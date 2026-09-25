@@ -140,6 +140,25 @@ def test_review_rows_are_excluded_unless_explicitly_included(tmp_path: Path) -> 
     assert len(included_rows[0]["identityId"]) == 16
 
 
+def test_source_hash_map_accepts_jsonl_export(tmp_path: Path) -> None:
+    source = tmp_path / "source.pdf"
+    card = tmp_path / "card.jpg"
+    page = tmp_path / "page.jpg"
+    source.write_bytes(b"source-document")
+    card.write_bytes(b"card-image")
+    page.write_bytes(b"page-image")
+    db = tmp_path / "app.db"
+    make_db(db, digest(source))
+    index = tmp_path / "verified.jsonl"
+    make_index(index, source, card, page)
+    hash_map = tmp_path / "source_hashes.jsonl"
+    hash_map.write_text(json.dumps({"file": str(source), "sha256": digest(source)}) + "\n", encoding="utf-8")
+    out = tmp_path / "out"
+    result = run_attach(tmp_path, db, index, out, "--source-hash-map", str(hash_map))
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["emitted"] == 1
+
+
 def test_source_hash_map_allows_assets_to_stay_on_build_host(tmp_path: Path) -> None:
     source = tmp_path / "source.pdf"
     card = tmp_path / "card.jpg"
