@@ -584,7 +584,7 @@ the GX10 or the GPU services.
   unsupported, duplicate, corrupt, and archive material is moved aside rather than deleted. Document content-hash insertion is atomic
   (partial unique index plus conflict handling), worker result retries are idempotent, and
   latest-extraction reads no longer return the oldest version.
-- The evidence-preserving release `94d230b0d2f2ae34abb20264bbf581905f032bfa` is live on
+- The evidence-preserving release `4e4e8b7ea4bcc48b80bcc112d7e104e296bff8be` is live on
   `ocr.local`. The rear sidecar contains 73 rows: 39 uniquely assigned to a current identity
   and 34 retained as unassigned evidence; all 130 card/page assets resolve, and the
   identity API returns 39 rear rows with no broken or doubled asset links.
