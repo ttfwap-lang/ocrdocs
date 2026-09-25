@@ -580,8 +580,8 @@ the GX10 or the GPU services.
   bytes rather than tuple/int pixel data.
 - Upload/import is now snapshot-first: each batch keeps an immutable source tree beside a
   disposable flattened work tree, with intake/action manifests and reversible quarantine.
-  The browser folder button uses that pipeline; unsupported, duplicate, corrupt, and archive
-  material is moved aside rather than deleted. Document content-hash insertion is atomic
+  The browser folder button and `scripts/ingest_local_folder.mjs` now use that pipeline;
+  unsupported, duplicate, corrupt, and archive material is moved aside rather than deleted. Document content-hash insertion is atomic
   (partial unique index plus conflict handling), worker result retries are idempotent, and
   latest-extraction reads no longer return the oldest version.
 - The evidence-preserving release `94d230b0d2f2ae34abb20264bbf581905f032bfa` is live on
